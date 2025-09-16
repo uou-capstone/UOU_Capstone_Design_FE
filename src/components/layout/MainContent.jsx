@@ -1,82 +1,110 @@
-import React from "react";
+import React, { useState } from "react";
+import { useParams, useLocation } from "react-router-dom";
 
-const MainContent = () => {
-  const contentCards = [
-    {
-      id: 1,
-      title: "1주차 강의자료",
-      status: "진행중",
-      statusColor: "bg-red-500",
-      icon: "🎓",
-      type: "강의",
-      comments: 0,
-    },
-    {
-      id: 2,
-      title: "1-1주차 내용기반 추천시스템 프로그래밍",
-      status: "수강 완료",
-      statusColor: "bg-gray-500",
-      icon: "📖",
-      type: "노트",
-      comments: 0,
-    },
-    {
-      id: 3,
-      title: "추천시스템 데이터 & python code",
-      status: "수강 완료",
-      statusColor: "bg-gray-500",
-      icon: "📖",
-      type: "노트",
-      comments: 0,
-    },
-  ];
+const MainContent = ({ aiGeneratedContent }) => {
+  const [content, setContent] = useState(aiGeneratedContent || "");
+  const { week } = useParams();
+  const location = useLocation();
+
+  // 마크다운을 HTML로 변환하는 간단한 함수
+  const renderMarkdown = (markdown) => {
+    if (!markdown) return "";
+    
+    return markdown
+      .replace(/^# (.*$)/gim, '<h1 class="text-3xl font-bold text-white mb-4">$1</h1>')
+      .replace(/^## (.*$)/gim, '<h2 class="text-2xl font-semibold text-white mb-3 mt-6">$1</h2>')
+      .replace(/^### (.*$)/gim, '<h3 class="text-xl font-medium text-white mb-2 mt-4">$1</h3>')
+      .replace(/^\- (.*$)/gim, '<li class="text-gray-300 mb-1">• $1</li>')
+      .replace(/^\d+\. (.*$)/gim, '<li class="text-gray-300 mb-1">$1</li>')
+      .replace(/```([\s\S]*?)```/g, '<pre class="bg-gray-800 p-4 rounded-lg overflow-x-auto my-4"><code class="text-green-400">$1</code></pre>')
+      .replace(/`([^`]+)`/g, '<code class="bg-gray-700 px-2 py-1 rounded text-green-400">$1</code>')
+      .replace(/---/g, '<hr class="border-gray-600 my-6">')
+      .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em class="text-gray-300 italic">$1</em>')
+      .replace(/\n\n/g, '</p><p class="text-gray-300 mb-4">')
+      .replace(/^(?!<[h|l|p|d|s])(.*$)/gim, '<p class="text-gray-300 mb-4">$1</p>');
+  };
+
+  // AI 생성된 콘텐츠가 변경될 때마다 업데이트
+  React.useEffect(() => {
+    if (aiGeneratedContent) {
+      setContent(aiGeneratedContent);
+    }
+  }, [aiGeneratedContent]);
+
+  // 주차별 컨텐츠 생성
+  const getWeekContent = () => {
+    if (week) {
+      return `# ${week}주차 강의자료
+
+## 개요
+이 문서는 ${week}주차 강의자료입니다.
+
+## 주요 내용
+- 주차: ${week}주차
+- 생성 시간: ${new Date().toLocaleString()}
+
+## 상세 내용
+${week}주차 강의자료 내용이 여기에 표시됩니다.
+
+### 1. 핵심 개념
+- 개념 1
+- 개념 2
+- 개념 3
+
+### 2. 실습 예제
+\`\`\`python
+# ${week}주차 예제 코드
+print("Week ${week} Example!")
+\`\`\`
+
+### 3. 연습 문제
+1. 문제 1
+2. 문제 2
+3. 문제 3
+
+---
+*이 문서는 ${week}주차 강의자료입니다.*`;
+    } else {
+      return `# 전체 강의자료
+
+## 개요
+모든 주차의 강의자료를 한번에 볼 수 있습니다.
+
+## 주차별 요약
+- 1주차: 기초 개념
+- 2주차: 심화 내용
+- 3주차: 실습 예제
+- ... (모든 주차)
+
+## 전체 목차
+1. 1주차 - 기초 개념
+2. 2주차 - 심화 내용
+3. 3주차 - 실습 예제
+4. 4주차 - 프로젝트
+5. 5주차 - 고급 주제
+6. 6주차 - 종합 실습
+7. 7주차 - 팀 프로젝트
+8. 8주차 - 발표 및 평가
+9. 9주차 - 심화 학습
+10. 10주차 - 실무 적용
+11. 11주차 - 최종 프로젝트
+12. 12주차 - 종합 평가
+
+---
+*전체 강의자료 요약입니다.*`;
+    }
+  };
+
+  const displayContent = content || getWeekContent();
 
   return (
-    <div className="flex-1 p-6 overflow-y-auto bg-gray-900">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-semibold text-white m-0">1주차</h1>
-        <div className="flex gap-2">
-          <button className="bg-transparent border-none text-gray-400 text-base p-2 rounded cursor-pointer transition-all hover:text-white hover:bg-gray-700">
-            🔍
-          </button>
-          <button className="bg-transparent border-none text-gray-400 text-base p-2 rounded cursor-pointer transition-all hover:text-white hover:bg-gray-700">
-            📋
-          </button>
-           <button className="bg-transparent border-none text-blue-500 text-base p-2 rounded cursor-pointer transition-all bg-gray-700">
-            ⊞
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-        {contentCards.map((card) => (
-          <div
-            key={card.id}
-             className="bg-gray-800 rounded-xl p-5 border border-gray-700 transition-all cursor-pointer hover:-translate-y-0.5 hover:border-blue-500 hover:shadow-lg hover:shadow-blue-500/10"
-          >
-            <div className="flex justify-between items-start mb-4">
-              <div className="w-10 h-10 flex items-center justify-center bg-gray-700 rounded-lg text-2xl">
-                {card.icon}
-              </div>
-              <div
-                className={`px-2 py-1 rounded text-xs font-medium text-white ${card.statusColor}`}
-              >
-                {card.status}
-              </div>
-            </div>
-
-            <div className="mb-4">
-              <h3 className="text-white text-base font-medium leading-snug m-0">
-                {card.title}
-              </h3>
-            </div>
-
-            <div className="flex justify-between items-center text-sm text-gray-400">
-              <div className="font-medium">{card.type}</div>
-              <div className="flex items-center gap-1">💬 {card.comments}</div>
-            </div>
-          </div>
-        ))}
+    <div className="flex-1 min-h-0 p-6 overflow-y-auto bg-gray-900">
+      <div className="max-w-4xl mx-auto">
+        <div 
+          className="prose prose-invert max-w-none"
+          dangerouslySetInnerHTML={{ __html: renderMarkdown(displayContent) }}
+        />
       </div>
     </div>
   );
