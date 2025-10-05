@@ -1,42 +1,39 @@
 import React, { useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { RightSidebarProps, StudioTool, AIOption, FileSource } from "../../types";
 
-const RightSidebar = ({ onAIGenerate }) => {
+const RightSidebar: React.FC<RightSidebarProps> = ({ onAIGenerate }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [showAIMenu, setShowAIMenu] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [showAIMenu, setShowAIMenu] = useState<boolean>(false);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
-  const studioTools = [
+  const studioTools: StudioTool[] = [
     { id: 1, title: "AI 생성", icon: "🤖", color: "bg-blue-500" },
     { id: 2, title: "학생 관리", icon: "👥", color: "bg-green-500" },
     { id: 3, title: "보고서", icon: "📊", color: "bg-yellow-500" },
     { id: 4, title: "설정", icon: "⚙️", color: "bg-gray-500" },
   ];
 
-  const aiOptions = [
+  const aiOptions: AIOption[] = [
     { id: 1, key: "lecture", title: "강의자료 만들기", icon: "📚" },
     { id: 2, key: "exam", title: "시험 만들기", icon: "📝" },
     { id: 3, key: "assignment", title: "과제 만들기", icon: "📋" },
   ];
 
-  const [uploadedFileName, setUploadedFileName] = useState("");
+  const [uploadedFileName, setUploadedFileName] = useState<string>("");
 
-  const handleAIGenerate = (option) => {
+  const handleAIGenerate = (option: AIOption): void => {
     // 업로드된 파일만 사용
     if (!uploadedFileName) {
       alert("파일을 먼저 업로드해주세요.");
       return;
     }
-    const source = { id: "uploaded", name: uploadedFileName, type: "uploaded" };
+    const source: FileSource = { id: "uploaded", name: uploadedFileName, type: "uploaded" };
     generateMarkdown(option, source);
   };
 
-  const handleFileSelect = (file) => {
-    setSelectedFile(file);
-  };
-
-  const generateMarkdown = async (option, file) => {
+  const generateMarkdown = async (option: AIOption, file: FileSource): Promise<void> => {
     setIsProcessing(true);
 
     setTimeout(() => {
@@ -135,8 +132,7 @@ print("Hello, AI Generated Content!")
               <div className="mt-1 text-xs text-gray-300">업로드됨: {uploadedFileName}</div>
             )}
           </div>
-          {/* 제출 버튼 제거: 옵션 클릭 시 즉시 생성 */
-          }
+          {/* 제출 버튼 제거: 옵션 클릭 시 즉시 생성 */}
           {isProcessing && (
             <div className="w-full mt-3 px-4 py-2 bg-blue-600 text-white rounded text-center text-sm">
               처리 중...

@@ -1,14 +1,22 @@
 import React from "react";
 
-const rows = Array.from({ length: 12 }).map((_, i) => ({
-  id: i + 1,
-  name: `학생 ${i + 1}`,
-  level: ["낮음", "중간", "높음"][i % 3],
-  progress: Math.floor(Math.random() * 100),
-  score: [77, 71, 56, 57, 97, 50, 52, 0, 94, 0, 50, 0][i] || 0,
-}));
+interface StudentRow {
+  id: number;
+  name: string;
+  level: string;
+  progress: number;
+  score: number;
+}
 
-const StudentManagement = () => {
+const StudentManagement: React.FC = () => {
+  const rows: StudentRow[] = Array.from({ length: 12 }).map((_, i) => ({
+    id: i + 1,
+    name: `학생 ${i + 1}`,
+    level: ["낮음", "중간", "높음"][i % 3],
+    progress: Math.floor(Math.random() * 100),
+    score: [77, 71, 56, 57, 97, 50, 52, 0, 94, 0, 50, 0][i] || 0,
+  }));
+
   return (
     <div className="max-w-6xl mx-auto">
       <h2 className="text-2xl font-bold mb-6">학생 관리</h2>
@@ -45,5 +53,3 @@ const StudentManagement = () => {
 };
 
 export default StudentManagement;
-
-

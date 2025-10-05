@@ -1,20 +1,21 @@
 import React, { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { DevPage } from "../../types";
 
-const TopNav = () => {
-  const [showDevMenu, setShowDevMenu] = useState(false);
+const TopNav: React.FC = () => {
+  const [showDevMenu, setShowDevMenu] = useState<boolean>(false);
   const navigate = useNavigate();
   const location = useLocation();
   const isClassroomSelect = location.pathname === "/";
 
-  const devPages = [
+  const devPages: DevPage[] = [
     { name: "로그인 화면", path: "/login" },
     { name: "강의실 선택 (메인)", path: "/" },
     { name: "선생님 강의실", path: "/teacher" },
     { name: "학생 강의실", path: "/student" },
   ];
 
-  const handlePageNavigation = (path) => {
+  const handlePageNavigation = (path: string): void => {
     navigate(path);
     setShowDevMenu(false);
   };

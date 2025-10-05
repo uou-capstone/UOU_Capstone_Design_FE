@@ -1,13 +1,14 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useParams, useLocation } from "react-router-dom";
+import { MainContentProps } from "../../types";
 
-const MainContent = ({ aiGeneratedContent }) => {
-  const [content, setContent] = useState(aiGeneratedContent || "");
-  const { week } = useParams();
+const MainContent: React.FC<MainContentProps> = ({ aiGeneratedContent }) => {
+  const [content, setContent] = useState<string>(aiGeneratedContent || "");
+  const { week } = useParams<{ week?: string }>();
   const location = useLocation();
 
   // 마크다운을 HTML로 변환하는 간단한 함수
-  const renderMarkdown = (markdown) => {
+  const renderMarkdown = (markdown: string): string => {
     if (!markdown) return "";
     
     return markdown
@@ -26,14 +27,14 @@ const MainContent = ({ aiGeneratedContent }) => {
   };
 
   // AI 생성된 콘텐츠가 변경될 때마다 업데이트
-  React.useEffect(() => {
+  useEffect(() => {
     if (aiGeneratedContent) {
       setContent(aiGeneratedContent);
     }
   }, [aiGeneratedContent]);
 
   // 주차별 컨텐츠 생성
-  const getWeekContent = () => {
+  const getWeekContent = (): string => {
     if (week) {
       return `# ${week}주차 강의자료
 
