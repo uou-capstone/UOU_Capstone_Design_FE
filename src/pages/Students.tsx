@@ -2,7 +2,7 @@ import React from "react";
 import AppLayout from "../components/layout/AppLayout";
 import StudentManagement from "../components/layout/StudentManagement";
 
-const Students = () => {
+const Students: React.FC = () => {
   return (
     <AppLayout>
       <StudentManagement />
@@ -11,5 +11,3 @@ const Students = () => {
 };
 
 export default Students;
-
-

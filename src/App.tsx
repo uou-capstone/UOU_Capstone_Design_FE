@@ -7,7 +7,7 @@ import Student from './pages/Student';
 import SignupPage from './pages/SignupPage';
 import Students from './pages/Students';
 
-function App() {
+const App: React.FC = () => {
   return (
     <Router>
       <Routes>
@@ -23,6 +23,6 @@ function App() {
       </Routes>
     </Router>
   );
-}
+};
 
-export default App
+export default App;

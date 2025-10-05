@@ -1,11 +1,12 @@
 import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { Week } from "../../types";
 
-const LeftSidebar = () => {
+const LeftSidebar: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const weeks = [
+  const weeks: Week[] = [
     { id: 1, title: "1주차", date: "09/01 - 09/07" },
     { id: 2, title: "2주차", date: "09/08 - 09/14" },
     { id: 3, title: "3주차", date: "09/15 - 09/21" },
@@ -21,7 +22,7 @@ const LeftSidebar = () => {
   ];
 
   // 현재 경로에서 주차 정보 추출
-  const getCurrentWeek = () => {
+  const getCurrentWeek = (): number | null => {
     const pathParts = location.pathname.split('/');
     const weekPart = pathParts[pathParts.length - 1];
     if (weekPart.startsWith('w')) {
@@ -32,7 +33,7 @@ const LeftSidebar = () => {
 
   const currentWeek = getCurrentWeek();
 
-  const handleWeekSelect = (weekId) => {
+  const handleWeekSelect = (weekId: number | null): void => {
     const basePath = location.pathname.includes('/teacher') ? '/teacher' : '/student';
     if (weekId === null) {
       // 전체 선택
@@ -43,7 +44,7 @@ const LeftSidebar = () => {
     }
   };
 
-  const isSelected = (weekId) => {
+  const isSelected = (weekId: number | null): boolean => {
     if (weekId === null) {
       return currentWeek === null;
     }

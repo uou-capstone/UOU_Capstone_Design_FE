@@ -2,13 +2,13 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import TopNav from "../components/layout/TopNav";
 
-const LoginPage = () => {
+const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [email, setEmail] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
+  const [loading, setLoading] = useState<boolean>(false);
 
-  const handleSessionLogin = async (e) => {
+  const handleSessionLogin = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setLoading(true);
     setTimeout(() => {
@@ -17,7 +17,7 @@ const LoginPage = () => {
     }, 800);
   };
 
-  const handleOAuth = (provider) => {
+  const handleOAuth = (provider: string): void => {
     // 실제 연동 시 provider에 맞는 OAuth 플로우로 이동
     alert(`${provider} 로그인 준비중`);
   };

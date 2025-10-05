@@ -3,11 +3,12 @@ import TopNav from "./TopNav";
 import LeftSidebar from "./LeftSidebar";
 import RightSidebar from "./RightSidebar";
 import MainContent from "./MainContent";
+import { AppLayoutProps } from "../../types";
 
-const AppLayout = ({ children }) => {
-  const [aiGeneratedContent, setAiGeneratedContent] = useState("");
+const AppLayout: React.FC<AppLayoutProps> = ({ children }) => {
+  const [aiGeneratedContent, setAiGeneratedContent] = useState<string>("");
 
-  const handleAIGenerate = (markdownContent) => {
+  const handleAIGenerate = (markdownContent: string): void => {
     setAiGeneratedContent(markdownContent);
   };
 

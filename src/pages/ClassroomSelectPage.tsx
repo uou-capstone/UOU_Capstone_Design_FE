@@ -1,18 +1,19 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
 import TopNav from "../components/layout/TopNav";
+import { Classroom } from "../types";
 
-const ClassroomSelectPage = () => {
+const ClassroomSelectPage: React.FC = () => {
   const navigate = useNavigate();
 
-  const recentClassrooms = [
-    { id: 1, title: "새 강의실 만들기", icon: "+", color: "border-2 border-dashed border-gray-600", isCreate: true },
+  const recentClassrooms: Classroom[] = [
+    { id: 1, title: "새 강의실 만들기", color: "border-2 border-dashed border-gray-600", isCreate: true },
     { id: 2, title: "미시경제학 원론", subtitle: "2023. 10. 26 · 소스 2개", color: "bg-emerald-900/60" },
     { id: 3, title: "AI 추천시스템 01반", subtitle: "2023. 10. 25 · 소스 1개", color: "bg-indigo-900/60" },
     { id: 4, title: "운영체제", subtitle: "2023. 10. 22 · 소스 3개", color: "bg-amber-900/60" },
   ];
 
-  const handleClick = (item) => {
+  const handleClick = (item: Classroom): void => {
     if (item.isCreate) {
       // 새 강의실 만들기 동작 (임시)
       alert("새 강의실 만들기 (준비중)");
