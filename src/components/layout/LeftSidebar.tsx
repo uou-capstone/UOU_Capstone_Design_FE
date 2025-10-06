@@ -1,10 +1,12 @@
 import React from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useTheme } from "../../contexts/ThemeContext";
 import { Week } from "../../types";
 
 const LeftSidebar: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { isDarkMode } = useTheme();
 
   const weeks: Week[] = [
     { id: 1, title: "1주차", date: "09/01 - 09/07" },
@@ -52,44 +54,54 @@ const LeftSidebar: React.FC = () => {
   };
 
   return (
-    <aside className="w-60 h-full overflow-y-auto">
+    <aside className={`w-60 h-full overflow-y-auto border-r scrollbar-hide transition-colors ${
+      isDarkMode 
+        ? "bg-gray-800 border-gray-700" 
+        : "bg-white border-gray-100"
+    }`}>
       <div className="p-4">
-        <h3 className="text-lg font-semibold text-white m-0">전체</h3>
+        <h3 className={`text-lg font-semibold m-0 ${
+          isDarkMode ? "text-white" : "text-gray-900"
+        }`}>전체</h3>
       </div>
 
       <div className="flex-1">
         {/* 전체 항목 */}
-        <div
-          className={`px-6 py-3 cursor-pointer transition-all border-l-4 border-transparent ${
-            isSelected(null)
-              ? "bg-gray-700 border-l-blue-500"
-              : "hover:bg-gray-700"
-          }`}
-          onClick={() => handleWeekSelect(null)}
-        >
-          <div className="text-sm font-medium text-white mb-1">
-            전체
-          </div>
-          <div className="text-xs text-gray-400">모든 주차</div>
-        </div>
-
-        {/* 주차별 항목 */}
-        {weeks.map((week) => (
-          <div
-            key={week.id}
-            className={`px-6 py-3 cursor-pointer transition-all border-l-4 border-transparent ${
-              isSelected(week.id)
-                ? "bg-gray-700 border-l-blue-500"
-                : "hover:bg-gray-700"
+        <div className="space-y-1 px-4">
+          <button
+            onClick={() => handleWeekSelect(null)}
+            className={`w-full text-left px-4 py-3 rounded-md transition-colors cursor-pointer ${
+              isSelected(null)
+                ? isDarkMode 
+                  ? "bg-gray-700 text-white" 
+                  : "bg-gray-200 text-gray-900"
+                : isDarkMode
+                  ? "text-gray-300 hover:bg-gray-700"
+                  : "text-gray-700 hover:bg-gray-100"
             }`}
-            onClick={() => handleWeekSelect(week.id)}
           >
-            <div className="text-sm font-medium text-white mb-1">
+            전체
+          </button>
+
+          {/* 주차별 항목 */}
+          {weeks.map((week) => (
+            <button
+              key={week.id}
+              onClick={() => handleWeekSelect(week.id)}
+              className={`w-full text-left px-4 py-3 rounded-md transition-colors cursor-pointer ${
+                isSelected(week.id)
+                  ? isDarkMode 
+                    ? "bg-gray-700 text-white" 
+                    : "bg-gray-200 text-gray-900"
+                  : isDarkMode
+                    ? "text-gray-300 hover:bg-gray-700"
+                    : "text-gray-700 hover:bg-gray-100"
+              }`}
+            >
               {week.title}
-            </div>
-            <div className="text-xs text-gray-400">{week.date}</div>
-          </div>
-        ))}
+            </button>
+          ))}
+        </div>
       </div>
     </aside>
   );

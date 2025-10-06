@@ -51,14 +51,6 @@ export interface AppLayoutProps {
   children?: React.ReactNode;
 }
 
-export interface TopNavProps {
-  // TopNav 컴포넌트는 props가 없음
-}
-
-export interface LeftSidebarProps {
-  // LeftSidebar 컴포넌트는 props가 없음
-}
-
 export interface RightSidebarProps {
   onAIGenerate: (markdownContent: string) => void;
 }
@@ -67,11 +59,3 @@ export interface MainContentProps {
   aiGeneratedContent: string;
 }
 
-export interface LoginFormData {
-  email: string;
-  password: string;
-}
-
-export interface OAuthProvider {
-  provider: 'Google' | 'Kakao';
-}
