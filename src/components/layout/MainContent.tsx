@@ -1,29 +1,38 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useLocation } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { useTheme } from "../../contexts/ThemeContext";
 import { MainContentProps } from "../../types";
 
 const MainContent: React.FC<MainContentProps> = ({ aiGeneratedContent }) => {
   const [content, setContent] = useState<string>(aiGeneratedContent || "");
   const { week } = useParams<{ week?: string }>();
-  const location = useLocation();
+  const { isDarkMode } = useTheme();
 
   // 마크다운을 HTML로 변환하는 간단한 함수
   const renderMarkdown = (markdown: string): string => {
     if (!markdown) return "";
     
+    const textColor = isDarkMode ? "text-white" : "text-black";
+    const textSecondaryColor = isDarkMode ? "text-gray-300" : "text-gray-700";
+    const textTertiaryColor = isDarkMode ? "text-gray-400" : "text-gray-600";
+    const bgColor = isDarkMode ? "bg-gray-700" : "bg-gray-100";
+    const bgSecondaryColor = isDarkMode ? "bg-gray-600" : "bg-gray-200";
+    const borderColor = isDarkMode ? "border-gray-600" : "border-gray-300";
+    const codeColor = isDarkMode ? "text-green-400" : "text-green-600";
+    
     return markdown
-      .replace(/^# (.*$)/gim, '<h1 class="text-3xl font-bold text-white mb-4">$1</h1>')
-      .replace(/^## (.*$)/gim, '<h2 class="text-2xl font-semibold text-white mb-3 mt-6">$1</h2>')
-      .replace(/^### (.*$)/gim, '<h3 class="text-xl font-medium text-white mb-2 mt-4">$1</h3>')
-      .replace(/^\- (.*$)/gim, '<li class="text-gray-300 mb-1">• $1</li>')
-      .replace(/^\d+\. (.*$)/gim, '<li class="text-gray-300 mb-1">$1</li>')
-      .replace(/```([\s\S]*?)```/g, '<pre class="bg-gray-800 p-4 rounded-lg overflow-x-auto my-4"><code class="text-green-400">$1</code></pre>')
-      .replace(/`([^`]+)`/g, '<code class="bg-gray-700 px-2 py-1 rounded text-green-400">$1</code>')
-      .replace(/---/g, '<hr class="border-gray-600 my-6">')
-      .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-semibold">$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em class="text-gray-300 italic">$1</em>')
-      .replace(/\n\n/g, '</p><p class="text-gray-300 mb-4">')
-      .replace(/^(?!<[h|l|p|d|s])(.*$)/gim, '<p class="text-gray-300 mb-4">$1</p>');
+      .replace(/^# (.*$)/gim, `<h1 class="text-3xl font-bold ${textColor} mb-4">$1</h1>`)
+      .replace(/^## (.*$)/gim, `<h2 class="text-2xl font-semibold ${textColor} mb-3 mt-6">$1</h2>`)
+      .replace(/^### (.*$)/gim, `<h3 class="text-xl font-medium ${textColor} mb-2 mt-4">$1</h3>`)
+      .replace(/^\- (.*$)/gim, `<li class="${textSecondaryColor} mb-1">• $1</li>`)
+      .replace(/^\d+\. (.*$)/gim, `<li class="${textSecondaryColor} mb-1">$1</li>`)
+      .replace(/```([\s\S]*?)```/g, `<pre class="${bgColor} p-4 rounded-lg overflow-x-auto my-4"><code class="${codeColor}">$1</code></pre>`)
+      .replace(/`([^`]+)`/g, `<code class="${bgSecondaryColor} px-2 py-1 rounded ${codeColor}">$1</code>`)
+      .replace(/---/g, `<hr class="border ${borderColor} my-6">`)
+      .replace(/\*\*(.*?)\*\*/g, `<strong class="${textColor} font-semibold">$1</strong>`)
+      .replace(/\*(.*?)\*/g, `<em class="${textTertiaryColor} italic">$1</em>`)
+      .replace(/\n\n/g, `</p><p class="${textSecondaryColor} mb-4">`)
+      .replace(/^(?!<[h|l|p|d|s])(.*$)/gim, `<p class="${textSecondaryColor} mb-4">$1</p>`);
   };
 
   // AI 생성된 콘텐츠가 변경될 때마다 업데이트
@@ -100,10 +109,14 @@ print("Week ${week} Example!")
   const displayContent = content || getWeekContent();
 
   return (
-    <div className="flex-1 min-h-0 p-6 overflow-y-auto bg-gray-900">
+    <div className={`flex-1 min-h-0 p-6 overflow-y-auto scrollbar-hide transition-colors ${
+      isDarkMode ? "bg-gray-800" : "bg-white"
+    }`}>
       <div className="max-w-4xl mx-auto">
         <div 
-          className="prose prose-invert max-w-none"
+          className={`prose max-w-none ${
+            isDarkMode ? "prose-invert" : "prose-gray"
+          }`}
           dangerouslySetInnerHTML={{ __html: renderMarkdown(displayContent) }}
         />
       </div>
