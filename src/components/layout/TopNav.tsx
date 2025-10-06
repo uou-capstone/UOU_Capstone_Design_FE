@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
+import { useAuth } from "../../hooks/useAuth";
 import { DevPage } from "../../types";
 
 const TopNav: React.FC = () => {
@@ -9,16 +10,10 @@ const TopNav: React.FC = () => {
   const [showNotifications, setShowNotifications] = useState<boolean>(false);
   const [hasNotifications, setHasNotifications] = useState<boolean>(true); // 알림 있음/없음 상태
   const { isDarkMode, toggleTheme } = useTheme();
+  const { user, logout, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const isClassroomSelect = location.pathname === "/";
-
-  // 임시 사용자 데이터
-  const user = {
-    name: "김교수",
-    email: "prof.kim@univ.ac.kr",
-    role: "teacher"
-  };
 
   const devPages: DevPage[] = [
     { name: "로그인 화면", path: "/login" },
@@ -205,7 +200,9 @@ const TopNav: React.FC = () => {
                 <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
               </svg>
             </div>
-            <span className={`text-sm font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>{user.name}</span>
+            <span className={`text-sm font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+              {user?.fullName || "사용자"}
+            </span>
           </button>
 
           {/* 프로필 메뉴 */}
@@ -227,8 +224,12 @@ const TopNav: React.FC = () => {
                     </svg>
                   </div>
                   <div>
-                    <p className={`font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>{user.name}</p>
-                    <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>{user.email}</p>
+                    <p className={`font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                      {user?.fullName || "사용자"}
+                    </p>
+                    <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                      {user?.email || "이메일 없음"}
+                    </p>
                   </div>
                 </div>
               </div>
@@ -265,9 +266,12 @@ const TopNav: React.FC = () => {
                   {hasNotifications ? '알림 끄기' : '알림 켜기'}
                 </button>
                 <hr className={`my-1 ${isDarkMode ? "border-gray-700" : "border-gray-200"}`} />
-                <button className={`w-full text-left px-4 py-2 text-sm text-red-600 transition-colors cursor-pointer ${
-                  isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-50"
-                }`}>
+                <button 
+                  className={`w-full text-left px-4 py-2 text-sm text-red-600 transition-colors cursor-pointer ${
+                    isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-50"
+                  }`}
+                  onClick={logout}
+                >
                   로그아웃
                 </button>
               </div>

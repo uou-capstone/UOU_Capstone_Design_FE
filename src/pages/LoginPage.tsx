@@ -1,20 +1,26 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
+  const { login, isLoading } = useAuth();
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string>("");
   const [showDevMenu, setShowDevMenu] = useState<boolean>(false);
 
   const handleSessionLogin = async (e: React.FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    setError("");
+    
+    const result = await login(email, password);
+    
+    if (result.success) {
       navigate("/");
-    }, 800);
+    } else {
+      setError(result.error || "로그인에 실패했습니다.");
+    }
   };
 
   const handleOAuth = (provider: string): void => {
@@ -96,12 +102,18 @@ const LoginPage: React.FC = () => {
             />
           </div>
 
+          {error && (
+            <div className="text-red-600 text-sm text-center py-2">
+              {error}
+            </div>
+          )}
+          
           <button
             type="submit"
-            disabled={loading}
+            disabled={isLoading}
             className="w-full py-2.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-medium transition disabled:opacity-60"
           >
-            {loading ? "로그인 중..." : "이메일로 로그인"}
+            {isLoading ? "로그인 중..." : "이메일로 로그인"}
           </button>
         </form>
 
@@ -129,7 +141,10 @@ const LoginPage: React.FC = () => {
         <div className="mt-5 text-center text-sm text-gray-600">
           계정이 없으신가요? <a className="text-blue-600 hover:underline" href="/signup">회원가입</a>
         </div>
-        <p className="mt-3 text-center text-xs text-gray-500">실제 로그인 연동은 추후 OAuth/세션 API 연결 시 동작합니다.</p>
+        <p className="mt-3 text-center text-xs text-gray-500">
+          API 서버가 연결되지 않아 임시 로그인만 가능합니다.<br />
+          OAuth 로그인은 준비중입니다.
+        </p>
       </div>
       </div>
     </div>

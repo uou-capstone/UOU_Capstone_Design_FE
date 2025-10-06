@@ -1,18 +1,23 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../contexts/ThemeContext";
+import { useAuth } from "../hooks/useAuth";
+import { useCourses } from "../hooks/useCourses";
 import TopNav from "../components/layout/TopNav";
 import { Classroom } from "../types";
 
 const ClassroomSelectPage: React.FC = () => {
   const navigate = useNavigate();
   const { isDarkMode } = useTheme();
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  const { courses, isLoading: coursesLoading, fetchCourses, createCourse } = useCourses();
 
-  const recentClassrooms: Classroom[] = [
-    { id: 2, title: "미시경제학 원론", subtitle: "2023. 10. 26 · 소스 2개" },
-    { id: 3, title: "AI 추천시스템 01반", subtitle: "2023. 10. 25 · 소스 1개" },
-    { id: 4, title: "운영체제", subtitle: "2023. 10. 22 · 소스 3개" },
-  ];
+  // API에서 가져온 과목들을 Classroom 형식으로 변환
+  const recentClassrooms: Classroom[] = courses.map(course => ({
+    id: course.courseId,
+    title: course.title,
+    subtitle: `${new Date().toLocaleDateString()} · 소스 없음`,
+  }));
 
 
   const handleClick = (item: Classroom): void => {
@@ -20,9 +25,33 @@ const ClassroomSelectPage: React.FC = () => {
     navigate("/teacher");
   };
 
-  const handleCreateClassroom = (): void => {
-    // 새 강의실 만들기 동작 (임시)
-    alert("새 강의실 만들기 (준비중)");
+  // 컴포넌트 마운트 시 과목 목록 가져오기
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchCourses();
+    }
+  }, [isAuthenticated, fetchCourses]);
+
+  // 인증되지 않은 경우 로그인 페이지로 리다이렉트
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      navigate("/login");
+    }
+  }, [isAuthenticated, authLoading, navigate]);
+
+  const handleCreateClassroom = async (): Promise<void> => {
+    const title = prompt("강의실 이름을 입력해주세요:");
+    if (!title) return;
+
+    const description = prompt("강의실 설명을 입력해주세요 (선택사항):") || "";
+    
+    const result = await createCourse({ title, description });
+    if (result.success) {
+      alert("강의실이 생성되었습니다!");
+      fetchCourses(); // 목록 새로고침
+    } else {
+      alert(`강의실 생성에 실패했습니다: ${result.error}`);
+    }
   };
 
   return (
@@ -69,8 +98,24 @@ const ClassroomSelectPage: React.FC = () => {
             isDarkMode ? "text-white" : "text-gray-900"
           }`}>강의실</h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl">
-            {recentClassrooms.map((item) => (
+          {coursesLoading ? (
+            <div className="flex justify-center items-center py-12">
+              <div className={`text-lg ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
+                강의실 목록을 불러오는 중...
+              </div>
+            </div>
+          ) : recentClassrooms.length === 0 ? (
+            <div className="flex flex-col justify-center items-center py-12">
+              <div className={`text-lg ${isDarkMode ? "text-gray-300" : "text-gray-600"} mb-4`}>
+                등록된 강의실이 없습니다
+              </div>
+              <div className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                좌측 사이드바에서 "새 강의실 만들기"를 클릭하여 강의실을 생성해보세요
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-6xl">
+              {recentClassrooms.map((item) => (
               <button
                 key={item.id}
                 onClick={() => handleClick(item)}
@@ -93,7 +138,8 @@ const ClassroomSelectPage: React.FC = () => {
                 </div>
               </button>
             ))}
-          </div>
+            </div>
+          )}
         </main>
       </div>
     </div>
