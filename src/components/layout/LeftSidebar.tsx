@@ -1,56 +1,55 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
-import { Week } from "../../types";
+import { useLectures } from "../../hooks/useLectures";
 
 const LeftSidebar: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isDarkMode } = useTheme();
+  const { lectures, isLoading, fetchLectures } = useLectures();
+  const [courseId, setCourseId] = useState<number | null>(null);
 
-  const weeks: Week[] = [
-    { id: 1, title: "1주차", date: "09/01 - 09/07" },
-    { id: 2, title: "2주차", date: "09/08 - 09/14" },
-    { id: 3, title: "3주차", date: "09/15 - 09/21" },
-    { id: 4, title: "4주차", date: "09/22 - 09/28" },
-    { id: 5, title: "5주차", date: "09/29 - 10/05" },
-    { id: 6, title: "6주차", date: "10/06 - 10/12" },
-    { id: 7, title: "7주차", date: "10/13 - 10/19" },
-    { id: 8, title: "8주차", date: "10/20 - 10/26" },
-    { id: 9, title: "9주차", date: "10/27 - 11/02" },
-    { id: 10, title: "10주차", date: "11/03 - 11/09" },
-    { id: 11, title: "11주차", date: "11/10 - 11/16" },
-    { id: 12, title: "12주차", date: "11/17 - 11/23" },
-  ];
-
-  // 현재 경로에서 주차 정보 추출
-  const getCurrentWeek = (): number | null => {
+  // URL에서 courseId 추출 (예: /teacher/1 또는 /student/1)
+  useEffect(() => {
     const pathParts = location.pathname.split('/');
-    const weekPart = pathParts[pathParts.length - 1];
-    if (weekPart.startsWith('w')) {
-      return parseInt(weekPart.substring(1));
+    if (pathParts.length >= 3) {
+      const id = parseInt(pathParts[2]);
+      if (!isNaN(id)) {
+        setCourseId(id);
+        fetchLectures(id);
+      }
     }
-    return null; // 전체 선택
+  }, [location.pathname, fetchLectures]);
+
+  // 현재 선택된 강의 ID 추출
+  const getCurrentLectureId = (): number | null => {
+    const pathParts = location.pathname.split('/');
+    const lecturePart = pathParts[pathParts.length - 1];
+    const lectureId = parseInt(lecturePart);
+    return isNaN(lectureId) ? null : lectureId;
   };
 
-  const currentWeek = getCurrentWeek();
+  const currentLectureId = getCurrentLectureId();
 
-  const handleWeekSelect = (weekId: number | null): void => {
+  const handleLectureSelect = (lectureId: number | null): void => {
     const basePath = location.pathname.includes('/teacher') ? '/teacher' : '/student';
-    if (weekId === null) {
-      // 전체 선택
-      navigate(basePath);
-    } else {
-      // 특정 주차 선택
-      navigate(`${basePath}/w${weekId}`);
+    if (courseId) {
+      if (lectureId === null) {
+        // 전체 선택
+        navigate(`${basePath}/${courseId}`);
+      } else {
+        // 특정 강의 선택
+        navigate(`${basePath}/${courseId}/${lectureId}`);
+      }
     }
   };
 
-  const isSelected = (weekId: number | null): boolean => {
-    if (weekId === null) {
-      return currentWeek === null;
+  const isSelected = (lectureId: number | null): boolean => {
+    if (lectureId === null) {
+      return currentLectureId === null;
     }
-    return currentWeek === weekId;
+    return currentLectureId === lectureId;
   };
 
   return (
@@ -62,34 +61,29 @@ const LeftSidebar: React.FC = () => {
       <div className="p-4">
         <h3 className={`text-lg font-semibold m-0 ${
           isDarkMode ? "text-white" : "text-gray-900"
-        }`}>전체</h3>
+        }`}>강의 목록</h3>
       </div>
 
       <div className="flex-1">
-        {/* 전체 항목 */}
-        <div className="space-y-1 px-4">
-          <button
-            onClick={() => handleWeekSelect(null)}
-            className={`w-full text-left px-4 py-3 rounded-md transition-colors cursor-pointer ${
-              isSelected(null)
-                ? isDarkMode 
-                  ? "bg-gray-700 text-white" 
-                  : "bg-gray-200 text-gray-900"
-                : isDarkMode
-                  ? "text-gray-300 hover:bg-gray-700"
-                  : "text-gray-700 hover:bg-gray-100"
-            }`}
-          >
-            전체
-          </button>
-
-          {/* 주차별 항목 */}
-          {weeks.map((week) => (
+        {isLoading ? (
+          <div className="flex justify-center items-center py-8">
+            <div className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+              강의 목록을 불러오는 중...
+            </div>
+          </div>
+        ) : lectures.length === 0 ? (
+          <div className="flex flex-col justify-center items-center py-8 px-4">
+            <div className={`text-sm text-center ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+              등록된 강의가 없습니다
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-1 px-4">
+            {/* 전체 항목 */}
             <button
-              key={week.id}
-              onClick={() => handleWeekSelect(week.id)}
+              onClick={() => handleLectureSelect(null)}
               className={`w-full text-left px-4 py-3 rounded-md transition-colors cursor-pointer ${
-                isSelected(week.id)
+                isSelected(null)
                   ? isDarkMode 
                     ? "bg-gray-700 text-white" 
                     : "bg-gray-200 text-gray-900"
@@ -98,10 +92,29 @@ const LeftSidebar: React.FC = () => {
                     : "text-gray-700 hover:bg-gray-100"
               }`}
             >
-              {week.title}
+              전체
             </button>
-          ))}
-        </div>
+
+            {/* 강의별 항목 */}
+            {lectures.map((lecture) => (
+              <button
+                key={lecture.lectureId}
+                onClick={() => handleLectureSelect(lecture.lectureId)}
+                className={`w-full text-left px-4 py-3 rounded-md transition-colors cursor-pointer ${
+                  isSelected(lecture.lectureId)
+                    ? isDarkMode 
+                      ? "bg-gray-700 text-white" 
+                      : "bg-gray-200 text-gray-900"
+                    : isDarkMode
+                      ? "text-gray-300 hover:bg-gray-700"
+                      : "text-gray-700 hover:bg-gray-100"
+                }`}
+              >
+                {lecture.title}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </aside>
   );
