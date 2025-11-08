@@ -113,17 +113,3 @@ export interface SubmissionResponse {
   submissionId: number;
   message: string;
 }
-
-// 컴포넌트 Props 타입
-export interface AppLayoutProps {
-  children?: React.ReactNode;
-}
-
-export interface RightSidebarProps {
-  onAIGenerate: (markdownContent: string) => void;
-}
-
-export interface MainContentProps {
-  aiGeneratedContent: string;
-}
-
