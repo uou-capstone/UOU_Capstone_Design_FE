@@ -32,12 +32,12 @@ const ClassroomSelectPage: React.FC = () => {
     }
   }, [isAuthenticated, fetchCourses]);
 
-  // 인증되지 않은 경우 로그인 페이지로 리다이렉트
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      navigate("/login");
-    }
-  }, [isAuthenticated, authLoading, navigate]);
+  // 인증되지 않은 경우 로그인 페이지로 리다이렉트 (개발 중에는 주석 처리)
+  // useEffect(() => {
+  //   if (!authLoading && !isAuthenticated) {
+  //     navigate("/login");
+  //   }
+  // }, [isAuthenticated, authLoading, navigate]);
 
   const handleCreateClassroom = async (): Promise<void> => {
     const title = prompt("강의실 이름을 입력해주세요:");
@@ -71,21 +71,23 @@ const ClassroomSelectPage: React.FC = () => {
           <div className="p-4">
             <h3 className={`text-lg font-semibold m-0 ${
               isDarkMode ? "text-white" : "text-gray-900"
-            }`}>강의실 관리</h3>
+            }`}>주차 목록</h3>
           </div>
           <div className="flex-1">
-            {/* 메뉴 아이템들 */}
+            {/* 주차 목록 */}
             <div className="space-y-1 px-4">
-              <button
-                onClick={handleCreateClassroom}
-                className={`w-full text-left px-4 py-3 rounded-md transition-colors cursor-pointer ${
-                  isDarkMode
-                    ? "text-gray-300 hover:bg-gray-700"
-                    : "text-gray-700 hover:bg-gray-100"
-                }`}
-              >
-                새 강의실 만들기
-              </button>
+              {Array.from({ length: 16 }, (_, i) => i + 1).map((week) => (
+                <button
+                  key={week}
+                  className={`w-full text-left px-4 py-3 rounded-md transition-colors cursor-pointer ${
+                    isDarkMode
+                      ? "text-gray-300 hover:bg-gray-700"
+                      : "text-gray-700 hover:bg-gray-100"
+                  }`}
+                >
+                  {week}주차
+                </button>
+              ))}
             </div>
           </div>
         </aside>
