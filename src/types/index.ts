@@ -49,12 +49,15 @@ export interface FileSource {
 export interface Lecture {
   lectureId: number;
   title: string;
-  week_no: number;
+  weekNumber: number;
+  description?: string;
+  aiGeneratedStatus?: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
   contents?: LectureContent[];
 }
 
 export interface LectureContent {
-  contentType: 'SCRIPT' | 'SUMMARY' | 'QUIZ';
+  contentId: number;
+  contentType: 'SCRIPT' | 'SUMMARY' | 'VISUAL_AID';
   contentData: string;
 }
 
@@ -92,24 +95,15 @@ export interface AssessmentQuestion {
 export interface Assessment {
   assessmentId?: number;
   title: string;
-  assessmentType: 'QUIZ' | 'EXAM' | 'ASSIGNMENT';
+  type: 'QUIZ' | 'ASSIGNMENT';
   dueDate: string;
   questions: AssessmentQuestion[];
 }
 
 export interface AssessmentSubmission {
   submissionId: number;
+  studentId: number;
   studentName: string;
+  submittedAt: string;
   status: 'SUBMITTED' | 'GRADED';
-  score?: number;
-}
-
-export interface SubmissionAnswer {
-  questionId: number;
-  chosenOptionId: number;
-}
-
-export interface SubmissionResponse {
-  submissionId: number;
-  message: string;
 }

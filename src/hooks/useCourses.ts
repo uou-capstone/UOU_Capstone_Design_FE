@@ -12,12 +12,8 @@ export const useCourses = () => {
       setIsLoading(true);
       setError(null);
       
-      // TODO: 실제 API 연결 시 주석 해제
-      // const fetchedCourses = await courseApi.getAllCourses();
-      // setCourses(fetchedCourses);
-      
-      // 임시 데이터 (API 없을 때)
-      setCourses([]);
+      const fetchedCourses = await courseApi.getAllCourses();
+      setCourses(fetchedCourses);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '과목을 불러오는데 실패했습니다.';
       setError(errorMessage);
@@ -30,11 +26,7 @@ export const useCourses = () => {
   // 과목 상세 조회
   const getCourseDetail = useCallback(async (courseId: number): Promise<CourseDetail | null> => {
     try {
-      // TODO: 실제 API 연결 시 주석 해제
-      // return await courseApi.getCourseDetail(courseId);
-      
-      // 임시 데이터 (API 없을 때)
-      return null;
+      return await courseApi.getCourseDetail(courseId);
     } catch (err) {
       console.error('Failed to fetch course detail:', err);
       return null;
@@ -47,12 +39,8 @@ export const useCourses = () => {
     description: string;
   }): Promise<{ success: boolean; error?: string }> => {
     try {
-      // TODO: 실제 API 연결 시 주석 해제
-      // const newCourse = await courseApi.createCourse(courseData);
-      // setCourses(prev => [...prev, newCourse]);
-      
-      // 임시 응답 (API 없을 때)
-      console.log('Course creation (API not connected):', courseData);
+      const newCourse = await courseApi.createCourse(courseData);
+      setCourses(prev => [...prev, newCourse]);
       return { success: true };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '과목 생성에 실패했습니다.';
@@ -67,14 +55,10 @@ export const useCourses = () => {
     description: string;
   }): Promise<{ success: boolean; error?: string }> => {
     try {
-      // TODO: 실제 API 연결 시 주석 해제
-      // const updatedCourse = await courseApi.updateCourse(courseId, courseData);
-      // setCourses(prev => prev.map(course => 
-      //   course.courseId === courseId ? updatedCourse : course
-      // ));
-      
-      // 임시 응답 (API 없을 때)
-      console.log('Course update (API not connected):', courseId, courseData);
+      const updatedCourse = await courseApi.updateCourse(courseId, courseData);
+      setCourses(prev => prev.map(course => 
+        course.courseId === courseId ? updatedCourse : course
+      ));
       return { success: true };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '과목 수정에 실패했습니다.';
@@ -86,12 +70,8 @@ export const useCourses = () => {
   // 과목 삭제 (선생님 전용)
   const deleteCourse = useCallback(async (courseId: number): Promise<{ success: boolean; error?: string }> => {
     try {
-      // TODO: 실제 API 연결 시 주석 해제
-      // await courseApi.deleteCourse(courseId);
-      // setCourses(prev => prev.filter(course => course.courseId !== courseId));
-      
-      // 임시 응답 (API 없을 때)
-      console.log('Course deletion (API not connected):', courseId);
+      await courseApi.deleteCourse(courseId);
+      setCourses(prev => prev.filter(course => course.courseId !== courseId));
       return { success: true };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '과목 삭제에 실패했습니다.';
@@ -103,11 +83,7 @@ export const useCourses = () => {
   // 수강 신청 (학생 전용)
   const enrollCourse = useCallback(async (courseId: number): Promise<{ success: boolean; error?: string }> => {
     try {
-      // TODO: 실제 API 연결 시 주석 해제
-      // await courseApi.enrollCourse(courseId);
-      
-      // 임시 응답 (API 없을 때)
-      console.log('Course enrollment (API not connected):', courseId);
+      await courseApi.enrollCourse(courseId);
       return { success: true };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '수강 신청에 실패했습니다.';

@@ -4,7 +4,12 @@ import TopNav from "./TopNav.tsx";
 import LeftSidebar from "./LeftSidebar.tsx";
 import RightSidebar from "./RightSidebar.tsx";
 import MainContent from "./MainContent.tsx";
-const AppLayout: React.FC = () => {
+
+interface AppLayoutProps {
+  onNavigateToApiTest?: () => void;
+}
+
+const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
   const { isDarkMode } = useTheme();
 
   return (
@@ -15,7 +20,7 @@ const AppLayout: React.FC = () => {
     }`}>
       <TopNav />
       <div className="flex flex-1 overflow-hidden min-h-0">
-        <LeftSidebar />
+        <LeftSidebar onNavigateToApiTest={onNavigateToApiTest} />
         <MainContent />
         <RightSidebar />
       </div>

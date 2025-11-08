@@ -19,22 +19,13 @@ export const useAuth = () => {
     const initAuth = async () => {
       const token = getAuthToken();
       if (token) {
-        try {
-          const user = await authApi.getMe();
-          setAuthState({
-            user,
-            isAuthenticated: true,
-            isLoading: false,
-          });
-        } catch (error) {
-          console.error('Token validation failed:', error);
-          removeAuthToken();
-          setAuthState({
-            user: null,
-            isAuthenticated: false,
-            isLoading: false,
-          });
-        }
+        // 토큰이 있으면 인증된 것으로 간주
+        // TODO: 백엔드에 사용자 정보 조회 API가 추가되면 여기서 호출
+        setAuthState({
+          user: null, // 사용자 정보는 로그인 시 저장하거나 별도 API로 조회 필요
+          isAuthenticated: true,
+          isLoading: false,
+        });
       } else {
         setAuthState({
           user: null,
@@ -53,16 +44,17 @@ export const useAuth = () => {
       setAuthState(prev => ({ ...prev, isLoading: true }));
       
       const response = await authApi.login({ email, password });
-      setAuthToken(response.accessToken);
+      // 토큰은 login 함수 내부에서 자동 저장됨
       
-      const user = await authApi.getMe();
+      // TODO: 사용자 정보는 별도 API로 조회하거나 로그인 응답에 포함되어야 함
+      // 현재는 토큰만으로 인증 상태 관리
       setAuthState({
-        user,
+        user: null, // 사용자 정보는 필요시 별도 조회
         isAuthenticated: true,
         isLoading: false,
       });
       
-      return { success: true, user };
+      return { success: true, user: null };
     } catch (error) {
       setAuthState(prev => ({ ...prev, isLoading: false }));
       return { 
@@ -82,10 +74,10 @@ export const useAuth = () => {
     try {
       setAuthState(prev => ({ ...prev, isLoading: true }));
       
-      const response = await authApi.signup(userData);
+      await authApi.signup(userData);
       setAuthState(prev => ({ ...prev, isLoading: false }));
       
-      return { success: true, data: response.data };
+      return { success: true };
     } catch (error) {
       setAuthState(prev => ({ ...prev, isLoading: false }));
       return { 

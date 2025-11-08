@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
-import { lectureApi, Lecture, LectureMaterial } from '../services/api';
+import { lectureApi, Lecture, LectureMaterial, LectureDetailResponseDto, LectureResponseDto } from '../services/api';
+import { courseApi } from '../services/api';
 
 export const useLectures = () => {
   const [lectures, setLectures] = useState<Lecture[]>([]);
@@ -8,18 +9,19 @@ export const useLectures = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 강의 목록 조회
+  // 강의 목록 조회 (과목 상세에서 lectures 포함)
   const fetchLectures = useCallback(async (courseId: number) => {
     try {
       setIsLoading(true);
       setError(null);
       
-      // TODO: 실제 API 연결 시 주석 해제
-      // const fetchedLectures = await lectureApi.getLectures(courseId);
-      // setLectures(fetchedLectures);
-      
-      // 임시 데이터 (API 없을 때)
-      setLectures([]);
+      // 과목 상세 조회로 강의 목록 가져오기
+      const courseDetail = await courseApi.getCourseDetail(courseId);
+      if (courseDetail.lectures) {
+        setLectures(courseDetail.lectures);
+      } else {
+        setLectures([]);
+      }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '강의 목록을 불러오는데 실패했습니다.';
       setError(errorMessage);
@@ -30,15 +32,11 @@ export const useLectures = () => {
   }, []);
 
   // 강의 상세 조회
-  const getLectureDetail = useCallback(async (lectureId: number): Promise<Lecture | null> => {
+  const getLectureDetail = useCallback(async (lectureId: number): Promise<LectureDetailResponseDto | null> => {
     try {
-      // TODO: 실제 API 연결 시 주석 해제
-      // const lecture = await lectureApi.getLectureDetail(lectureId);
-      // setCurrentLecture(lecture);
-      // return lecture;
-      
-      // 임시 데이터 (API 없을 때)
-      return null;
+      const lecture = await lectureApi.getLectureDetail(lectureId);
+      setCurrentLecture(lecture);
+      return lecture;
     } catch (err) {
       console.error('Failed to fetch lecture detail:', err);
       return null;
@@ -46,13 +44,14 @@ export const useLectures = () => {
   }, []);
 
   // 강의 생성
-  const createLecture = useCallback(async (courseId: number, formData: FormData): Promise<{ success: boolean; error?: string }> => {
+  const createLecture = useCallback(async (courseId: number, lectureData: {
+    title: string;
+    weekNumber: number;
+    description?: string;
+  }): Promise<{ success: boolean; error?: string }> => {
     try {
-      // TODO: 실제 API 연결 시 주석 해제
-      // await lectureApi.createLecture(courseId, formData);
-      
-      // 임시 응답 (API 없을 때)
-      console.log('Lecture creation (API not connected):', courseId, formData);
+      const newLecture = await lectureApi.createLecture(courseId, lectureData);
+      setLectures(prev => [...prev, newLecture]);
       return { success: true };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '강의 생성에 실패했습니다.';
@@ -77,14 +76,10 @@ export const useLectures = () => {
   }, []);
 
   // 보충 자료 업로드 (파일)
-  const uploadMaterial = useCallback(async (lectureId: number, formData: FormData): Promise<{ success: boolean; error?: string }> => {
+  const uploadMaterial = useCallback(async (lectureId: number, file: File): Promise<{ success: boolean; error?: string }> => {
     try {
-      // TODO: 실제 API 연결 시 주석 해제
-      // const material = await lectureApi.uploadMaterial(lectureId, formData);
-      // setMaterials(prev => [...prev, material]);
-      
-      // 임시 응답 (API 없을 때)
-      console.log('Material upload (API not connected):', lectureId, formData);
+      await lectureApi.uploadMaterial(lectureId, file);
+      // 자료 목록 새로고침 필요시 fetchMaterials 호출
       return { success: true };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '자료 업로드에 실패했습니다.';
@@ -93,42 +88,46 @@ export const useLectures = () => {
     }
   }, []);
 
-  // 외부 링크 자료 추가
-  const addLinkMaterial = useCallback(async (lectureId: number, materialData: {
-    displayName: string;
-    url: string;
-  }): Promise<{ success: boolean; error?: string }> => {
+  // AI 강의 콘텐츠 생성
+  const generateAiContent = useCallback(async (lectureId: number): Promise<{ success: boolean; error?: string }> => {
     try {
-      // TODO: 실제 API 연결 시 주석 해제
-      // const material = await lectureApi.addLinkMaterial(lectureId, {
-      //   materialType: 'LINK',
-      //   ...materialData
-      // });
-      // setMaterials(prev => [...prev, material]);
-      
-      // 임시 응답 (API 없을 때)
-      console.log('Link material addition (API not connected):', lectureId, materialData);
+      await lectureApi.generateAiContent(lectureId);
       return { success: true };
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '링크 자료 추가에 실패했습니다.';
-      console.error('Failed to add link material:', err);
+      const errorMessage = err instanceof Error ? err.message : 'AI 콘텐츠 생성에 실패했습니다.';
+      console.error('Failed to generate AI content:', err);
       return { success: false, error: errorMessage };
     }
   }, []);
 
-  // 강의 자료 삭제
-  const deleteMaterial = useCallback(async (materialId: number): Promise<{ success: boolean; error?: string }> => {
+  // 강의 수정
+  const updateLecture = useCallback(async (lectureId: number, lectureData: {
+    title?: string;
+    weekNumber?: number;
+    description?: string;
+  }): Promise<{ success: boolean; error?: string }> => {
     try {
-      // TODO: 실제 API 연결 시 주석 해제
-      // await lectureApi.deleteMaterial(materialId);
-      // setMaterials(prev => prev.filter(material => material.materialId !== materialId));
-      
-      // 임시 응답 (API 없을 때)
-      console.log('Material deletion (API not connected):', materialId);
+      const updatedLecture = await lectureApi.updateLecture(lectureId, lectureData);
+      setLectures(prev => prev.map(lecture => 
+        lecture.lectureId === lectureId ? updatedLecture : lecture
+      ));
       return { success: true };
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '자료 삭제에 실패했습니다.';
-      console.error('Failed to delete material:', err);
+      const errorMessage = err instanceof Error ? err.message : '강의 수정에 실패했습니다.';
+      console.error('Failed to update lecture:', err);
+      return { success: false, error: errorMessage };
+    }
+  }, []);
+
+  // 강의 삭제
+  const deleteLecture = useCallback(async (lectureId: number): Promise<{ success: boolean; error?: string }> => {
+    try {
+      await lectureApi.deleteLecture(lectureId);
+      setLectures(prev => prev.filter(lecture => lecture.lectureId !== lectureId));
+      return { success: true };
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '강의 삭제에 실패했습니다.';
+      console.error('Failed to delete lecture:', err);
       return { success: false, error: errorMessage };
     }
   }, []);
@@ -142,9 +141,11 @@ export const useLectures = () => {
     fetchLectures,
     getLectureDetail,
     createLecture,
+    updateLecture,
+    deleteLecture,
+    generateAiContent,
     fetchMaterials,
     uploadMaterial,
-    addLinkMaterial,
-    deleteMaterial,
+    // deleteMaterial은 Swagger 스펙에 없어서 제외
   };
 };
