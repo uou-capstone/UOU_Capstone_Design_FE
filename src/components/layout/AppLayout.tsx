@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 import TopNav from "./TopNav.tsx";
 import LeftSidebar from "./LeftSidebar.tsx";
@@ -11,6 +11,9 @@ interface AppLayoutProps {
 
 const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
   const { isDarkMode } = useTheme();
+  const [lectureMarkdown, setLectureMarkdown] = useState<string>("");
+  const [lectureFileUrl, setLectureFileUrl] = useState<string>("");
+  const [lectureFileName, setLectureFileName] = useState<string>("");
 
   return (
     <div className={`flex flex-col h-screen transition-colors ${
@@ -21,8 +24,18 @@ const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
       <TopNav />
       <div className="flex flex-1 overflow-hidden min-h-0">
         <LeftSidebar onNavigateToApiTest={onNavigateToApiTest} />
-        <MainContent />
-        <RightSidebar />
+        <MainContent 
+          fileUrl={lectureFileUrl}
+          fileName={lectureFileName}
+        />
+        <RightSidebar 
+          lectureMarkdown={lectureMarkdown}
+          onLectureDataChange={(markdown, fileUrl, fileName) => {
+            setLectureMarkdown(markdown);
+            setLectureFileUrl(fileUrl);
+            setLectureFileName(fileName);
+          }}
+        />
       </div>
     </div>
   );

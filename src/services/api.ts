@@ -561,3 +561,23 @@ export const assessmentApi = {
     return apiRequest<SubmissionResponseDto>(`/api/submissions/${submissionId}`);
   },
 };
+
+// 강의 자료 생성 API (파일 업로드 및 AI 에이전트 처리)
+export interface LectureMaterialResponse {
+  markdown: string;
+  fileUrl: string;
+  fileName: string;
+}
+
+export const lectureMaterialApi = {
+  // 파일 업로드 및 강의 자료 생성
+  uploadAndGenerate: async (file: File): Promise<LectureMaterialResponse> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    return apiRequest<LectureMaterialResponse>('/api/lecture-materials/generate', {
+      method: 'POST',
+      body: formData,
+    }, true); // includeAuth = true
+  },
+};
