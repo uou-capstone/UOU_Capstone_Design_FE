@@ -6,7 +6,7 @@ const MainContent: React.FC = () => {
 
   return (
     <div
-      className={`flex-1 min-h-0 p-8 overflow-y-auto scrollbar-hide transition-colors ${
+      className={`flex-1 min-h-0 p-6 overflow-y-auto scrollbar-hide transition-colors ${
         isDarkMode ? "bg-gray-900" : "bg-gray-50"
       }`}
     >

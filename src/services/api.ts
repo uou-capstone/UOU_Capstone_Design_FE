@@ -272,6 +272,15 @@ const apiRequest = async <T>(
         errorText = '응답 본문을 읽을 수 없습니다';
       }
       
+      // ngrok HTML 에러 페이지 감지
+      if (errorText.includes('ERR_NGROK') || errorText.includes('ngrok') || errorText.includes('<!DOCTYPE html>')) {
+        if (errorText.includes('ERR_NGROK_3200') || errorText.includes('is offline')) {
+          throw new Error(`API Error (${response.status} ${response.statusText}): ngrok 터널이 오프라인 상태입니다. 터널이 종료되었거나 연결이 끊어진 것 같습니다.`);
+        } else {
+          throw new Error(`API Error (${response.status} ${response.statusText}): ngrok 관련 오류가 발생했습니다. 터널 상태를 확인해주세요.`);
+        }
+      }
+      
       // 백엔드에서 보낸 에러 메시지가 있으면 사용
       const backendMessage = errorJson?.message || errorJson?.title || errorText;
       throw new Error(`API Error (${response.status} ${response.statusText}): ${backendMessage}`);

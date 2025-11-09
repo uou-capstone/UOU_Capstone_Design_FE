@@ -229,6 +229,7 @@ const ApiTestPage: React.FC = () => {
   const [response, setResponse] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [httpStatus, setHttpStatus] = useState<number | null>(null);
 
   const handleEndpointSelect = (endpoint: ApiEndpoint) => {
     setSelectedEndpoint(endpoint);
@@ -236,14 +237,7 @@ const ApiTestPage: React.FC = () => {
     setPathParams({});
     setResponse(null);
     setError(null);
-  };
-
-  const replacePathParams = (endpoint: string): string => {
-    let result = endpoint;
-    Object.entries(pathParams).forEach(([key, value]) => {
-      result = result.replace(`{${key}}`, value);
-    });
-    return result;
+    setHttpStatus(null);
   };
 
   const executeApiCall = async () => {
@@ -252,9 +246,9 @@ const ApiTestPage: React.FC = () => {
     setIsLoading(true);
     setError(null);
     setResponse(null);
+    setHttpStatus(null);
 
     try {
-      const endpoint = replacePathParams(selectedEndpoint.endpoint);
       let result: any;
 
       // 경로 파라미터 추출
@@ -379,26 +373,27 @@ const ApiTestPage: React.FC = () => {
       setResponse(result);
     } catch (err) {
       let errorMessage = '알 수 없는 오류가 발생했습니다.';
+      let statusCode: number | null = null;
       
       if (err instanceof Error) {
         errorMessage = err.message;
         
-        // API 에러인 경우 (백엔드에서 보낸 에러)
-        if (err.message.includes('API Error')) {
-          // 이미 백엔드 에러 메시지가 포함되어 있음
-          console.error('백엔드 에러 응답:', err.message);
+        // API 에러인 경우 HTTP 상태 코드 추출
+        const statusMatch = err.message.match(/API Error \((\d+)/);
+        if (statusMatch) {
+          statusCode = parseInt(statusMatch[1], 10);
         }
-        // 네트워크 에러인 경우 추가 정보 제공
-        else if (err.message.includes('Failed to fetch') || err.message.includes('네트워크 연결 실패')) {
-          errorMessage += '\n\n💡 해결 방법:\n';
-          errorMessage += '1. 브라우저 콘솔에서 CORS 에러 확인\n';
-          errorMessage += '2. 백엔드 서버가 실행 중인지 확인\n';
-          errorMessage += '3. ngrok URL이 올바른지 확인\n';
-          errorMessage += '4. 브라우저에서 ngrok 경고 페이지를 거쳐야 할 수 있음';
+        
+        // ngrok 에러 감지 및 처리
+        if (errorMessage.includes('ERR_NGROK_3200') || errorMessage.includes('is offline') || errorMessage.includes('<!DOCTYPE html>')) {
+          errorMessage = 'ngrok 터널이 오프라인 상태입니다.\n\n터널이 종료되었거나 연결이 끊어진 것 같습니다. 백엔드 서버와 ngrok 터널을 확인해주세요.';
+        } else if (errorMessage.includes('ngrok') || errorMessage.includes('ERR_NGROK')) {
+          errorMessage = 'ngrok 관련 오류가 발생했습니다.\n\n터널 상태를 확인해주세요.';
         }
       }
       
       setError(errorMessage);
+      setHttpStatus(statusCode);
       console.error('API 호출 실패:', err);
     } finally {
       setIsLoading(false);
@@ -408,6 +403,27 @@ const ApiTestPage: React.FC = () => {
   const getPathParams = (endpoint: string): string[] => {
     const matches = endpoint.match(/\{(\w+)\}/g);
     return matches ? matches.map(m => m.replace(/[{}]/g, '')) : [];
+  };
+
+  const getHttpStatusDescription = (status: number): string => {
+    const descriptions: Record<number, string> = {
+      400: 'Bad Request - 잘못된 요청입니다. 요청 형식이나 파라미터를 확인해주세요.',
+      401: 'Unauthorized - 인증이 필요합니다. 로그인을 확인해주세요.',
+      403: 'Forbidden - 권한이 없습니다. 접근할 수 없는 리소스입니다.',
+      404: 'Not Found - 요청한 리소스를 찾을 수 없습니다.',
+      405: 'Method Not Allowed - 허용되지 않은 HTTP 메서드입니다.',
+      409: 'Conflict - 요청이 현재 리소스 상태와 충돌합니다.',
+      422: 'Unprocessable Entity - 요청은 이해할 수 있지만 처리할 수 없습니다.',
+      500: 'Internal Server Error - 서버 내부 오류가 발생했습니다.',
+      502: 'Bad Gateway - 게이트웨이 오류가 발생했습니다.',
+      503: 'Service Unavailable - 서비스를 사용할 수 없습니다.',
+      504: 'Gateway Timeout - 게이트웨이 타임아웃이 발생했습니다.',
+    };
+    
+    if (status >= 400 && status < 500) return descriptions[status] || `Client Error - 클라이언트 오류 (${status})`;
+    if (status >= 500) return descriptions[status] || `Server Error - 서버 오류 (${status})`;
+    
+    return `HTTP ${status} - 알 수 없는 상태 코드입니다.`;
   };
 
   const categories = Array.from(new Set(API_ENDPOINTS.map(e => e.category)));
@@ -647,25 +663,6 @@ const ApiTestPage: React.FC = () => {
                   </div>
                 )}
 
-                {/* ngrok 경고 안내 */}
-                <div className={`p-3 rounded-md text-sm ${
-                  isDarkMode ? 'bg-yellow-500/20 text-yellow-400' : 'bg-yellow-100 text-yellow-800'
-                }`}>
-                  <p className="font-medium mb-1">💡 ngrok 사용 시 주의사항</p>
-                  <p className="text-xs">
-                    첫 API 호출 전에 브라우저에서{' '}
-                    <a 
-                      href={API_BASE_URL} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="underline font-mono"
-                    >
-                      {API_BASE_URL}
-                    </a>
-                    {' '}에 직접 접속하여 ngrok 경고 페이지를 거쳐야 할 수 있습니다.
-                  </p>
-                </div>
-
                 {/* 응답 */}
                 {response !== null && (
                   <div>
@@ -683,7 +680,19 @@ const ApiTestPage: React.FC = () => {
                 {/* 에러 */}
                 {error && (
                   <div className={`p-4 rounded-md bg-red-500/10 border border-red-500/20`}>
-                    <p className={`text-sm font-medium text-red-400 mb-2`}>에러</p>
+                    <div className="mb-3">
+                      <p className={`text-sm font-medium text-red-400 mb-1`}>에러</p>
+                      {httpStatus !== null && (
+                        <div className={`mb-2 p-2 rounded ${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                          <p className={`text-sm font-semibold ${isDarkMode ? 'text-red-300' : 'text-red-700'}`}>
+                            HTTP 상태 코드: <span className="font-mono">{httpStatus}</span>
+                          </p>
+                          <p className={`text-xs mt-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                            {getHttpStatusDescription(httpStatus)}
+                          </p>
+                        </div>
+                      )}
+                    </div>
                     <pre className={`text-sm text-red-300 whitespace-pre-wrap font-mono`}>{error}</pre>
                   </div>
                 )}
