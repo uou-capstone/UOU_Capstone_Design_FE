@@ -1,6 +1,14 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
-import { lectureMaterialApi, LectureMaterialResponse } from "../../services/api";
+import { useAuth } from "../../contexts/AuthContext";
+import {
+  lectureApi,
+  courseApi,
+  getAuthToken,
+  type LectureDetailResponseDto,
+  type CourseDetail,
+  type LectureResponseDto,
+} from "../../services/api";
 
 interface ChatMessage {
   id: number;
@@ -10,22 +18,330 @@ interface ChatMessage {
   isLoading?: boolean;
 }
 
+type ViewMode = "course-list" | "course-detail";
+
 interface RightSidebarProps {
   lectureMarkdown: string;
   onLectureDataChange: (markdown: string, fileUrl: string, fileName: string) => void;
   width?: number;
+  lectureId?: number;
+  courseId?: number;
+  viewMode: ViewMode;
+  onCourseCreated: (course: CourseDetail) => void;
+  onLectureCreated: (lecture: LectureResponseDto) => void;
 }
 
-const RightSidebar: React.FC<RightSidebarProps> = ({ lectureMarkdown, onLectureDataChange, width = 320 }) => {
+const RightSidebar: React.FC<RightSidebarProps> = ({
+  lectureMarkdown,
+  onLectureDataChange,
+  width = 360,
+  lectureId,
+  courseId,
+  viewMode,
+  onCourseCreated,
+  onLectureCreated,
+}) => {
   const { isDarkMode } = useTheme();
+  const { isAuthenticated } = useAuth();
   const [inputText, setInputText] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isCreatingCourse, setIsCreatingCourse] = useState(false);
+  const [isCreatingLecture, setIsCreatingLecture] = useState(false);
+  const [isGeneratingContent, setIsGeneratingContent] = useState(false);
+  const [currentLectureId, setCurrentLectureId] = useState<number | null>(lectureId || null);
+  const [currentCourseId, setCurrentCourseId] = useState<number | null>(courseId || null);
+  const [uploadedFileDisplayUrl, setUploadedFileDisplayUrl] = useState<string>("");
+  const [uploadedFileName, setUploadedFileName] = useState<string>("");
+  const [hasUploadedMaterial, setHasUploadedMaterial] = useState<boolean>(false);
+  const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
+  const [isCourseModalOpen, setIsCourseModalOpen] = useState(false);
+  const [courseModalTitle, setCourseModalTitle] = useState("");
+  const [courseModalDescription, setCourseModalDescription] = useState("");
+  const [isLectureModalOpen, setIsLectureModalOpen] = useState(false);
+  const [lectureModalTitle, setLectureModalTitle] = useState("");
+  const [lectureModalWeek, setLectureModalWeek] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef<number>(0);
+  const previewObjectUrlRef = useRef<string | null>(null);
+  const actionMenuContainerRef = useRef<HTMLDivElement>(null);
 
   const allowedFileTypes = ['.pdf', '.ppt', '.pptx', '.doc', '.docx'];
+  
+  // 사용할 courseId 결정 (prop 또는 입력값 또는 생성된 값)
+  const targetCourseId = currentCourseId || courseId || null;
+
+  const formatLectureContent = (lectureDetail: LectureDetailResponseDto): string => {
+    const sections: string[] = [];
+    sections.push(`# ${lectureDetail.title}`);
+    sections.push(`- 강의 ID: ${lectureDetail.lectureId}`);
+    sections.push(`- 주차: ${lectureDetail.weekNumber}주차`);
+
+    if (lectureDetail.description?.trim()) {
+      sections.push(lectureDetail.description.trim());
+    }
+
+    const typeTitles: Record<string, string> = {
+      SCRIPT: "강의 스크립트",
+      SUMMARY: "요약",
+      VISUAL_AID: "시각 자료",
+    };
+
+    lectureDetail.contents?.forEach((content) => {
+      if (!content.contentData?.trim()) {
+        return;
+      }
+      const sectionTitle = typeTitles[content.contentType] ?? content.contentType;
+      sections.push(`## ${sectionTitle}`);
+      sections.push(content.contentData.trim());
+
+       if (content.materialReferences && content.materialReferences.length > 0) {
+        sections.push("### 관련 자료");
+        content.materialReferences.forEach((ref, index) => {
+          sections.push(`${index + 1}. ${ref}`);
+        });
+      }
+    });
+
+    return sections.join("\n\n").trim();
+  };
+
+  const pollLectureDetail = async (
+    targetLectureId: number,
+    maxAttempts: number = 20,
+    intervalMs: number = 5000,
+  ): Promise<LectureDetailResponseDto> => {
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const detail = await lectureApi.getLectureDetail(targetLectureId);
+
+      if (detail.aiGeneratedStatus === "FAILED") {
+        throw new Error("AI 콘텐츠 생성이 실패했습니다. 다시 시도해주세요.");
+      }
+
+      if (
+        detail.aiGeneratedStatus === "COMPLETED" &&
+        detail.contents &&
+        detail.contents.length > 0
+      ) {
+        return detail;
+      }
+
+      if (attempt < maxAttempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      }
+    }
+
+    throw new Error("AI 콘텐츠 생성이 아직 완료되지 않았습니다. 잠시 후 다시 시도해주세요.");
+  };
+
+  // Course 생성 함수
+  const createCourse = async (
+    overrides?: { title?: string; description?: string }
+  ): Promise<number> => {
+    const formTitle = overrides?.title ?? courseModalTitle;
+    const formDescription = overrides?.description ?? courseModalDescription;
+
+    if (!formTitle.trim()) {
+      throw new Error('과목 제목을 입력해주세요.');
+    }
+
+    setIsCreatingCourse(true);
+    
+    const createMessage: ChatMessage = {
+      id: Date.now(),
+      text: '과목을 생성하는 중...',
+      isUser: false,
+      isLoading: true,
+    };
+    setMessages((prev) => [...prev, createMessage]);
+
+    try {
+      const course = await courseApi.createCourse({
+        title: formTitle.trim(),
+        description: formDescription.trim() || '',
+      });
+      
+      setCurrentCourseId(course.courseId);
+      
+      // 성공 메시지 추가
+      const successMessage: ChatMessage = {
+        id: Date.now() + 1,
+        text: `과목 생성 완료!\n제목: ${course.title}`,
+        isUser: false,
+        isLoading: false,
+      };
+      setMessages((prev) => 
+        prev.map((msg) => 
+          msg.id === createMessage.id 
+            ? successMessage 
+            : msg
+        )
+      );
+      
+      // 입력 필드 초기화
+      setCourseModalTitle("");
+      setCourseModalDescription("");
+      setIsCourseModalOpen(false);
+
+      onCourseCreated(course);
+      setCurrentLectureId(null);
+      setHasUploadedMaterial(false);
+      setUploadedFileDisplayUrl("");
+      setUploadedFileName("");
+
+      return course.courseId;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : '알 수 없는 오류';
+      const errorMessage: ChatMessage = {
+        id: Date.now() + 1,
+        text: `과목 생성 실패: ${errorMsg}`,
+        isUser: false,
+        isLoading: false,
+      };
+      setMessages((prev) => 
+        prev.map((msg) => 
+          msg.id === createMessage.id 
+            ? errorMessage 
+            : msg
+        )
+      );
+      
+      // CORS 에러인 경우 추가 안내
+      if (errorMsg.includes('CORS')) {
+        const corsMessage: ChatMessage = {
+          id: Date.now() + 2,
+          text: '💡 이 문제는 백엔드 설정 문제입니다. 백엔드 개발자에게 문의해주세요.',
+          isUser: false,
+          isLoading: false,
+        };
+        setMessages((prev) => [...prev, corsMessage]);
+      }
+      
+      throw error;
+    } finally {
+      setIsCreatingCourse(false);
+    }
+  };
+
+  const createLectureForCourse = async (
+    courseIdForLecture: number,
+    options: { title: string; weekNumber: number }
+  ): Promise<LectureResponseDto> => {
+    if (!options.title.trim()) {
+      throw new Error("강의 제목을 입력해주세요.");
+    }
+
+    if (!options.weekNumber || options.weekNumber < 1) {
+      throw new Error("주차 번호를 입력해주세요.");
+    }
+
+    setIsCreatingLecture(true);
+
+    const createMessage: ChatMessage = {
+      id: Date.now(),
+      text: "강의를 생성하는 중...",
+      isUser: false,
+      isLoading: true,
+    };
+    setMessages((prev) => [...prev, createMessage]);
+
+    try {
+      const lecture = await lectureApi.createLecture(courseIdForLecture, {
+        title: options.title.trim(),
+        weekNumber: options.weekNumber,
+      });
+
+      const successMessage: ChatMessage = {
+        id: Date.now() + 1,
+        text: `강의 생성 완료!\n강의 ID: ${lecture.lectureId}\n제목: ${lecture.title}\n주차: ${lecture.weekNumber}주차`,
+        isUser: false,
+        isLoading: false,
+      };
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === createMessage.id ? successMessage : msg
+        )
+      );
+
+      setCurrentLectureId(lecture.lectureId);
+      onLectureCreated(lecture);
+
+      return lecture;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : "알 수 없는 오류";
+      const errorMessage: ChatMessage = {
+        id: Date.now() + 1,
+        text: `강의 생성 실패: ${errorMsg}`,
+        isUser: false,
+        isLoading: false,
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+
+      if (errorMsg.includes("CORS")) {
+        const corsMessage: ChatMessage = {
+          id: Date.now() + 2,
+          text: "💡 이 문제는 백엔드 설정 문제입니다. 백엔드 개발자에게 문의해주세요.",
+          isUser: false,
+          isLoading: false,
+        };
+        setMessages((prev) => [...prev, corsMessage]);
+      }
+
+      throw error;
+    } finally {
+      setIsCreatingLecture(false);
+    }
+  };
+
+  const revokePreviewUrl = () => {
+    if (previewObjectUrlRef.current) {
+      URL.revokeObjectURL(previewObjectUrlRef.current);
+      previewObjectUrlRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    setCurrentCourseId(courseId ?? null);
+  }, [courseId]);
+
+  useEffect(() => {
+    setCurrentLectureId(lectureId ?? null);
+    setHasUploadedMaterial(false);
+    setUploadedFileDisplayUrl("");
+    setUploadedFileName("");
+    revokePreviewUrl();
+  }, [lectureId]);
+
+  const isValidHttpUrl = (value: string | null | undefined) => {
+    if (!value) return false;
+    return /^https?:\/\//i.test(value);
+  };
+
+  useEffect(
+    () => () => {
+      revokePreviewUrl();
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!isActionMenuOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        actionMenuContainerRef.current &&
+        !actionMenuContainerRef.current.contains(event.target as Node)
+      ) {
+        setIsActionMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isActionMenuOpen]);
 
   const handleFileUpload = async (file: File) => {
     // 파일 타입 검증
@@ -34,6 +350,36 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ lectureMarkdown, onLectureD
       alert(`지원하지 않는 파일 형식입니다.\n지원 형식: ${allowedFileTypes.join(', ')}`);
       return;
     }
+
+    // 인증 확인
+    const token = getAuthToken();
+    if (!token || !isAuthenticated) {
+      alert('파일 업로드를 위해서는 로그인이 필요합니다.');
+      return;
+    }
+
+    const targetCourseId = currentCourseId || courseId || null;
+    if (!targetCourseId) {
+      alert('과목을 먼저 생성해주세요. + 버튼에서 "과목 생성"을 선택할 수 있습니다.');
+      return;
+    }
+
+    const targetLectureId = currentLectureId;
+    if (!targetLectureId) {
+      alert('강의를 먼저 생성해주세요.');
+      return;
+    }
+
+    // 기존 프리뷰 URL 정리
+    revokePreviewUrl();
+
+    // 새 파일에 대한 로컬 프리뷰 URL 생성
+    const previewUrl = URL.createObjectURL(file);
+    previewObjectUrlRef.current = previewUrl;
+    setUploadedFileDisplayUrl(previewUrl);
+    setUploadedFileName(file.name);
+    setHasUploadedMaterial(false);
+    onLectureDataChange("", previewUrl, file.name);
 
     setIsUploading(true);
 
@@ -48,19 +394,30 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ lectureMarkdown, onLectureD
     setMessages((prev) => [...prev, uploadMessage]);
 
     try {
-      const response: LectureMaterialResponse = await lectureMaterialApi.uploadAndGenerate(file);
+      // Swagger 문서의 API 사용: /api/lectures/{lectureId}/materials
+      const fileUrl = await lectureApi.uploadMaterial(targetLectureId!, file);
 
       // 성공 메시지 추가
       const successMessage: ChatMessage = {
         id: Date.now() + 1,
-        text: `강의 자료가 생성되었습니다: ${response.fileName}`,
+        text: `파일 업로드 완료: ${file.name}\n파일 URL: ${fileUrl}`,
         isUser: false,
         isLoading: false,
       };
       setMessages((prev) => [...prev, successMessage]);
 
-      // 강의 설명과 파일 정보 업데이트
-      onLectureDataChange(response.markdown, response.fileUrl, response.fileName);
+      setHasUploadedMaterial(true);
+
+      if (typeof fileUrl === "string" && isValidHttpUrl(fileUrl)) {
+        // 백엔드에서 실제 URL을 반환한 경우 해당 URL로 업데이트
+        revokePreviewUrl();
+        setUploadedFileDisplayUrl(fileUrl);
+        onLectureDataChange("", fileUrl, file.name);
+      } else {
+        // 백엔드가 메시지만 반환한 경우 프리뷰 URL 유지
+        setUploadedFileDisplayUrl(previewUrl);
+        onLectureDataChange("", previewUrl, file.name);
+      }
 
       // 업로드 메시지 업데이트
       setMessages((prev) =>
@@ -72,9 +429,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ lectureMarkdown, onLectureD
       );
     } catch (error) {
       console.error('파일 업로드 실패:', error);
+      const errorMessageText = error instanceof Error ? error.message : '알 수 없는 오류';
+      
+      // 백엔드 인증 오류인 경우 토큰을 유지하고 재시도 가능하도록 안내
+      const isAuthError = errorMessageText.includes('백엔드 인증 오류') || 
+                         errorMessageText.includes('인증 토큰이 유효하지 않거나 만료');
+      
       const errorMessage: ChatMessage = {
         id: Date.now() + 1,
-        text: `파일 업로드 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`,
+        text: `파일 업로드 실패: ${errorMessageText}${isAuthError ? '\n\n잠시 후 다시 시도하거나, 페이지를 새로고침해주세요.' : ''}`,
         isUser: false,
         isLoading: false,
       };
@@ -82,6 +445,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ lectureMarkdown, onLectureD
 
       // 업로드 메시지 제거
       setMessages((prev) => prev.filter((msg) => msg.id !== uploadMessage.id));
+
+      setHasUploadedMaterial(false);
     } finally {
       setIsUploading(false);
 
@@ -103,6 +468,77 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ lectureMarkdown, onLectureD
     // 같은 파일을 다시 선택할 수 있도록 리셋
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+
+  const handleToggleActionMenu = () => {
+    setIsActionMenuOpen((prev) => !prev);
+  };
+
+  const handleSelectFileUpload = () => {
+    setIsActionMenuOpen(false);
+    if (!isUploading) {
+      fileInputRef.current?.click();
+    }
+  };
+
+  const handleSelectCourseCreation = () => {
+    setIsActionMenuOpen(false);
+    setCourseModalTitle("");
+    setCourseModalDescription("");
+    setIsCourseModalOpen(true);
+  };
+
+  const closeCourseModal = () => {
+    if (isCreatingCourse) return;
+    setIsCourseModalOpen(false);
+  };
+
+  const handleSelectLectureCreation = () => {
+    setIsActionMenuOpen(false);
+
+    if (!targetCourseId) {
+      alert('과목을 먼저 생성하거나 선택해주세요.');
+      return;
+    }
+
+    setLectureModalTitle("");
+    setLectureModalWeek("");
+    setIsLectureModalOpen(true);
+  };
+
+  const closeLectureModal = () => {
+    if (isCreatingLecture) return;
+    setIsLectureModalOpen(false);
+  };
+
+  const handleLectureModalSubmit = async () => {
+    if (!targetCourseId) {
+      alert('과목을 먼저 선택해주세요.');
+      setIsLectureModalOpen(false);
+      return;
+    }
+
+    if (!lectureModalTitle.trim()) {
+      alert("강의 제목을 입력해주세요.");
+      return;
+    }
+
+    if (!lectureModalWeek || Number(lectureModalWeek) < 1) {
+      alert("주차 번호를 입력해주세요.");
+      return;
+    }
+
+    try {
+      await createLectureForCourse(targetCourseId, {
+        title: lectureModalTitle,
+        weekNumber: Number(lectureModalWeek),
+      });
+      setLectureModalTitle("");
+      setLectureModalWeek("");
+      setIsLectureModalOpen(false);
+    } catch (error) {
+      // 에러 메시지는 createLectureForCourse에서 처리됨
     }
   };
 
@@ -141,6 +577,104 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ lectureMarkdown, onLectureD
     }
   }, []);
 
+  const handleGenerateAiContent = async () => {
+    if (!currentLectureId) {
+      alert("강의를 먼저 생성해주세요.");
+      return;
+    }
+
+    if (!hasUploadedMaterial) {
+      alert("AI 콘텐츠 생성을 위해 강의 자료 파일을 업로드해주세요.");
+      return;
+    }
+
+    if (isGeneratingContent) {
+      return;
+    }
+
+    const pendingMessage: ChatMessage = {
+      id: Date.now(),
+      text: "AI 강의 자료를 생성하는 중...",
+      isUser: false,
+      isLoading: true,
+    };
+
+    setIsGeneratingContent(true);
+    setMessages((prev) => [...prev, pendingMessage]);
+
+    try {
+      await lectureApi.generateAiContent(currentLectureId);
+      const lectureDetail = await pollLectureDetail(currentLectureId);
+      const markdown = formatLectureContent(lectureDetail);
+
+      const successMessage: ChatMessage = {
+        id: pendingMessage.id,
+        text: "AI 강의 자료 생성 완료! 메인 화면에서 결과를 확인하세요.",
+        isUser: false,
+        isLoading: false,
+      };
+
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === pendingMessage.id ? successMessage : msg
+        )
+      );
+
+      onLectureDataChange(
+        markdown,
+        uploadedFileDisplayUrl,
+        uploadedFileName
+      );
+    } catch (error) {
+      const errorMessageText =
+        error instanceof Error
+          ? error.message
+          : "알 수 없는 오류가 발생했습니다.";
+
+      const errorMessage: ChatMessage = {
+        id: pendingMessage.id,
+        text: `AI 강의 자료 생성 실패: ${errorMessageText}`,
+        isUser: false,
+        isLoading: false,
+      };
+
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === pendingMessage.id ? errorMessage : msg
+        )
+      );
+    } finally {
+      setIsGeneratingContent(false);
+
+      setTimeout(() => {
+        const chatContainer = document.getElementById("chat-messages");
+        if (chatContainer) {
+          chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+      }, 0);
+    }
+  };
+
+  const handleCourseModalSubmit = async () => {
+    if (!courseModalTitle.trim()) {
+      alert("과목 제목을 입력해주세요.");
+      return;
+    }
+
+    if (isCreatingCourse) {
+      return;
+    }
+
+    try {
+      await createCourse({
+        title: courseModalTitle,
+        description: courseModalDescription,
+      });
+    } catch (error) {
+      // createCourse에서 이미 처리함
+    }
+  };
+
   const handleSendMessage = () => {
     if (!inputText.trim()) return;
 
@@ -170,7 +704,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ lectureMarkdown, onLectureD
   };
 
   return (
-    <aside
+    <>
+      <aside
       className={`flex flex-col border-l transition-colors relative flex-shrink-0 ${
         isDarkMode ? "bg-gray-900 border-gray-800" : "bg-white border-gray-100"
       }`}
@@ -249,6 +784,58 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ lectureMarkdown, onLectureD
         )}
       </div>
 
+      {viewMode === "course-list" && (
+        <div
+          className={`p-4 border-t ${
+            isDarkMode ? "border-gray-800 bg-gray-900 text-gray-400" : "border-gray-200 bg-gray-50 text-gray-500"
+          }`}
+        >
+          과목을 생성, 선택하면 강의 생성과 파일 업로드 기능을 사용할 수 있습니다.
+        </div>
+      )}
+
+      {/* AI 콘텐츠 생성 섹션 (강의와 파일이 준비된 경우) */}
+      {currentLectureId && (
+        <div className={`p-3 border-t space-y-2 ${
+          isDarkMode ? "border-gray-800 bg-gray-900" : "border-gray-200 bg-gray-50"
+        }`}>
+          <div className={`text-xs font-medium ${
+            isDarkMode ? "text-gray-400" : "text-gray-600"
+          }`}>
+            3단계: AI 강의 자료 생성
+          </div>
+          <button
+            onClick={handleGenerateAiContent}
+            disabled={isGeneratingContent || isUploading || !hasUploadedMaterial}
+            className={`w-full px-3 py-2 text-xs font-medium rounded transition-colors ${
+              isGeneratingContent || isUploading || !hasUploadedMaterial
+                ? isDarkMode
+                  ? "bg-gray-700 text-gray-500 cursor-not-allowed"
+                  : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                : isDarkMode
+                ? "bg-purple-600 hover:bg-purple-700 text-white"
+                : "bg-purple-600 hover:bg-purple-700 text-white"
+            }`}
+          >
+            {isGeneratingContent ? "생성 중..." : "AI 콘텐츠 생성하기"}
+          </button>
+          {!hasUploadedMaterial && (
+            <div className={`text-xs ${
+              isDarkMode ? "text-gray-500" : "text-gray-500"
+            }`}>
+              강의 자료 파일을 업로드하면 생성할 수 있습니다.
+            </div>
+          )}
+          {uploadedFileName && (
+            <div className={`text-xs ${
+              isDarkMode ? "text-gray-400" : "text-gray-600"
+            }`}>
+              최근 업로드: {uploadedFileName}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* 채팅 입력창 */}
       <div className={`p-4 border-t ${
         isDarkMode ? "border-gray-800 bg-gray-900" : "border-gray-200 bg-gray-50"
@@ -269,34 +856,87 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ lectureMarkdown, onLectureD
             id="file-upload"
             disabled={isUploading}
           />
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isUploading}
-            className={`flex-shrink-0 p-2.5 flex items-center justify-center rounded transition-all ${
-              isUploading
-                ? isDarkMode
-                  ? "text-gray-600 cursor-not-allowed"
-                  : "text-gray-400 cursor-not-allowed"
-                : isDarkMode
-                ? "text-gray-400 hover:text-white hover:bg-gray-700 cursor-pointer"
-                : "text-gray-500 hover:text-gray-700 hover:bg-gray-100 cursor-pointer"
-            }`}
-            title="파일 업로드"
+          <div
+            ref={actionMenuContainerRef}
+            className="relative flex-shrink-0"
           >
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+            <button
+              onClick={handleToggleActionMenu}
+              type="button"
+              className={`p-2.5 flex items-center justify-center rounded transition-all ${
+                isDarkMode
+                  ? "text-gray-400 hover:text-white hover:bg-gray-700"
+                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+              } ${isActionMenuOpen ? (isDarkMode ? "bg-gray-700 text-white" : "bg-gray-200 text-gray-800") : ""}`}
+              title="작업 선택"
             >
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-          </button>
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            </button>
+
+            {isActionMenuOpen && (
+              <div
+                className={`absolute bottom-full left-0 mb-2 w-48 rounded-xl shadow-lg overflow-hidden border ${
+                  isDarkMode
+                    ? "bg-gray-800 border-gray-700 text-gray-200"
+                    : "bg-white border-gray-200 text-gray-800"
+                }`}
+              >
+                {viewMode === "course-detail" ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleSelectFileUpload}
+                      disabled={isUploading}
+                      className={`w-full px-4 py-2 text-sm flex items-center gap-2 transition-colors ${
+                        isUploading
+                          ? "cursor-not-allowed opacity-60"
+                          : isDarkMode
+                          ? "hover:bg-gray-700"
+                          : "hover:bg-gray-100"
+                      }`}
+                    >
+                      <span>📎</span>
+                      <span>파일 업로드</span>
+                    </button>
+                    <div className={isDarkMode ? "h-px bg-gray-700" : "h-px bg-gray-200"} />
+                    <button
+                      type="button"
+                      onClick={handleSelectLectureCreation}
+                      className={`w-full px-4 py-2 text-sm flex items-center gap-2 transition-colors ${
+                        isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"
+                      }`}
+                    >
+                      <span>🎓</span>
+                      <span>강의 생성</span>
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSelectCourseCreation}
+                    className={`w-full px-4 py-2 text-sm flex items-center gap-2 transition-colors ${
+                      isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"
+                    }`}
+                  >
+                    <span>📘</span>
+                    <span>과목 생성</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
 
           {/* 텍스트 입력창 */}
           <textarea
@@ -315,6 +955,194 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ lectureMarkdown, onLectureD
         </div>
       </div>
     </aside>
+      {isCourseModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className={`w-full max-w-md rounded-xl shadow-xl border ${
+              isDarkMode
+                ? "bg-gray-900 border-gray-700 text-gray-100"
+                : "bg-white border-gray-200 text-gray-900"
+            }`}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700/50">
+              <h2 className="text-sm font-semibold">과목 생성</h2>
+              <button
+                type="button"
+                onClick={closeCourseModal}
+                className={`p-1.5 rounded ${
+                  isDarkMode
+                    ? "hover:bg-gray-800 text-gray-400"
+                    : "hover:bg-gray-100 text-gray-500"
+                }`}
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
+              <div>
+                <label
+                  className="block text-xs font-medium mb-1"
+                >
+                  과목 제목
+                </label>
+                <input
+                  type="text"
+                  value={courseModalTitle}
+                  onChange={(e) => setCourseModalTitle(e.target.value)}
+                  placeholder="과목 제목을 입력하세요"
+                  className={`w-full px-3 py-2 text-sm rounded border ${
+                    isDarkMode
+                      ? "bg-gray-800 border-gray-700 text-white placeholder-gray-500"
+                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
+                  } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">
+                  과목 설명 (선택)
+                </label>
+                <textarea
+                  value={courseModalDescription}
+                  onChange={(e) => setCourseModalDescription(e.target.value)}
+                  placeholder="과목 설명을 입력하세요"
+                  rows={3}
+                  className={`w-full px-3 py-2 text-sm rounded border resize-none ${
+                    isDarkMode
+                      ? "bg-gray-800 border-gray-700 text-white placeholder-gray-500"
+                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
+                  } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                />
+              </div>
+            </div>
+
+            <div className="px-5 py-4 border-t border-gray-700/50 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeCourseModal}
+                className={`px-4 py-2 text-sm rounded ${
+                  isDarkMode
+                    ? "bg-gray-800 hover:bg-gray-700 text-gray-300"
+                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                }`}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleCourseModalSubmit}
+                disabled={isCreatingCourse || !courseModalTitle.trim()}
+                className={`px-4 py-2 text-sm rounded font-medium transition-colors ${
+                  isCreatingCourse || !courseModalTitle.trim()
+                    ? isDarkMode
+                      ? "bg-blue-900/40 text-blue-300/60 cursor-not-allowed"
+                      : "bg-blue-200 text-blue-500 cursor-not-allowed"
+                    : "bg-blue-600 hover:bg-blue-700 text-white"
+                }`}
+              >
+                {isCreatingCourse ? "생성 중..." : "생성하기"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {isLectureModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div
+            className={`w-full max-w-md rounded-xl shadow-xl border ${
+              isDarkMode
+                ? "bg-gray-900 border-gray-700 text-gray-100"
+                : "bg-white border-gray-200 text-gray-900"
+            }`}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700/50">
+              <h2 className="text-sm font-semibold">강의 생성</h2>
+              <button
+                type="button"
+                onClick={closeLectureModal}
+                className={`p-1.5 rounded ${
+                  isDarkMode
+                    ? "hover:bg-gray-800 text-gray-400"
+                    : "hover:bg-gray-100 text-gray-500"
+                }`}
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
+              <div>
+                <label className="block text-xs font-medium mb-1">강의 제목</label>
+                <input
+                  type="text"
+                  value={lectureModalTitle}
+                  onChange={(e) => setLectureModalTitle(e.target.value)}
+                  placeholder="강의 제목을 입력하세요"
+                  className={`w-full px-3 py-2 text-sm rounded border ${
+                    isDarkMode
+                      ? "bg-gray-800 border-gray-700 text-white placeholder-gray-500"
+                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
+                  } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">주차 번호</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={lectureModalWeek}
+                  onChange={(e) => setLectureModalWeek(e.target.value)}
+                  placeholder="주차 번호를 입력하세요"
+                  className={`w-full px-3 py-2 text-sm rounded border ${
+                    isDarkMode
+                      ? "bg-gray-800 border-gray-700 text-white placeholder-gray-500"
+                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
+                  } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                />
+              </div>
+            </div>
+
+            <div className="px-5 py-4 border-t border-gray-700/50 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeLectureModal}
+                className={`px-4 py-2 text-sm rounded ${
+                  isDarkMode
+                    ? "bg-gray-800 hover:bg-gray-700 text-gray-300"
+                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                }`}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleLectureModalSubmit}
+                disabled={isCreatingLecture || !lectureModalTitle.trim() || !lectureModalWeek}
+                className={`px-4 py-2 text-sm rounded font-medium transition-colors ${
+                  isCreatingLecture || !lectureModalTitle.trim() || !lectureModalWeek
+                    ? isDarkMode
+                      ? "bg-blue-900/40 text-blue-300/60 cursor-not-allowed"
+                      : "bg-blue-200 text-blue-500 cursor-not-allowed"
+                    : "bg-blue-600 hover:bg-blue-700 text-white"
+                }`}
+              >
+                {isCreatingLecture ? "생성 중..." : "생성하기"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 

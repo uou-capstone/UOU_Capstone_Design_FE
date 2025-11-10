@@ -1,28 +1,83 @@
-import React, { useState } from 'react';
+import React from 'react';
+import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AppLayout from './components/layout/AppLayout.tsx';
 import ApiTestPage from './pages/ApiTestPage';
+import LoginPage from './pages/LoginPage';
+import SignupPage from './pages/SignupPage';
+
+// 보호된 라우트 컴포넌트
+const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg">로딩 중...</div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+const AppRoutes: React.FC = () => {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<SignupPage />} />
+      <Route
+        path="/api-test"
+        element={
+          <ProtectedRoute>
+            <div>
+              <div className="fixed top-4 right-4 z-50">
+                <Link
+                  to="/"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                >
+                  메인으로 돌아가기
+                </Link>
+              </div>
+              <ApiTestPage />
+            </div>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/"
+        element={
+          <ProtectedRoute>
+            <AppLayout onNavigateToApiTest={() => {}} />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/courses/:courseId"
+        element={
+          <ProtectedRoute>
+            <AppLayout onNavigateToApiTest={() => {}} />
+          </ProtectedRoute>
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+};
 
 const App: React.FC = () => {
-  const [currentPage, setCurrentPage] = useState<'main' | 'api-test'>('main');
-
   return (
     <ThemeProvider>
-      {currentPage === 'api-test' ? (
-        <div>
-          <div className="fixed top-4 right-4 z-50">
-            <button
-              onClick={() => setCurrentPage('main')}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-            >
-              메인으로 돌아가기
-            </button>
-          </div>
-          <ApiTestPage />
-        </div>
-      ) : (
-        <AppLayout onNavigateToApiTest={() => setCurrentPage('api-test')} />
-      )}
+      <AuthProvider>
+        <BrowserRouter>
+          <AppRoutes />
+        </BrowserRouter>
+      </AuthProvider>
     </ThemeProvider>
   );
 };

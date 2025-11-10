@@ -1,13 +1,8 @@
-// API 기본 설정 및 유틸리티 함수들
-// 개발 환경에서는 Vite 프록시를 사용하므로 상대 경로 사용
-// 프로덕션에서는 환경 변수 또는 기본값 사용
-const API_BASE_URL = import.meta.env.PROD 
-  ? (import.meta.env.VITE_API_URL || 'https://michal-unvulnerable-benita.ngrok-free.dev')
-  : ''; // 개발 환경에서는 프록시 사용 (빈 문자열 = 같은 도메인)
+const BACKEND_URL = 'https://michal-unvulnerable-benita.ngrok-free.dev';
 
-console.log('[API Config] PROD:', import.meta.env.PROD);
-console.log('[API Config] API_BASE_URL:', API_BASE_URL);
-console.log('[API Config] VITE_API_URL:', import.meta.env.VITE_API_URL);
+const API_BASE_URL = import.meta.env.PROD 
+  ? (import.meta.env.VITE_API_URL || BACKEND_URL)
+  : BACKEND_URL;
 
 // API 응답 타입
 export interface ApiResponse<T = any> {
@@ -52,6 +47,7 @@ export interface LectureContent {
   contentId: number;
   contentType: 'SCRIPT' | 'SUMMARY' | 'VISUAL_AID';
   contentData: string;
+  materialReferences?: string[];
 }
 
 export interface LectureDetailResponseDto {
@@ -220,8 +216,7 @@ const apiRequest = async <T>(
   options: RequestInit = {},
   includeAuth: boolean = true
 ): Promise<T> => {
-  // 개발 환경에서는 프록시 사용 (빈 문자열이면 상대 경로)
-  // 프로덕션에서는 전체 URL 사용
+  const requestEndpoint = endpoint;
   const url = API_BASE_URL ? `${API_BASE_URL}${endpoint}` : endpoint;
   const isFormData = options.body instanceof FormData;
   const config: RequestInit = {
@@ -233,29 +228,128 @@ const apiRequest = async <T>(
   };
 
   try {
-    // ngrok 브라우저 경고 우회를 위한 추가 헤더
-    const finalHeaders: HeadersInit = {
-      ...config.headers,
-      'ngrok-skip-browser-warning': 'true',
-    };
+    const finalHeaders: HeadersInit = { ...config.headers };
+    
+    if (isFormData) {
+      delete (finalHeaders as any)['Content-Type'];
+      delete (finalHeaders as any)['content-type'];
+    }
+    
+    finalHeaders['ngrok-skip-browser-warning'] = 'true';
+    
+    // Authorization 헤더 확인 (디버깅용)
+    const hasAuthHeader = !!finalHeaders['Authorization'];
+    const token = getAuthToken();
     
     const finalConfig: RequestInit = {
       ...config,
       headers: finalHeaders,
-      mode: 'cors', // CORS 모드 명시
-      credentials: 'omit', // 쿠키 전송 안 함
+      mode: 'cors',
+      credentials: 'omit',
     };
 
-    console.log('API Request:', {
-      url,
-      method: finalConfig.method || 'GET',
-      headers: finalHeaders,
-      body: config.body ? (typeof config.body === 'string' ? config.body : '[FormData or other]') : undefined,
-      isDev: !import.meta.env.PROD,
-      usingProxy: !API_BASE_URL,
-    });
-
-    const response = await fetch(url, finalConfig);
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        ...finalConfig,
+        redirect: 'manual',
+      });
+    } catch (fetchError) {
+      throw fetchError;
+    }
+    
+    // 리다이렉트 응답 처리
+    if (response.type === 'opaqueredirect' || response.status === 302 || response.status === 301 || response.status === 307 || response.status === 308) {
+      const location = response.headers.get('location');
+      
+      if (requestEndpoint.includes('/api/auth/login') || requestEndpoint.includes('/api/auth/signup')) {
+        // 로그인/회원가입 API는 리다이렉트를 반환하면 안 됨
+        // 백엔드 설정 문제: Security 필터가 인증이 필요 없는 엔드포인트까지 보호하고 있음
+        const errorMsg = `백엔드 설정 문제: 로그인/회원가입 API가 리다이렉트를 반환하고 있습니다.\n\n` +
+          `해결 방법 (백엔드):\n` +
+          `1. /api/auth/login, /api/auth/signup 엔드포인트를 Security 필터에서 제외\n` +
+          `2. permitAll() 설정 추가\n` +
+          `3. OPTIONS 요청(CORS preflight)에 대해 리다이렉트 대신 200 OK 반환\n\n` +
+          `현재 요청: ${requestEndpoint}`;
+        throw new Error(errorMsg);
+      }
+      
+      // opaqueredirect는 CORS preflight 요청에서 리다이렉트가 발생한 경우일 수 있음
+      if (response.type === 'opaqueredirect' && !location) {
+        console.warn('CORS preflight 요청에서 리다이렉트가 발생했습니다. 백엔드 CORS 설정을 확인해주세요.', {
+          endpoint: requestEndpoint,
+          hasToken: !!token,
+          hasAuthHeader,
+          responseType: response.type,
+          responseStatus: response.status,
+          url: response.url,
+        });
+        
+        if (token && hasAuthHeader) {
+          // 더 자세한 안내 메시지
+          const errorMsg = `백엔드 CORS 설정 문제로 인해 요청이 실패했습니다.\n\n` +
+            `해결 방법:\n` +
+            `1. 백엔드에서 OPTIONS 요청에 대해 리다이렉트 대신 200 OK를 반환하도록 설정\n` +
+            `2. CORS 설정에서 Authorization 헤더를 허용하도록 설정\n` +
+            `3. Access-Control-Allow-Headers에 "Authorization" 포함\n` +
+            `4. CORS 필터가 Security 필터보다 먼저 실행되도록 설정\n\n` +
+            `현재 요청: ${requestEndpoint}`;
+          throw new Error(errorMsg);
+        } else {
+          throw new Error('로그인이 필요합니다. 로그인 페이지로 이동해주세요.');
+        }
+      }
+      
+      // 인증이 필요한 API인 경우
+      if (location && location.includes('/oauth2/authorization/')) {
+        if (!token || !hasAuthHeader) {
+          throw new Error('로그인이 필요합니다. 로그인 페이지로 이동해주세요.');
+        } else {
+          // 토큰이 있고 헤더에도 포함되었지만 백엔드가 인식하지 못하는 경우
+          // 이는 백엔드 설정 문제일 수 있음
+          console.warn('인증 토큰이 헤더에 포함되었지만 백엔드가 인증을 요구합니다.', {
+            endpoint: requestEndpoint,
+            hasToken: !!token,
+            hasAuthHeader,
+            location,
+            responseType: response.type,
+            responseStatus: response.status,
+          });
+          throw new Error('백엔드 인증 오류가 발생했습니다. 토큰은 유지되며, 잠시 후 다시 시도하거나 브라우저를 새로고침해주세요.');
+        }
+      }
+      
+      if (!token || !hasAuthHeader) {
+        throw new Error('로그인이 필요합니다. 로그인 페이지로 이동해주세요.');
+      } else {
+        // 토큰이 있고 헤더에도 포함되었지만 백엔드가 인식하지 못하는 경우
+        console.warn('인증 토큰이 헤더에 포함되었지만 백엔드가 인증을 요구합니다.', {
+          endpoint: requestEndpoint,
+          hasToken: !!token,
+          hasAuthHeader,
+          location,
+          responseType: response.type,
+          responseStatus: response.status,
+        });
+        throw new Error('백엔드 인증 오류가 발생했습니다. 토큰은 유지되며, 잠시 후 다시 시도하거나 브라우저를 새로고침해주세요.');
+      }
+    }
+    
+    if (response.status === 0) {
+      throw new Error('네트워크 연결 실패');
+    }
+    
+    // 201 Created 응답 처리 (회원가입 성공)
+    if (response.status === 201) {
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await response.json();
+        return data;
+      } else {
+        const text = await response.text();
+        return text as T;
+      }
+    }
     
     if (!response.ok) {
       let errorText = '';
@@ -270,6 +364,18 @@ const apiRequest = async <T>(
         }
       } catch (e) {
         errorText = '응답 본문을 읽을 수 없습니다';
+      }
+      
+      // 401 Unauthorized 처리 (로그인 실패)
+      if (response.status === 401) {
+        const backendMessage = errorJson?.message || errorJson?.title || errorText || '이메일 또는 비밀번호가 올바르지 않습니다.';
+        throw new Error(backendMessage);
+      }
+      
+      // 409 Conflict 처리 (이미 존재하는 이메일)
+      if (response.status === 409) {
+        const backendMessage = errorJson?.message || errorJson?.title || errorText || '이미 존재하는 이메일입니다.';
+        throw new Error(backendMessage);
       }
       
       // ngrok HTML 에러 페이지 감지
@@ -300,44 +406,9 @@ const apiRequest = async <T>(
       return text as T;
     }
   } catch (error) {
-    console.error('API Request failed:', error);
-    console.error('Request URL:', url);
-    console.error('Request Config:', config);
-    console.error('API_BASE_URL:', API_BASE_URL);
-    console.error('Is Production:', import.meta.env.PROD);
-    
-    // 네트워크 에러인 경우 더 자세한 정보 제공
     if (error instanceof TypeError && (error.message === 'Failed to fetch' || error.message.includes('fetch'))) {
-      const isUsingProxy = !API_BASE_URL;
-      let errorMessage = `네트워크 연결 실패: ${url}\n\n`;
-      
-      if (isUsingProxy) {
-        errorMessage += `프록시 모드 사용 중 (개발 환경)\n`;
-        errorMessage += `프록시가 /api 요청을 백엔드로 전달해야 합니다.\n\n`;
-        errorMessage += `가능한 원인:\n`;
-        errorMessage += `1. 개발 서버를 재시작하지 않았을 수 있음 (vite.config.ts 변경 후 재시작 필요)\n`;
-        errorMessage += `2. 백엔드 서버가 응답하지 않음\n`;
-        errorMessage += `3. 프록시 설정 오류\n\n`;
-        errorMessage += `해결 방법:\n`;
-        errorMessage += `1. 개발 서버 재시작: yarn dev 중지 후 다시 시작\n`;
-        errorMessage += `2. 터미널에서 프록시 로그 확인 (Proxy Request: POST /api/courses)\n`;
-        errorMessage += `3. 브라우저 Network 탭에서 실제 요청 확인\n`;
-      } else {
-        errorMessage += `직접 연결 모드 사용 중 (프로덕션 환경)\n\n`;
-        errorMessage += `가능한 원인:\n`;
-        errorMessage += `1. CORS 정책 문제 - 백엔드에서 CORS 설정 필요\n`;
-        errorMessage += `2. 서버가 응답하지 않음 - 백엔드 서버 상태 확인\n`;
-        errorMessage += `3. ngrok 브라우저 경고 - 브라우저에서 직접 ngrok URL 접속 후 "Visit Site" 클릭 필요\n`;
-        errorMessage += `4. 네트워크 연결 문제\n\n`;
-        errorMessage += `해결 방법:\n`;
-        errorMessage += `1. 브라우저에서 https://michal-unvulnerable-benita.ngrok-free.dev 접속\n`;
-        errorMessage += `2. ngrok 경고 페이지에서 "Visit Site" 버튼 클릭\n`;
-        errorMessage += `3. 그 후 API 테스트 다시 시도`;
-      }
-      
-      throw new Error(errorMessage);
+      throw new Error(`네트워크 연결 실패: ${url}`);
     }
-    
     throw error;
   }
 };
@@ -482,12 +553,8 @@ export const lectureApi = {
     
     return apiRequest<string>(`/api/lectures/${lectureId}/materials`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${getAuthToken()}`,
-        // Content-Type은 FormData일 때 자동으로 설정됨
-      },
       body: formData,
-    });
+    }, true); // includeAuth = true로 명시
   },
 };
 

@@ -1,27 +1,134 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import TopNav from "./TopNav.tsx";
 import LeftSidebar from "./LeftSidebar.tsx";
 import RightSidebar from "./RightSidebar.tsx";
 import MainContent from "./MainContent.tsx";
+import { useCourses } from "../../hooks/useCourses";
+import type { CourseDetail, LectureResponseDto } from "../../services/api";
 
 interface AppLayoutProps {
   onNavigateToApiTest?: () => void;
 }
 
+type ViewMode = "course-list" | "course-detail";
+
+const DEFAULT_LEFT_SIDEBAR_WIDTH = 224;
+const DEFAULT_RIGHT_SIDEBAR_WIDTH = 360;
+
 const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
   const { isDarkMode } = useTheme();
+  const navigate = useNavigate();
+  const { courseId: courseIdParam } = useParams<{ courseId?: string }>();
+  const parsedCourseId = courseIdParam ? Number(courseIdParam) : null;
+  const selectedCourseId =
+    parsedCourseId !== null && !Number.isNaN(parsedCourseId) ? parsedCourseId : null;
+
+  const {
+    courses,
+    isLoading: isCoursesLoading,
+    error: coursesError,
+    fetchCourses,
+    getCourseDetail,
+  } = useCourses();
+
+  const [courseDetail, setCourseDetail] = useState<CourseDetail | null>(null);
+  const [isCourseDetailLoading, setIsCourseDetailLoading] = useState(false);
+  const [courseDetailError, setCourseDetailError] = useState<string | null>(null);
+
+  const [currentCourseId, setCurrentCourseId] = useState<number | null>(null);
+  const [currentLectureId, setCurrentLectureId] = useState<number | null>(null);
+
   const [lectureMarkdown, setLectureMarkdown] = useState<string>("");
   const [lectureFileUrl, setLectureFileUrl] = useState<string>("");
   const [lectureFileName, setLectureFileName] = useState<string>("");
-  const DEFAULT_LEFT_SIDEBAR_WIDTH = 224; // 기본 너비 224px (w-56)
-  const DEFAULT_RIGHT_SIDEBAR_WIDTH = 320; // 기본 너비 320px (w-80)
+
   const [leftSidebarWidth, setLeftSidebarWidth] = useState<number>(DEFAULT_LEFT_SIDEBAR_WIDTH);
   const [rightSidebarWidth, setRightSidebarWidth] = useState<number>(DEFAULT_RIGHT_SIDEBAR_WIDTH);
   const [isResizingLeft, setIsResizingLeft] = useState<boolean>(false);
   const [isResizingRight, setIsResizingRight] = useState<boolean>(false);
   const leftResizeRef = useRef<HTMLDivElement>(null);
   const rightResizeRef = useRef<HTMLDivElement>(null);
+
+  const viewMode: ViewMode = selectedCourseId ? "course-detail" : "course-list";
+
+  const resetLectureOutputs = useCallback(() => {
+    setLectureMarkdown("");
+    setLectureFileUrl("");
+    setLectureFileName("");
+  }, []);
+
+  const loadCourseDetail = useCallback(
+    async (courseId: number) => {
+      setIsCourseDetailLoading(true);
+      setCourseDetailError(null);
+      try {
+        const detail = await getCourseDetail(courseId);
+        if (detail) {
+          setCourseDetail(detail);
+        } else {
+          setCourseDetail(null);
+          setCourseDetailError("과목 정보를 불러오지 못했습니다.");
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "과목 정보를 불러오지 못했습니다.";
+        setCourseDetailError(message);
+        setCourseDetail(null);
+      } finally {
+        setIsCourseDetailLoading(false);
+      }
+    },
+    [getCourseDetail]
+  );
+
+  useEffect(() => {
+    fetchCourses();
+  }, [fetchCourses]);
+
+  useEffect(() => {
+    if (!selectedCourseId) {
+      setCourseDetail(null);
+      setCourseDetailError(null);
+      setCurrentCourseId(null);
+      setCurrentLectureId(null);
+      resetLectureOutputs();
+      return;
+    }
+
+    setCurrentCourseId(selectedCourseId);
+    setCurrentLectureId(null);
+    resetLectureOutputs();
+    loadCourseDetail(selectedCourseId);
+  }, [selectedCourseId, loadCourseDetail, resetLectureOutputs]);
+
+  const handleSelectCourse = (courseId: number) => {
+    navigate(`/courses/${courseId}`);
+  };
+
+  const handleBackToCourses = () => {
+    navigate("/");
+  };
+
+  const handleCourseCreated = (course: CourseDetail) => {
+    fetchCourses();
+  resetLectureOutputs();
+  setCurrentLectureId(null);
+    navigate(`/courses/${course.courseId}`);
+  };
+
+  const handleLectureCreated = async (lecture: LectureResponseDto) => {
+    if (!selectedCourseId) return;
+    await loadCourseDetail(selectedCourseId);
+    setCurrentLectureId(lecture.lectureId);
+    resetLectureOutputs();
+  };
+
+  const handleLectureSelect = (lectureId: number) => {
+    setCurrentLectureId(lectureId);
+    resetLectureOutputs();
+  };
 
   const handleLeftMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -53,7 +160,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
       if (!isResizingRight) return;
 
       const newWidth = window.innerWidth - e.clientX;
-      const minWidth = 200;
+      const minWidth = 260;
       const maxWidth = window.innerWidth * 0.6;
 
       if (newWidth >= minWidth && newWidth <= maxWidth) {
@@ -112,18 +219,14 @@ const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
   }, [isResizingRight, handleRightMouseMove, handleRightMouseUp]);
 
   return (
-    <div className={`flex flex-col h-screen transition-colors ${
-      isDarkMode 
-        ? "bg-gray-900 text-white" 
-        : "bg-gray-50 text-gray-900"
-    }`}>
+    <div
+      className={`flex flex-col h-screen transition-colors ${
+        isDarkMode ? "bg-gray-900 text-white" : "bg-gray-50 text-gray-900"
+      }`}
+    >
       <TopNav />
       <div className="flex flex-1 overflow-hidden min-h-0">
-        <LeftSidebar 
-          onNavigateToApiTest={onNavigateToApiTest}
-          width={leftSidebarWidth}
-        />
-        {/* 왼쪽 리사이저 핸들 */}
+        <LeftSidebar onNavigateToApiTest={onNavigateToApiTest} width={leftSidebarWidth} />
         <div
           ref={leftResizeRef}
           onMouseDown={handleLeftMouseDown}
@@ -131,26 +234,38 @@ const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
           className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
             isDarkMode ? "bg-gray-800" : "bg-gray-200"
           } ${isResizingLeft ? (isDarkMode ? "bg-gray-600" : "bg-gray-400") : ""}`}
-          style={{ 
-            width: '2px',
+          style={{
+            width: "2px",
             zIndex: 10,
-            marginLeft: '-1px',
-            marginRight: '-1px'
+            marginLeft: "-1px",
+            marginRight: "-1px",
           }}
         >
-          {/* 호버 시 더 넓은 클릭 영역 */}
-          <div 
+          <div
             className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 transition-opacity ${
-              isResizingLeft ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+              isResizingLeft ? "opacity-100" : "opacity-0 group-hover:opacity-100"
             }`}
-            style={{ cursor: 'col-resize' }}
+            style={{ cursor: "col-resize" }}
           />
         </div>
-        <MainContent 
+
+        <MainContent
+          viewMode={viewMode}
+          courses={courses}
+          isCoursesLoading={isCoursesLoading}
+          coursesError={coursesError}
+          onSelectCourse={handleSelectCourse}
+          onBackToCourses={handleBackToCourses}
+          courseDetail={courseDetail}
+          isCourseDetailLoading={isCourseDetailLoading}
+          courseDetailError={courseDetailError}
+          selectedLectureId={currentLectureId}
+          onSelectLecture={handleLectureSelect}
+          lectureMarkdown={lectureMarkdown}
           fileUrl={lectureFileUrl}
           fileName={lectureFileName}
         />
-        {/* 오른쪽 리사이저 핸들 */}
+
         <div
           ref={rightResizeRef}
           onMouseDown={handleRightMouseDown}
@@ -158,22 +273,22 @@ const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
           className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
             isDarkMode ? "bg-gray-800" : "bg-gray-200"
           } ${isResizingRight ? (isDarkMode ? "bg-gray-600" : "bg-gray-400") : ""}`}
-          style={{ 
-            width: '2px',
+          style={{
+            width: "2px",
             zIndex: 10,
-            marginLeft: '-1px',
-            marginRight: '-1px'
+            marginLeft: "-1px",
+            marginRight: "-1px",
           }}
         >
-          {/* 호버 시 더 넓은 클릭 영역 */}
-          <div 
+          <div
             className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 transition-opacity ${
-              isResizingRight ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+              isResizingRight ? "opacity-100" : "opacity-0 group-hover:opacity-100"
             }`}
-            style={{ cursor: 'col-resize' }}
+            style={{ cursor: "col-resize" }}
           />
         </div>
-        <RightSidebar 
+
+        <RightSidebar
           lectureMarkdown={lectureMarkdown}
           onLectureDataChange={(markdown, fileUrl, fileName) => {
             setLectureMarkdown(markdown);
@@ -181,6 +296,11 @@ const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
             setLectureFileName(fileName);
           }}
           width={rightSidebarWidth}
+          courseId={currentCourseId ?? undefined}
+          lectureId={currentLectureId ?? undefined}
+          viewMode={viewMode}
+          onCourseCreated={handleCourseCreated}
+          onLectureCreated={handleLectureCreated}
         />
       </div>
     </div>
