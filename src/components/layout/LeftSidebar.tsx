@@ -3,18 +3,20 @@ import { useTheme } from "../../contexts/ThemeContext";
 
 interface LeftSidebarProps {
   onNavigateToApiTest?: () => void;
+  width?: number;
 }
 
-const LeftSidebar: React.FC<LeftSidebarProps> = ({ onNavigateToApiTest }) => {
+const LeftSidebar: React.FC<LeftSidebarProps> = ({ onNavigateToApiTest, width = 224 }) => {
   const { isDarkMode } = useTheme();
 
   return (
     <aside
-      className={`w-56 h-full overflow-y-auto border-r scrollbar-hide transition-colors ${
+      className={`h-full overflow-y-auto border-r scrollbar-hide transition-colors flex-shrink-0 ${
         isDarkMode
           ? "bg-gray-900 border-gray-800"
           : "bg-white border-gray-100"
       }`}
+      style={{ width: `${width}px` }}
     >
       <div className="p-6">
         <div className={`text-sm font-semibold mb-4 ${

@@ -13,9 +13,10 @@ interface ChatMessage {
 interface RightSidebarProps {
   lectureMarkdown: string;
   onLectureDataChange: (markdown: string, fileUrl: string, fileName: string) => void;
+  width?: number;
 }
 
-const RightSidebar: React.FC<RightSidebarProps> = ({ lectureMarkdown, onLectureDataChange }) => {
+const RightSidebar: React.FC<RightSidebarProps> = ({ lectureMarkdown, onLectureDataChange, width = 320 }) => {
   const { isDarkMode } = useTheme();
   const [inputText, setInputText] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -170,9 +171,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({ lectureMarkdown, onLectureD
 
   return (
     <aside
-      className={`w-80 flex flex-col border-l transition-colors relative ${
+      className={`flex flex-col border-l transition-colors relative flex-shrink-0 ${
         isDarkMode ? "bg-gray-900 border-gray-800" : "bg-white border-gray-100"
       }`}
+      style={{ width: `${width}px` }}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
