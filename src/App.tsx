@@ -1,9 +1,8 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Link } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AppLayout from './components/layout/AppLayout.tsx';
-import ApiTestPage from './pages/ApiTestPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 
@@ -31,24 +30,6 @@ const AppRoutes: React.FC = () => {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
-      <Route
-        path="/api-test"
-        element={
-          <ProtectedRoute>
-            <div>
-              <div className="fixed top-4 right-4 z-50">
-                <Link
-                  to="/"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-                >
-                  메인으로 돌아가기
-                </Link>
-              </div>
-              <ApiTestPage />
-            </div>
-          </ProtectedRoute>
-        }
-      />
       <Route
         path="/"
         element={

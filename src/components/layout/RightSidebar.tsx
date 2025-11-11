@@ -1,4 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
 import {
@@ -16,6 +18,7 @@ interface ChatMessage {
   isUser: boolean;
   file?: File;
   isLoading?: boolean;
+  markdown?: string;
 }
 
 type ViewMode = "course-list" | "course-detail";
@@ -69,6 +72,38 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   
   // 사용할 courseId 결정 (prop 또는 입력값 또는 생성된 값)
   const targetCourseId = currentCourseId || courseId || null;
+
+  // 로컬 스토리지 키 생성
+  const getUploadStorageKey = (lectureId: number) => `lecture_upload_${lectureId}`;
+
+  // 업로드 정보 저장
+  const saveUploadToStorage = (lectureId: number, fileName: string, fileUrl: string) => {
+    try {
+      localStorage.setItem(
+        getUploadStorageKey(lectureId),
+        JSON.stringify({ fileName, fileUrl, timestamp: Date.now() })
+      );
+    } catch (error) {
+      console.error('Failed to save upload to storage:', error);
+    }
+  };
+
+  // 업로드 정보 불러오기
+  const loadUploadFromStorage = (lectureId: number) => {
+    try {
+      const stored = localStorage.getItem(getUploadStorageKey(lectureId));
+      if (stored) {
+        const data = JSON.parse(stored);
+        // 24시간 이내 데이터만 유효
+        if (Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
+          return { fileName: data.fileName, fileUrl: data.fileUrl };
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load upload from storage:', error);
+    }
+    return null;
+  };
 
   const formatLectureContent = (lectureDetail: LectureDetailResponseDto): string => {
     const sections: string[] = [];
@@ -305,10 +340,28 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
   useEffect(() => {
     setCurrentLectureId(lectureId ?? null);
-    setHasUploadedMaterial(false);
-    setUploadedFileDisplayUrl("");
-    setUploadedFileName("");
-    revokePreviewUrl();
+    
+    // 강의 변경 시 저장된 업로드 정보 불러오기
+    if (lectureId) {
+      const stored = loadUploadFromStorage(lectureId);
+      if (stored) {
+        setUploadedFileName(stored.fileName);
+        setUploadedFileDisplayUrl(stored.fileUrl);
+        setHasUploadedMaterial(true);
+        onLectureDataChange("", stored.fileUrl, stored.fileName);
+      } else {
+        // 저장된 정보가 없으면 초기화
+        setHasUploadedMaterial(false);
+        setUploadedFileDisplayUrl("");
+        setUploadedFileName("");
+        revokePreviewUrl();
+      }
+    } else {
+      setHasUploadedMaterial(false);
+      setUploadedFileDisplayUrl("");
+      setUploadedFileName("");
+      revokePreviewUrl();
+    }
   }, [lectureId]);
 
   const isValidHttpUrl = (value: string | null | undefined) => {
@@ -411,10 +464,14 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         revokePreviewUrl();
         setUploadedFileDisplayUrl(fileUrl);
         onLectureDataChange("", fileUrl, file.name);
+        // 로컬 스토리지에 저장
+        saveUploadToStorage(currentLectureId, file.name, fileUrl);
       } else {
         // 백엔드가 메시지만 반환한 경우 프리뷰 URL 유지
         setUploadedFileDisplayUrl(previewUrl);
         onLectureDataChange("", previewUrl, file.name);
+        // 로컬 스토리지에 저장
+        saveUploadToStorage(currentLectureId, file.name, previewUrl);
       }
 
       // 업로드 메시지 업데이트
@@ -607,9 +664,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
       const successMessage: ChatMessage = {
         id: pendingMessage.id,
-        text: "AI 강의 자료 생성 완료! 메인 화면에서 결과를 확인하세요.",
+        text: "AI 강의 자료 생성 완료!",
         isUser: false,
         isLoading: false,
+        markdown: markdown,
       };
 
       setMessages((prev) =>
@@ -618,8 +676,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         )
       );
 
+      // 메인 화면에도 전달 (파일 정보만)
       onLectureDataChange(
-        markdown,
+        "",
         uploadedFileDisplayUrl,
         uploadedFileName
       );
@@ -754,7 +813,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               className={`flex ${message.isUser ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[80%] px-3 py-2 rounded-lg text-sm ${
+                className={`${message.markdown ? "w-full" : "max-w-[80%]"} px-3 py-2 rounded-lg text-sm ${
                   message.isUser
                     ? isDarkMode
                       ? "bg-blue-600 text-white"
@@ -775,7 +834,22 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     📎 {message.file.name}
                   </div>
                 )}
-                {message.text}
+                {message.markdown ? (
+                  <div>
+                    <div className="mb-2 font-semibold">{message.text}</div>
+                    <div
+                      className={`prose prose-sm max-w-none ${
+                        isDarkMode ? "prose-invert" : ""
+                      }`}
+                    >
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {message.markdown}
+                      </ReactMarkdown>
+                    </div>
+                  </div>
+                ) : (
+                  message.text
+                )}
               </div>
             </div>
           ))
@@ -787,11 +861,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         <div className={`p-3 border-t space-y-2 ${
           isDarkMode ? "border-gray-800 bg-gray-900" : "border-gray-200 bg-gray-50"
         }`}>
-          <div className={`text-xs font-medium ${
-            isDarkMode ? "text-gray-400" : "text-gray-600"
-          }`}>
-            3단계: AI 강의 자료 생성
-          </div>
           <button
             onClick={handleGenerateAiContent}
             disabled={isGeneratingContent || isUploading || !hasUploadedMaterial}
@@ -805,7 +874,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 : "bg-purple-600 hover:bg-purple-700 text-white"
             }`}
           >
-            {isGeneratingContent ? "생성 중..." : "AI 콘텐츠 생성하기"}
+            {isGeneratingContent ? "생성 중..." : "강의자료 생성하기"}
           </button>
           {!hasUploadedMaterial && (
             <div className={`text-xs ${
@@ -818,7 +887,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             <div className={`text-xs ${
               isDarkMode ? "text-gray-400" : "text-gray-600"
             }`}>
-              최근 업로드: {uploadedFileName}
+              업로드: {uploadedFileName}
             </div>
           )}
         </div>
