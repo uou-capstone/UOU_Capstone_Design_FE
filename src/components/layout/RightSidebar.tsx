@@ -21,7 +21,6 @@ interface ChatMessage {
 type ViewMode = "course-list" | "course-detail";
 
 interface RightSidebarProps {
-  lectureMarkdown: string;
   onLectureDataChange: (markdown: string, fileUrl: string, fileName: string) => void;
   width?: number;
   lectureId?: number;
@@ -32,7 +31,6 @@ interface RightSidebarProps {
 }
 
 const RightSidebar: React.FC<RightSidebarProps> = ({
-  lectureMarkdown,
   onLectureDataChange,
   width = 360,
   lectureId,
@@ -784,16 +782,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         )}
       </div>
 
-      {viewMode === "course-list" && (
-        <div
-          className={`p-4 border-t ${
-            isDarkMode ? "border-gray-800 bg-gray-900 text-gray-400" : "border-gray-200 bg-gray-50 text-gray-500"
-          }`}
-        >
-          과목을 생성, 선택하면 강의 생성과 파일 업로드 기능을 사용할 수 있습니다.
-        </div>
-      )}
-
       {/* AI 콘텐츠 생성 섹션 (강의와 파일이 준비된 경우) */}
       {currentLectureId && (
         <div className={`p-3 border-t space-y-2 ${
@@ -837,7 +825,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       )}
 
       {/* 채팅 입력창 */}
-      <div className={`p-4 border-t ${
+      <div className={`p-3 border-t ${
         isDarkMode ? "border-gray-800 bg-gray-900" : "border-gray-200 bg-gray-50"
       }`}>
         {/* 통합된 입력 컨테이너 */}

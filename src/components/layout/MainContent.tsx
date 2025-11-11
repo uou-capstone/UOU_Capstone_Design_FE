@@ -16,11 +16,11 @@ interface MainContentProps {
   courseDetail: CourseDetail | null;
   isCourseDetailLoading: boolean;
   courseDetailError: string | null;
-  selectedLectureId: number | null;
-  onSelectLecture: (lectureId: number) => void;
   lectureMarkdown?: string;
   fileUrl?: string;
   fileName?: string;
+  onEditCourse?: (course: Course) => void;
+  onDeleteCourse?: (course: Course) => void;
 }
 
 const MainContent: React.FC<MainContentProps> = ({
@@ -33,13 +33,51 @@ const MainContent: React.FC<MainContentProps> = ({
   courseDetail,
   isCourseDetailLoading,
   courseDetailError,
-  selectedLectureId,
-  onSelectLecture,
   lectureMarkdown,
   fileUrl,
   fileName,
+  onEditCourse,
+  onDeleteCourse,
 }) => {
   const { isDarkMode } = useTheme();
+  const [openCourseMenuId, setOpenCourseMenuId] = React.useState<number | null>(null);
+  const actionMenuRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    if (openCourseMenuId === null) {
+      return;
+    }
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (actionMenuRef.current && !actionMenuRef.current.contains(target)) {
+        setOpenCourseMenuId(null);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenCourseMenuId(null);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [openCourseMenuId]);
+
+  const toggleCourseMenu = (courseId: number) => {
+    setOpenCourseMenuId((prev) => (prev === courseId ? null : courseId));
+  };
+
+  const handleCourseSelect = (courseId: number) => {
+    onSelectCourse(courseId);
+    setOpenCourseMenuId(null);
+  };
 
   const renderCourseList = () => {
     if (isCoursesLoading) {
@@ -93,30 +131,96 @@ const MainContent: React.FC<MainContentProps> = ({
       <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-semibold mb-1">내 과목</h2>
-          <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-            등록된 과목을 선택하면 상세 정보를 확인하고 강의를 생성할 수 있습니다.
-          </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
           {courses.map((course) => (
-            <button
+            <div
               key={course.courseId}
-              onClick={() => onSelectCourse(course.courseId)}
-              className={`text-left p-5 rounded-xl border shadow-sm transition-all ${
+              role="button"
+              tabIndex={0}
+              onClick={() => handleCourseSelect(course.courseId)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  handleCourseSelect(course.courseId);
+                }
+              }}
+              className={`text-left p-3 md:p-4 rounded-xl border shadow-sm transition-all ${
                 isDarkMode
                   ? "bg-gray-800 border-gray-700 hover:border-blue-500 hover:shadow-blue-500/30"
                   : "bg-white border-gray-200 hover:border-blue-500/40 hover:shadow-blue-500/20"
+              } cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:ring-offset-2 ${
+                isDarkMode ? "focus:ring-offset-gray-900" : "focus:ring-offset-white"
               }`}
             >
               <div className="flex items-start justify-between gap-2">
                 <h3 className="text-lg font-semibold">{course.title}</h3>
-                <span
-                  className={`text-xs px-2 py-1 rounded-full ${
-                    isDarkMode ? "bg-blue-600/30 text-blue-200" : "bg-blue-100 text-blue-700"
-                  }`}
-                >
-                  {course.teacherName}
-                </span>
+                <div className="relative -mr-1">
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleCourseMenu(course.courseId);
+                    }}
+                    className={`inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
+                      isDarkMode
+                        ? "text-gray-300 hover:text-white hover:bg-gray-700"
+                        : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                    }`}
+                    aria-haspopup="menu"
+                    aria-expanded={openCourseMenuId === course.courseId}
+                    aria-label="과목 옵션 열기"
+                  >
+                    ⋮
+                  </button>
+                  {openCourseMenuId === course.courseId && (
+                    <div
+                      ref={(node) => {
+                        if (openCourseMenuId === course.courseId) {
+                          actionMenuRef.current = node;
+                        }
+                      }}
+                      className={`absolute right-0 mt-2 w-40 rounded-lg border shadow-lg z-10 ${
+                        isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+                      }`}
+                      role="menu"
+                      aria-label="과목 옵션 메뉴"
+                    >
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setOpenCourseMenuId(null);
+                          onEditCourse?.(course);
+                        }}
+                        className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                          isDarkMode
+                            ? "text-gray-200 hover:bg-gray-700"
+                            : "text-gray-700 hover:bg-gray-100"
+                        }`}
+                        role="menuitem"
+                      >
+                        과목 수정
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setOpenCourseMenuId(null);
+                          onDeleteCourse?.(course);
+                        }}
+                        className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                          isDarkMode
+                            ? "text-red-300 hover:bg-red-900/20 hover:text-red-200"
+                            : "text-red-600 hover:bg-red-50"
+                        }`}
+                        role="menuitem"
+                      >
+                        과목 삭제
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
               {course.description && (
                 <p
@@ -127,7 +231,7 @@ const MainContent: React.FC<MainContentProps> = ({
                   {course.description}
                 </p>
               )}
-            </button>
+            </div>
           ))}
         </div>
       </div>
@@ -178,118 +282,26 @@ const MainContent: React.FC<MainContentProps> = ({
     const hasLectureContent = Boolean(lectureMarkdown) || Boolean(fileUrl);
 
     return (
-      <div className="flex flex-col gap-6 h-full">
+      <div className="flex flex-col gap-4 h-full">
         <div
-          className={`p-6 rounded-xl border ${
+          className={`p-4 rounded-xl border ${
             isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
           }`}
         >
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <button
-                onClick={onBackToCourses}
-                className={`text-sm mb-3 inline-flex items-center gap-1 ${
-                  isDarkMode ? "text-blue-300 hover:text-blue-200" : "text-blue-600 hover:text-blue-500"
-                }`}
-              >
-                ← 과목 목록으로
-              </button>
-              <h2 className="text-2xl font-semibold">{courseDetail.title}</h2>
-              <div className={`mt-2 text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                담당: {courseDetail.teacherName}
-              </div>
+          <div className="flex flex-col gap-3">
+            <div className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+              담당: {courseDetail.teacherName}
             </div>
-          </div>
-          {courseDetail.description && (
-            <p className={`mt-4 text-sm ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-              {courseDetail.description}
-            </p>
-          )}
-        </div>
-
-        <div
-          className={`flex-1 rounded-xl border overflow-hidden ${
-            isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
-          }`}
-        >
-          <div
-            className={`flex items-center justify-between px-6 py-4 border-b ${
-              isDarkMode ? "border-gray-700" : "border-gray-200"
-            }`}
-          >
-            <div>
-              <h3 className="text-lg font-semibold">강의 목록</h3>
-              <p className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                강의를 선택하면 오른쪽에서 자료 생성 및 업로드를 진행할 수 있습니다.
+            {courseDetail.description && (
+              <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                {courseDetail.description}
               </p>
-            </div>
-            <span
-              className={`text-xs px-2 py-1 rounded-full ${
-                isDarkMode ? "bg-blue-600/30 text-blue-200" : "bg-blue-100 text-blue-700"
-              }`}
-            >
-              총 {courseDetail.lectures?.length ?? 0}개
-            </span>
-          </div>
-
-          <div className="max-h-[50vh] overflow-y-auto divide-y divide-gray-200/20">
-            {courseDetail.lectures && courseDetail.lectures.length > 0 ? (
-              courseDetail.lectures.map((lecture) => {
-                const isSelected = selectedLectureId === lecture.lectureId;
-                return (
-                  <button
-                    key={lecture.lectureId}
-                    onClick={() => onSelectLecture(lecture.lectureId)}
-                    className={`w-full text-left px-6 py-4 transition-colors ${
-                      isSelected
-                        ? isDarkMode
-                          ? "bg-blue-600/20 text-blue-200"
-                          : "bg-blue-50 text-blue-700"
-                        : isDarkMode
-                        ? "hover:bg-gray-700 text-gray-200"
-                        : "hover:bg-gray-100 text-gray-700"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{lecture.title}</span>
-                      <span
-                        className={`text-[11px] px-2 py-0.5 rounded-full ${
-                          isDarkMode ? "bg-gray-700 text-gray-300" : "bg-gray-200 text-gray-600"
-                        }`}
-                      >
-                        {lecture.weekNumber}주차
-                      </span>
-                      <span
-                        className={`text-[11px] px-2 py-0.5 rounded-full ${
-                          lecture.aiGeneratedStatus === "COMPLETED"
-                            ? "bg-green-500/20 text-green-400"
-                            : lecture.aiGeneratedStatus === "PROCESSING"
-                            ? "bg-yellow-500/20 text-yellow-500"
-                            : lecture.aiGeneratedStatus === "FAILED"
-                            ? "bg-red-500/20 text-red-400"
-                            : "bg-gray-500/20 text-gray-400"
-                        }`}
-                      >
-                        {lecture.aiGeneratedStatus}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })
-            ) : (
-              <div
-                className={`px-6 py-12 text-center ${
-                  isDarkMode ? "text-gray-400" : "text-gray-500"
-                }`}
-              >
-                아직 등록된 강의가 없습니다.
-              </div>
             )}
           </div>
         </div>
 
         {hasLectureContent ? (
-          <div className="flex flex-col gap-6">
+          <div className="flex-1 flex flex-col gap-6">
             {lectureMarkdown && (
               <div
                 className={`p-6 rounded-xl shadow-sm border transition-colors overflow-y-auto max-h-full ${
@@ -300,14 +312,15 @@ const MainContent: React.FC<MainContentProps> = ({
                 style={{ maxHeight: "60vh" }}
               >
                 <h2 className="text-xl font-semibold mb-4">AI 생성 강의 자료</h2>
-                <ReactMarkdown
-                  remarkPlugins={[remarkGfm]}
+                <div
                   className={`prose prose-sm max-w-none leading-relaxed ${
                     isDarkMode ? "prose-invert" : ""
                   }`}
                 >
-                  {lectureMarkdown}
-                </ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {lectureMarkdown}
+                  </ReactMarkdown>
+                </div>
               </div>
             )}
 
@@ -355,10 +368,8 @@ const MainContent: React.FC<MainContentProps> = ({
             }`}
           >
             <div className="text-center space-y-2">
-              <p className="text-lg font-medium">
-                오른쪽 사이드바에서 강의를 생성하거나 선택해주세요.
-              </p>
-              <p className="text-sm">AI 생성 결과와 업로드 파일이 이 영역에 표시됩니다.</p>
+              <p className="text-lg font-medium">좌측 사이드바에서 강의를 선택해주세요.</p>
+              <p className="text-sm">선택한 강의의 자료와 업로드 파일이 이 영역에 표시됩니다.</p>
             </div>
           </div>
         )}
@@ -368,7 +379,7 @@ const MainContent: React.FC<MainContentProps> = ({
 
   return (
     <div
-      className={`flex-1 min-h-0 p-6 overflow-y-auto scrollbar-hide transition-colors ${
+      className={`flex-1 min-h-0 p-4 overflow-y-auto scrollbar-hide transition-colors ${
         isDarkMode ? "bg-gray-900" : "bg-gray-50"
       }`}
     >

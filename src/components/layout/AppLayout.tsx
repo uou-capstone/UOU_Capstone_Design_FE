@@ -6,18 +6,14 @@ import LeftSidebar from "./LeftSidebar.tsx";
 import RightSidebar from "./RightSidebar.tsx";
 import MainContent from "./MainContent.tsx";
 import { useCourses } from "../../hooks/useCourses";
-import type { CourseDetail, LectureResponseDto } from "../../services/api";
-
-interface AppLayoutProps {
-  onNavigateToApiTest?: () => void;
-}
+import type { Course, CourseDetail, LectureResponseDto } from "../../services/api";
 
 type ViewMode = "course-list" | "course-detail";
 
 const DEFAULT_LEFT_SIDEBAR_WIDTH = 224;
 const DEFAULT_RIGHT_SIDEBAR_WIDTH = 360;
 
-const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
+const AppLayout: React.FC = () => {
   const { isDarkMode } = useTheme();
   const navigate = useNavigate();
   const { courseId: courseIdParam } = useParams<{ courseId?: string }>();
@@ -31,6 +27,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
     error: coursesError,
     fetchCourses,
     getCourseDetail,
+    updateCourse,
+    deleteCourse,
   } = useCourses();
 
   const [courseDetail, setCourseDetail] = useState<CourseDetail | null>(null);
@@ -52,6 +50,13 @@ const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
   const rightResizeRef = useRef<HTMLDivElement>(null);
 
   const viewMode: ViewMode = selectedCourseId ? "course-detail" : "course-list";
+  const currentCourseTitle =
+    viewMode === "course-detail"
+      ? courseDetail?.title ??
+        (currentCourseId
+          ? courses.find((courseItem) => courseItem.courseId === currentCourseId)?.title ?? null
+          : null)
+      : null;
 
   const resetLectureOutputs = useCallback(() => {
     setLectureMarkdown("");
@@ -113,8 +118,8 @@ const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
 
   const handleCourseCreated = (course: CourseDetail) => {
     fetchCourses();
-  resetLectureOutputs();
-  setCurrentLectureId(null);
+    resetLectureOutputs();
+    setCurrentLectureId(null);
     navigate(`/courses/${course.courseId}`);
   };
 
@@ -129,6 +134,88 @@ const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
     setCurrentLectureId(lectureId);
     resetLectureOutputs();
   };
+
+  const handleCourseEdit = useCallback(
+    async (course: Course) => {
+      const initialTitle = course.title ?? "";
+      const initialDescription = course.description ?? "";
+
+      const titleInput = window.prompt("새 과목 제목을 입력해주세요.", initialTitle);
+      if (titleInput === null) {
+        return;
+      }
+
+      const trimmedTitle = titleInput.trim();
+      if (!trimmedTitle) {
+        window.alert("과목 제목은 비워둘 수 없습니다.");
+        return;
+      }
+
+      const descriptionInput = window.prompt(
+        "새 과목 설명을 입력해주세요.",
+        initialDescription ?? ""
+      );
+
+      if (descriptionInput === null) {
+        return;
+      }
+
+      const trimmedDescription = descriptionInput.trim();
+      const result = await updateCourse(course.courseId, {
+        title: trimmedTitle,
+        description: trimmedDescription,
+      });
+
+      if (!result.success) {
+        window.alert(result.error ?? "과목 수정에 실패했습니다.");
+        return;
+      }
+
+      if (currentCourseId === course.courseId) {
+        await loadCourseDetail(course.courseId);
+      }
+
+      window.alert("과목이 성공적으로 수정되었습니다.");
+    },
+    [currentCourseId, loadCourseDetail, updateCourse]
+  );
+
+  const handleCourseDelete = useCallback(
+    async (course: Course) => {
+      const confirmed = window.confirm(
+        `정말로 '${course.title}' 과목을 삭제하시겠습니까?\n삭제 후에는 되돌릴 수 없습니다.`
+      );
+
+      if (!confirmed) {
+        return;
+      }
+
+      const result = await deleteCourse(course.courseId);
+
+      if (!result.success) {
+        window.alert(result.error ?? "과목 삭제에 실패했습니다.");
+        return;
+      }
+
+      if (currentCourseId === course.courseId) {
+        setCourseDetail(null);
+        setCourseDetailError(null);
+        setCurrentCourseId(null);
+        setCurrentLectureId(null);
+        resetLectureOutputs();
+        navigate("/");
+      }
+
+      window.alert("과목이 삭제되었습니다.");
+    },
+    [
+      currentCourseId,
+      deleteCourse,
+      navigate,
+      resetLectureOutputs,
+      setCourseDetailError,
+    ]
+  );
 
   const handleLeftMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -224,9 +311,16 @@ const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
         isDarkMode ? "bg-gray-900 text-white" : "bg-gray-50 text-gray-900"
       }`}
     >
-      <TopNav />
+      <TopNav currentCourseTitle={currentCourseTitle} onNavigateHome={handleBackToCourses} />
       <div className="flex flex-1 overflow-hidden min-h-0">
-        <LeftSidebar onNavigateToApiTest={onNavigateToApiTest} width={leftSidebarWidth} />
+        <LeftSidebar
+          width={leftSidebarWidth}
+          viewMode={viewMode}
+          courseDetail={courseDetail}
+          selectedLectureId={currentLectureId}
+          onSelectLecture={handleLectureSelect}
+          isCourseDetailLoading={isCourseDetailLoading}
+        />
         <div
           ref={leftResizeRef}
           onMouseDown={handleLeftMouseDown}
@@ -249,7 +343,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
           />
         </div>
 
-        <MainContent
+         <MainContent
           viewMode={viewMode}
           courses={courses}
           isCoursesLoading={isCoursesLoading}
@@ -259,11 +353,11 @@ const AppLayout: React.FC<AppLayoutProps> = ({ onNavigateToApiTest }) => {
           courseDetail={courseDetail}
           isCourseDetailLoading={isCourseDetailLoading}
           courseDetailError={courseDetailError}
-          selectedLectureId={currentLectureId}
-          onSelectLecture={handleLectureSelect}
           lectureMarkdown={lectureMarkdown}
           fileUrl={lectureFileUrl}
           fileName={lectureFileName}
+          onEditCourse={handleCourseEdit}
+          onDeleteCourse={handleCourseDelete}
         />
 
         <div

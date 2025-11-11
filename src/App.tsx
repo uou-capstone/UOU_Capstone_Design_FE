@@ -53,7 +53,7 @@ const AppRoutes: React.FC = () => {
         path="/"
         element={
           <ProtectedRoute>
-            <AppLayout onNavigateToApiTest={() => {}} />
+            <AppLayout />
           </ProtectedRoute>
         }
       />
@@ -61,7 +61,7 @@ const AppRoutes: React.FC = () => {
         path="/courses/:courseId"
         element={
           <ProtectedRoute>
-            <AppLayout onNavigateToApiTest={() => {}} />
+            <AppLayout />
           </ProtectedRoute>
         }
       />
