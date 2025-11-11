@@ -95,7 +95,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
       }`}
       style={{ width: `${width}px` }}
     >
-      <div className="h-full">
+      <div className="h-full p-4">
         {viewMode === "course-detail" ? (
           <div className="flex flex-col gap-2">{renderLectureList()}</div>
         ) : null}
