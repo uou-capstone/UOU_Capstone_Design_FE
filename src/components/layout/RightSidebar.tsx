@@ -10,6 +10,8 @@ import {
   type LectureDetailResponseDto,
   type CourseDetail,
   type LectureResponseDto,
+  streamingApi,
+  type StreamNextResponse,
 } from "../../services/api";
 
 interface ChatMessage {
@@ -50,7 +52,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [isCreatingCourse, setIsCreatingCourse] = useState(false);
   const [isCreatingLecture, setIsCreatingLecture] = useState(false);
-  const [isGeneratingContent, setIsGeneratingContent] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [isFetchingNext, setIsFetchingNext] = useState(false);
+  const [waitingForAnswer, setWaitingForAnswer] = useState(false);
+  const [currentAiQuestionId, setCurrentAiQuestionId] = useState<string | null>(null);
+  const [hasMoreStream, setHasMoreStream] = useState<boolean>(false);
   const [currentLectureId, setCurrentLectureId] = useState<number | null>(lectureId || null);
   const [currentCourseId, setCurrentCourseId] = useState<number | null>(courseId || null);
   const [uploadedFileDisplayUrl, setUploadedFileDisplayUrl] = useState<string>("");
@@ -105,68 +111,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     return null;
   };
 
-  const formatLectureContent = (lectureDetail: LectureDetailResponseDto): string => {
-    const sections: string[] = [];
-    sections.push(`# ${lectureDetail.title}`);
-    sections.push(`- 강의 ID: ${lectureDetail.lectureId}`);
-    sections.push(`- 주차: ${lectureDetail.weekNumber}주차`);
-
-    if (lectureDetail.description?.trim()) {
-      sections.push(lectureDetail.description.trim());
-    }
-
-    const typeTitles: Record<string, string> = {
-      SCRIPT: "강의 스크립트",
-      SUMMARY: "요약",
-      VISUAL_AID: "시각 자료",
-    };
-
-    lectureDetail.contents?.forEach((content) => {
-      if (!content.contentData?.trim()) {
-        return;
-      }
-      const sectionTitle = typeTitles[content.contentType] ?? content.contentType;
-      sections.push(`## ${sectionTitle}`);
-      sections.push(content.contentData.trim());
-
-       if (content.materialReferences && content.materialReferences.length > 0) {
-        sections.push("### 관련 자료");
-        content.materialReferences.forEach((ref, index) => {
-          sections.push(`${index + 1}. ${ref}`);
-        });
-      }
-    });
-
-    return sections.join("\n\n").trim();
-  };
-
-  const pollLectureDetail = async (
-    targetLectureId: number,
-    maxAttempts: number = 20,
-    intervalMs: number = 5000,
-  ): Promise<LectureDetailResponseDto> => {
-    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const detail = await lectureApi.getLectureDetail(targetLectureId);
-
-      if (detail.aiGeneratedStatus === "FAILED") {
-        throw new Error("AI 콘텐츠 생성이 실패했습니다. 다시 시도해주세요.");
-      }
-
-      if (
-        detail.aiGeneratedStatus === "COMPLETED" &&
-        detail.contents &&
-        detail.contents.length > 0
-      ) {
-        return detail;
-      }
-
-      if (attempt < maxAttempts - 1) {
-        await new Promise((resolve) => setTimeout(resolve, intervalMs));
-      }
-    }
-
-    throw new Error("AI 콘텐츠 생성이 아직 완료되지 않았습니다. 잠시 후 다시 시도해주세요.");
-  };
+  // 레거시 generate-content 제거에 따라 상세 폴링/마크다운 조합 로직 삭제
 
   // Course 생성 함수
   const createCourse = async (
@@ -474,6 +419,29 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         saveUploadToStorage(currentLectureId, file.name, previewUrl);
       }
 
+      // 스트리밍 자동 초기화 및 첫 세그먼트 요청
+      if (currentLectureId) {
+        setMessages((prev) => [
+          ...prev,
+          { id: Date.now() + 3, text: "스트리밍 세션 초기화 중...", isUser: false, isLoading: true },
+        ]);
+        try {
+          await streamingApi.initialize(currentLectureId);
+          setIsStreaming(true);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.isLoading ? { ...m, text: "스트리밍 세션 시작!", isLoading: false } : m
+            )
+          );
+          await fetchNextSegment();
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : "세션 초기화 실패";
+          setMessages((prev) =>
+            prev.map((m) => (m.isLoading ? { ...m, text: `오류: ${msg}`, isLoading: false } : m))
+          );
+        }
+      }
+
       // 업로드 메시지 업데이트
       setMessages((prev) =>
         prev.map((msg) =>
@@ -632,77 +600,29 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     }
   }, []);
 
-  const handleGenerateAiContent = async () => {
-    if (!currentLectureId) {
-      alert("강의를 먼저 생성해주세요.");
-      return;
-    }
+  // generate-content 제거로 해당 핸들러 삭제
 
-    if (!hasUploadedMaterial) {
-      alert("AI 콘텐츠 생성을 위해 강의 자료 파일을 업로드해주세요.");
-      return;
-    }
-
-    if (isGeneratingContent) {
-      return;
-    }
-
-    const pendingMessage: ChatMessage = {
-      id: Date.now(),
-      text: "AI 강의 자료를 생성하는 중...",
-      isUser: false,
-      isLoading: true,
-    };
-
-    setIsGeneratingContent(true);
-    setMessages((prev) => [...prev, pendingMessage]);
-
+  // 스트리밍: 다음 세그먼트 가져오기
+  const fetchNextSegment = async () => {
+    if (!currentLectureId || isFetchingNext) return;
+    setIsFetchingNext(true);
     try {
-      await lectureApi.generateAiContent(currentLectureId);
-      const lectureDetail = await pollLectureDetail(currentLectureId);
-      const markdown = formatLectureContent(lectureDetail);
-
-      const successMessage: ChatMessage = {
-        id: pendingMessage.id,
-        text: "AI 강의 자료 생성 완료!",
-        isUser: false,
-        isLoading: false,
-        markdown: markdown,
-      };
-
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === pendingMessage.id ? successMessage : msg
-        )
+      const res = await streamingApi.next(currentLectureId);
+      await mapNextToMessages(
+        res,
+        setMessages,
+        setWaitingForAnswer,
+        setCurrentAiQuestionId,
+        setHasMoreStream
       );
-
-      // 메인 화면에도 전달 (파일 정보만)
-      onLectureDataChange(
-        "",
-        uploadedFileDisplayUrl,
-        uploadedFileName
-      );
-    } catch (error) {
-      const errorMessageText =
-        error instanceof Error
-          ? error.message
-          : "알 수 없는 오류가 발생했습니다.";
-
-      const errorMessage: ChatMessage = {
-        id: pendingMessage.id,
-        text: `AI 강의 자료 생성 실패: ${errorMessageText}`,
-        isUser: false,
-        isLoading: false,
-      };
-
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === pendingMessage.id ? errorMessage : msg
-        )
-      );
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "다음 세그먼트 수신 실패";
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now(), text: `오류: ${msg}`, isUser: false },
+      ]);
     } finally {
-      setIsGeneratingContent(false);
-
+      setIsFetchingNext(false);
       setTimeout(() => {
         const chatContainer = document.getElementById("chat-messages");
         if (chatContainer) {
@@ -733,24 +653,84 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   };
 
   const handleSendMessage = () => {
-    if (!inputText.trim()) return;
+    const trimmed = inputText.trim();
 
-    const newMessage: ChatMessage = {
-      id: Date.now(),
-      text: inputText.trim(),
-      isUser: true,
-    };
+    // 질문 대기 시: 사용자의 답변 전송
+    if (isStreaming && waitingForAnswer && currentAiQuestionId && currentLectureId) {
+      if (!trimmed) return;
+      const userText = inputText.trim();
+      const userMsg: ChatMessage = {
+        id: Date.now(),
+        text: userText,
+        isUser: true,
+      };
+      setMessages((prev) => [...prev, userMsg]);
+      setInputText("");
 
-    setMessages((prev) => [...prev, newMessage]);
-    setInputText("");
+      // 보조 설명 대기 메시지
+      const pendingReply: ChatMessage = {
+        id: Date.now() + 1,
+        text: "답변 평가 및 보충 설명 생성 중...",
+        isUser: false,
+        isLoading: true,
+      };
+      setMessages((prev) => [...prev, pendingReply]);
 
-    // 스크롤을 하단으로 이동
-    setTimeout(() => {
-      const chatContainer = document.getElementById("chat-messages");
-      if (chatContainer) {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-      }
-    }, 0);
+      streamingApi
+        .answer(currentLectureId, { aiQuestionId: currentAiQuestionId, answer: userText })
+        .then((res) => {
+          // 보충 설명 메시지
+          const supplementary = res.supplementary?.trim() || "보충 설명이 제공되지 않았습니다.";
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === pendingReply.id
+                ? {
+                    ...m,
+                    text: "보충 설명",
+                    markdown: supplementary,
+                    isLoading: false,
+                  }
+                : m
+            )
+          );
+          setWaitingForAnswer(false);
+          setCurrentAiQuestionId(null);
+          // 이어서 다음 세그먼트가 있으면 자동 진행
+          if (res.canContinue) {
+            void fetchNextSegment();
+          }
+        })
+        .catch((err) => {
+          const msg = err instanceof Error ? err.message : "답변 전송 실패";
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === pendingReply.id
+                ? { ...m, text: `오류: ${msg}`, isLoading: false }
+                : m
+            )
+          );
+        })
+        .finally(() => {
+          // 스크롤을 하단으로 이동
+          setTimeout(() => {
+            const chatContainer = document.getElementById("chat-messages");
+            if (chatContainer) {
+              chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+          }, 0);
+        });
+      return;
+    }
+
+    // 질문 대기가 아닐 때: Enter로 다음 세그먼트 진행
+    if (isStreaming && !waitingForAnswer) {
+      setInputText(""); // 입력창 비우기
+      void fetchNextSegment();
+      return;
+    }
+
+    // 스트리밍 전 일반 텍스트 입력은 무시
+    if (!trimmed) return;
   };
 
   const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -856,26 +836,12 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         )}
       </div>
 
-      {/* AI 콘텐츠 생성 섹션 (강의와 파일이 준비된 경우) */}
+      {/* 스트리밍 섹션 (강의와 파일이 준비된 경우) */}
       {currentLectureId && (
         <div className={`p-3 border-t space-y-2 ${
           isDarkMode ? "border-gray-800 bg-gray-900" : "border-gray-200 bg-gray-50"
         }`}>
-          <button
-            onClick={handleGenerateAiContent}
-            disabled={isGeneratingContent || isUploading || !hasUploadedMaterial}
-            className={`w-full px-3 py-2 text-xs font-medium rounded transition-colors ${
-              isGeneratingContent || isUploading || !hasUploadedMaterial
-                ? isDarkMode
-                  ? "bg-gray-700 text-gray-500 cursor-not-allowed"
-                  : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                : isDarkMode
-                ? "bg-purple-600 hover:bg-purple-700 text-white"
-                : "bg-purple-600 hover:bg-purple-700 text-white"
-            }`}
-          >
-            {isGeneratingContent ? "생성 중..." : "강의자료 생성하기"}
-          </button>
+          {/* 컨트롤 버튼 제거. 업로드 후 자동 초기화/진행, Enter로 다음/답변 */}
           {!hasUploadedMaterial && (
             <div className={`text-xs ${
               isDarkMode ? "text-gray-500" : "text-gray-500"
@@ -1000,7 +966,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyPress={handleKeyPress}
-            placeholder="무엇이든 물어보세요"
+            placeholder={
+              isStreaming
+                ? (waitingForAnswer ? "AI 질문에 대한 답변을 입력하고 Enter" : "Enter로 다음 세그먼트 진행")
+                : "파일을 업로드하면 자동으로 시작됩니다"
+            }
             className={`flex-1 py-2.5 text-sm resize-none bg-transparent border-0 focus:outline-none ${
               isDarkMode
                 ? "text-white placeholder-gray-500"
@@ -1204,3 +1174,41 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 };
 
 export default RightSidebar;
+
+// 내부 유틸: 다음 세그먼트 응답을 채팅 메시지로 변환
+async function mapNextToMessages(
+  res: StreamNextResponse,
+  append: (msgs: ChatMessage[] | ((p: ChatMessage[]) => ChatMessage[])) => void,
+  setWaiting: (v: boolean) => void,
+  setQuestionId: (v: string | null) => void,
+  setHasMore: (v: boolean) => void
+) {
+  const type = (res.contentType || "").toUpperCase();
+  const header =
+    type === "QUESTION" ? "질문" : type === "SUPPLEMENTARY" ? "보충 설명" : "개념 설명";
+  append((prev) => [
+    ...prev,
+    {
+      id: Date.now(),
+      text: `${res.chapterTitle ? `[${res.chapterTitle}] ` : ""}${header}`,
+      isUser: false,
+      markdown: res.contentData,
+    },
+  ]);
+  setHasMore(res.hasMore);
+  if (res.waitingForAnswer && res.aiQuestionId) {
+    setWaiting(true);
+    setQuestionId(res.aiQuestionId);
+    append((prev) => [
+      ...prev,
+      {
+        id: Date.now() + 1,
+        text: "질문에 대한 답을 입력해 주세요.",
+        isUser: false,
+      },
+    ]);
+  } else {
+    setWaiting(false);
+    setQuestionId(null);
+  }
+}
