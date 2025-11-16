@@ -540,11 +540,7 @@ export const lectureApi = {
   },
 
   // AI 강의 콘텐츠 생성 (선생님)
-  generateAiContent: async (lectureId: number): Promise<string> => {
-    return apiRequest<string>(`/api/lectures/${lectureId}/generate-content`, {
-      method: 'POST',
-    });
-  },
+  // (스트리밍으로 대체됨) generate-content 제거
 
   // 강의 자료 업로드 (PDF) (선생님)
   uploadMaterial: async (lectureId: number, file: File): Promise<string> => {
@@ -636,6 +632,57 @@ export interface LectureMaterialResponse {
   fileName: string;
 }
 
+// 스트리밍 러닝 세션 타입
+export interface StreamSessionState {
+  status: string;
+  lectureId: number;
+  serviceStatus?: string;
+  chapters?: Record<string, unknown>;
+  questions?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+  error?: Record<string, unknown> | null;
+}
+
+export interface StreamInitializeResponse {
+  status: string;
+  lectureId: number;
+  totalChapters: number;
+  chapters: Array<{
+    title: string;
+    startPage: number;
+    endPage: number;
+  }>;
+}
+
+export type ContentType = 'CONCEPT' | 'QUESTION' | 'SUPPLEMENTARY' | 'SCRIPT';
+
+export interface StreamNextResponse {
+  status: string;
+  lectureId: number;
+  contentType: ContentType | string;
+  contentData: string;
+  chapterTitle?: string;
+  hasMore: boolean;
+  waitingForAnswer: boolean;
+  aiQuestionId?: string;
+}
+
+export interface StreamAnswerRequest {
+  aiQuestionId: string;
+  answer: string;
+}
+
+export interface StreamAnswerResponse {
+  status: string;
+  lectureId: number;
+  aiQuestionId: string;
+  question?: string;
+  chapterTitle?: string;
+  canContinue: boolean;
+  supplementary?: string;
+}
+
 export const lectureMaterialApi = {
   // 파일 업로드 및 강의 자료 생성
   uploadAndGenerate: async (file: File): Promise<LectureMaterialResponse> => {
@@ -646,5 +693,28 @@ export const lectureMaterialApi = {
       method: 'POST',
       body: formData,
     }, true); // includeAuth = true
+  },
+};
+
+// 스트리밍 학습 세션 API
+export const streamingApi = {
+  getSession: async (lectureId: number): Promise<StreamSessionState> => {
+    return apiRequest<StreamSessionState>(`/api/lectures/${lectureId}/stream/session`);
+  },
+  initialize: async (lectureId: number): Promise<StreamInitializeResponse> => {
+    return apiRequest<StreamInitializeResponse>(`/api/lectures/${lectureId}/stream/initialize`, {
+      method: 'POST',
+    });
+  },
+  next: async (lectureId: number): Promise<StreamNextResponse> => {
+    return apiRequest<StreamNextResponse>(`/api/lectures/${lectureId}/stream/next`, {
+      method: 'POST',
+    });
+  },
+  answer: async (lectureId: number, payload: StreamAnswerRequest): Promise<StreamAnswerResponse> => {
+    return apiRequest<StreamAnswerResponse>(`/api/lectures/${lectureId}/stream/answer`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   },
 };
