@@ -119,11 +119,15 @@ yarn lint
 
 ### 환경 변수
 
-프로덕션 환경에서 API URL을 설정하려면 `.env` 파일을 생성하고 다음을 추가하세요:
+현재 백엔드 서버 주소: `http://3.36.233.169:8080`
+
+프로덕션 환경에서 다른 API URL을 사용하려면 `.env` 파일을 생성하고 다음을 추가하세요:
 
 ```env
-VITE_API_URL=https://your-api-url.com
+VITE_API_URL=http://your-api-url.com
 ```
+
+환경 변수가 설정되지 않은 경우 기본적으로 `http://3.36.233.169:8080`을 사용합니다.
 
 ## 📝 라이선스
 
