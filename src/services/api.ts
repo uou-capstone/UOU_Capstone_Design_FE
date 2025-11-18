@@ -1,4 +1,4 @@
-const BACKEND_URL = 'https://michal-unvulnerable-benita.ngrok-free.dev';
+const BACKEND_URL = 'http://3.36.233.169:8080';
 
 const API_BASE_URL = import.meta.env.PROD 
   ? (import.meta.env.VITE_API_URL || BACKEND_URL)
@@ -234,8 +234,6 @@ const apiRequest = async <T>(
       delete (finalHeaders as any)['Content-Type'];
       delete (finalHeaders as any)['content-type'];
     }
-    
-    finalHeaders['ngrok-skip-browser-warning'] = 'true';
     
     // Authorization 헤더 확인 (디버깅용)
     const hasAuthHeader = !!finalHeaders['Authorization'];
