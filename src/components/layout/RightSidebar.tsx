@@ -31,6 +31,7 @@ interface RightSidebarProps {
   lectureId?: number;
   courseId?: number;
   viewMode: ViewMode;
+  courseDetail?: CourseDetail | null;
   onCourseCreated: (course: CourseDetail) => void;
   onLectureCreated: (lecture: LectureResponseDto) => void;
 }
@@ -41,6 +42,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   lectureId,
   courseId,
   viewMode,
+  courseDetail,
   onCourseCreated,
   onLectureCreated,
 }) => {
@@ -70,6 +72,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const [lectureModalTitle, setLectureModalTitle] = useState("");
   const [lectureModalWeek, setLectureModalWeek] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragCounterRef = useRef<number>(0);
   const previewObjectUrlRef = useRef<string | null>(null);
   const actionMenuContainerRef = useRef<HTMLDivElement>(null);
@@ -162,7 +165,33 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       setCourseModalDescription("");
       setIsCourseModalOpen(false);
 
-      onCourseCreated(course);
+      // 자동으로 OT 강의 생성
+      try {
+        const otLecture = await lectureApi.createLecture(course.courseId, {
+          title: "OT",
+          weekNumber: 0,
+          description: "오리엔테이션",
+        });
+        
+        const otMessage: ChatMessage = {
+          id: Date.now() + 2,
+          text: `OT 강의가 자동으로 생성되었습니다. (0주차)`,
+          isUser: false,
+          isLoading: false,
+        };
+        setMessages((prev) => [...prev, otMessage]);
+        
+        // OT 강의 생성 후 과목 정보 전달 (강의 목록 포함)
+        onCourseCreated({
+          ...course,
+          lectures: [otLecture],
+        });
+      } catch (otError) {
+        // OT 생성 실패해도 과목은 생성되었으므로 계속 진행
+        console.error("OT 강의 자동 생성 실패:", otError);
+        onCourseCreated(course);
+      }
+      
       setCurrentLectureId(null);
       setHasUploadedMaterial(false);
       setUploadedFileDisplayUrl("");
@@ -210,8 +239,18 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       throw new Error("강의 제목을 입력해주세요.");
     }
 
-    if (!options.weekNumber || options.weekNumber < 1) {
-      throw new Error("주차 번호를 입력해주세요.");
+    if (options.weekNumber === undefined || options.weekNumber === null || options.weekNumber < 0) {
+      throw new Error("주차 번호를 입력해주세요. (0 이상)");
+    }
+
+    // 중복 주차 체크
+    if (courseDetail?.lectures) {
+      const existingWeek = courseDetail.lectures.find(
+        (lecture) => lecture.weekNumber === options.weekNumber
+      );
+      if (existingWeek) {
+        throw new Error(`${options.weekNumber}주차는 이미 존재합니다. 다른 주차를 선택해주세요.`);
+      }
     }
 
     setIsCreatingLecture(true);
@@ -379,28 +418,19 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
     setIsUploading(true);
 
-    // 파일 업로드 메시지 추가
+    // 파일 업로드 메시지 추가 (이미지처럼 간단하게)
     const uploadMessage: ChatMessage = {
       id: Date.now(),
-      text: `파일 업로드 중: ${file.name}`,
+      text: file.name,
       isUser: true,
       file: file,
-      isLoading: true,
+      isLoading: false,
     };
     setMessages((prev) => [...prev, uploadMessage]);
 
     try {
       // Swagger 문서의 API 사용: /api/lectures/{lectureId}/materials
       const fileUrl = await lectureApi.uploadMaterial(targetLectureId!, file);
-
-      // 성공 메시지 추가
-      const successMessage: ChatMessage = {
-        id: Date.now() + 1,
-        text: `파일 업로드 완료: ${file.name}\n파일 URL: ${fileUrl}`,
-        isUser: false,
-        isLoading: false,
-      };
-      setMessages((prev) => [...prev, successMessage]);
 
       setHasUploadedMaterial(true);
 
@@ -419,37 +449,14 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         saveUploadToStorage(currentLectureId, file.name, previewUrl);
       }
 
-      // 스트리밍 자동 초기화 및 첫 세그먼트 요청
-      if (currentLectureId) {
-        setMessages((prev) => [
-          ...prev,
-          { id: Date.now() + 3, text: "스트리밍 세션 초기화 중...", isUser: false, isLoading: true },
-        ]);
-        try {
-          await streamingApi.initialize(currentLectureId);
-          setIsStreaming(true);
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.isLoading ? { ...m, text: "스트리밍 세션 시작!", isLoading: false } : m
-            )
-          );
-          await fetchNextSegment();
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : "세션 초기화 실패";
-          setMessages((prev) =>
-            prev.map((m) => (m.isLoading ? { ...m, text: `오류: ${msg}`, isLoading: false } : m))
-          );
-        }
-      }
-
-      // 업로드 메시지 업데이트
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === uploadMessage.id
-            ? { ...msg, text: `파일 업로드 완료: ${file.name}`, isLoading: false }
-            : msg
-        )
-      );
+      // 업로드 완료 메시지 추가
+      const successMessage: ChatMessage = {
+        id: Date.now() + 1,
+        text: "파일이 업로드되었습니다. Enter를 눌러 학습을 시작하세요.",
+        isUser: false,
+        isLoading: false,
+      };
+      setMessages((prev) => [...prev, successMessage]);
     } catch (error) {
       console.error('파일 업로드 실패:', error);
       const errorMessageText = error instanceof Error ? error.message : '알 수 없는 오류';
@@ -652,6 +659,14 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     }
   };
 
+  // 입력창 초기화 및 높이 리셋
+  const resetInputText = () => {
+    setInputText("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = '40px';
+    }
+  };
+
   const handleSendMessage = () => {
     const trimmed = inputText.trim();
 
@@ -665,7 +680,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         isUser: true,
       };
       setMessages((prev) => [...prev, userMsg]);
-      setInputText("");
+      resetInputText();
 
       // 보조 설명 대기 메시지
       const pendingReply: ChatMessage = {
@@ -724,8 +739,43 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
     // 질문 대기가 아닐 때: Enter로 다음 세그먼트 진행
     if (isStreaming && !waitingForAnswer) {
-      setInputText(""); // 입력창 비우기
+      resetInputText(); // 입력창 비우기
       void fetchNextSegment();
+      return;
+    }
+
+    // 파일이 업로드되었고 스트리밍이 시작되지 않았을 때: Enter로 스트리밍 시작
+    if (!isStreaming && hasUploadedMaterial && currentLectureId) {
+      resetInputText(); // 입력창 비우기
+      setMessages((prev) => [
+        ...prev,
+        { id: Date.now(), text: "스트리밍 세션 초기화 중...", isUser: false, isLoading: true },
+      ]);
+      streamingApi.initialize(currentLectureId)
+        .then(() => {
+          setIsStreaming(true);
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.isLoading ? { ...m, text: "스트리밍 세션 시작!", isLoading: false } : m
+            )
+          );
+          return fetchNextSegment();
+        })
+        .catch((e) => {
+          const msg = e instanceof Error ? e.message : "세션 초기화 실패";
+          setMessages((prev) =>
+            prev.map((m) => (m.isLoading ? { ...m, text: `오류: ${msg}`, isLoading: false } : m))
+          );
+        })
+        .finally(() => {
+          // 스크롤을 하단으로 이동
+          setTimeout(() => {
+            const chatContainer = document.getElementById("chat-messages");
+            if (chatContainer) {
+              chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+          }, 0);
+        });
       return;
     }
 
@@ -809,12 +859,13 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     <span>처리 중...</span>
                   </div>
                 )}
-                {message.file && (
-                  <div className="mb-1 text-xs opacity-80">
-                    📎 {message.file.name}
+                {message.file && message.isUser ? (
+                  // 파일 업로드 메시지는 파일명과 아이콘만 표시
+                  <div className="flex items-center gap-2">
+                    <span className="text-lg">📎</span>
+                    <span>{message.file.name}</span>
                   </div>
-                )}
-                {message.markdown ? (
+                ) : message.markdown ? (
                   <div>
                     <div className="mb-2 font-semibold">{message.text}</div>
                     <div
@@ -835,29 +886,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           ))
         )}
       </div>
-
-      {/* 스트리밍 섹션 (강의와 파일이 준비된 경우) */}
-      {currentLectureId && (
-        <div className={`p-3 border-t space-y-2 ${
-          isDarkMode ? "border-gray-800 bg-gray-900" : "border-gray-200 bg-gray-50"
-        }`}>
-          {/* 컨트롤 버튼 제거. 업로드 후 자동 초기화/진행, Enter로 다음/답변 */}
-          {!hasUploadedMaterial && (
-            <div className={`text-xs ${
-              isDarkMode ? "text-gray-500" : "text-gray-500"
-            }`}>
-              강의 자료 파일을 업로드하면 생성할 수 있습니다.
-            </div>
-          )}
-          {uploadedFileName && (
-            <div className={`text-xs ${
-              isDarkMode ? "text-gray-400" : "text-gray-600"
-            }`}>
-              업로드: {uploadedFileName}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* 채팅 입력창 */}
       <div className={`p-3 border-t ${
@@ -963,15 +991,25 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
           {/* 텍스트 입력창 */}
           <textarea
+            ref={textareaRef}
             value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
+            onChange={(e) => {
+              setInputText(e.target.value);
+              // 높이 자동 조절
+              if (textareaRef.current) {
+                textareaRef.current.style.height = 'auto';
+                textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
+              }
+            }}
             onKeyPress={handleKeyPress}
             placeholder={
               isStreaming
                 ? (waitingForAnswer ? "AI 질문에 대한 답변을 입력하고 Enter" : "Enter로 다음 세그먼트 진행")
-                : "파일을 업로드하면 자동으로 시작됩니다"
+                : hasUploadedMaterial
+                  ? "Enter를 눌러 학습을 시작하세요"
+                  : "파일을 업로드하고 Enter를 눌러 시작하세요"
             }
-            className={`flex-1 py-2.5 text-sm resize-none bg-transparent border-0 focus:outline-none ${
+            className={`flex-1 py-2.5 text-sm resize-none bg-transparent border-0 focus:outline-none overflow-y-auto ${
               isDarkMode
                 ? "text-white placeholder-gray-500"
                 : "text-gray-900 placeholder-gray-400"

@@ -11,7 +11,7 @@ import type { Course, CourseDetail, LectureResponseDto } from "../../services/ap
 type ViewMode = "course-list" | "course-detail";
 
 const DEFAULT_LEFT_SIDEBAR_WIDTH = 224;
-const DEFAULT_RIGHT_SIDEBAR_WIDTH = 360;
+const DEFAULT_RIGHT_SIDEBAR_WIDTH = 420;
 
 const AppLayout: React.FC = () => {
   const { isDarkMode } = useTheme();
@@ -129,6 +129,32 @@ const AppLayout: React.FC = () => {
     setCurrentLectureId(lecture.lectureId);
     resetLectureOutputs();
   };
+
+  const handleLectureDelete = useCallback(
+    async (lectureId: number) => {
+      if (!selectedCourseId) return;
+
+      try {
+        const { lectureApi } = await import("../../services/api");
+        await lectureApi.deleteLecture(lectureId);
+        
+        // 삭제된 강의가 현재 선택된 강의라면 선택 해제
+        if (currentLectureId === lectureId) {
+          setCurrentLectureId(null);
+          resetLectureOutputs();
+        }
+        
+        // 강의 목록 갱신
+        await loadCourseDetail(selectedCourseId);
+        
+        window.alert("강의가 삭제되었습니다.");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "강의 삭제에 실패했습니다.";
+        window.alert(message);
+      }
+    },
+    [selectedCourseId, currentLectureId, loadCourseDetail, resetLectureOutputs]
+  );
 
   const handleLectureSelect = (lectureId: number) => {
     setCurrentLectureId(lectureId);
@@ -313,35 +339,41 @@ const AppLayout: React.FC = () => {
     >
       <TopNav currentCourseTitle={currentCourseTitle} onNavigateHome={handleBackToCourses} />
       <div className="flex flex-1 overflow-hidden min-h-0">
-        <LeftSidebar
-          width={leftSidebarWidth}
-          viewMode={viewMode}
-          courseDetail={courseDetail}
-          selectedLectureId={currentLectureId}
-          onSelectLecture={handleLectureSelect}
-          isCourseDetailLoading={isCourseDetailLoading}
-        />
-        <div
-          ref={leftResizeRef}
-          onMouseDown={handleLeftMouseDown}
-          onDoubleClick={handleLeftDoubleClick}
-          className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
-            isDarkMode ? "bg-gray-800" : "bg-gray-200"
-          } ${isResizingLeft ? (isDarkMode ? "bg-gray-600" : "bg-gray-400") : ""}`}
-          style={{
-            width: "2px",
-            zIndex: 10,
-            marginLeft: "-1px",
-            marginRight: "-1px",
-          }}
-        >
-          <div
-            className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 transition-opacity ${
-              isResizingLeft ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-            }`}
-            style={{ cursor: "col-resize" }}
-          />
-        </div>
+        {/* 과목 상세 페이지에만 좌측 사이드바 표시 */}
+        {viewMode === "course-detail" && (
+          <>
+            <LeftSidebar
+              width={leftSidebarWidth}
+              viewMode={viewMode}
+              courseDetail={courseDetail}
+              selectedLectureId={currentLectureId}
+              onSelectLecture={handleLectureSelect}
+              onDeleteLecture={handleLectureDelete}
+              isCourseDetailLoading={isCourseDetailLoading}
+            />
+            <div
+              ref={leftResizeRef}
+              onMouseDown={handleLeftMouseDown}
+              onDoubleClick={handleLeftDoubleClick}
+              className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
+                isDarkMode ? "bg-gray-800" : "bg-gray-200"
+              } ${isResizingLeft ? (isDarkMode ? "bg-gray-600" : "bg-gray-400") : ""}`}
+              style={{
+                width: "2px",
+                zIndex: 10,
+                marginLeft: "-1px",
+                marginRight: "-1px",
+              }}
+            >
+              <div
+                className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 transition-opacity ${
+                  isResizingLeft ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                }`}
+                style={{ cursor: "col-resize" }}
+              />
+            </div>
+          </>
+        )}
 
          <MainContent
           viewMode={viewMode}
@@ -353,36 +385,41 @@ const AppLayout: React.FC = () => {
           courseDetail={courseDetail}
           isCourseDetailLoading={isCourseDetailLoading}
           courseDetailError={courseDetailError}
+          selectedLectureId={currentLectureId}
           lectureMarkdown={lectureMarkdown}
           fileUrl={lectureFileUrl}
           fileName={lectureFileName}
           onEditCourse={handleCourseEdit}
           onDeleteCourse={handleCourseDelete}
+          onCourseCreated={handleCourseCreated}
         />
 
-        <div
-          ref={rightResizeRef}
-          onMouseDown={handleRightMouseDown}
-          onDoubleClick={handleRightDoubleClick}
-          className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
-            isDarkMode ? "bg-gray-800" : "bg-gray-200"
-          } ${isResizingRight ? (isDarkMode ? "bg-gray-600" : "bg-gray-400") : ""}`}
-          style={{
-            width: "2px",
-            zIndex: 10,
-            marginLeft: "-1px",
-            marginRight: "-1px",
-          }}
-        >
-          <div
-            className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 transition-opacity ${
-              isResizingRight ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-            }`}
-            style={{ cursor: "col-resize" }}
-          />
-        </div>
+        {/* 과목 상세 페이지에만 우측 사이드바 표시 */}
+        {viewMode === "course-detail" && (
+          <>
+            <div
+              ref={rightResizeRef}
+              onMouseDown={handleRightMouseDown}
+              onDoubleClick={handleRightDoubleClick}
+              className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
+                isDarkMode ? "bg-gray-800" : "bg-gray-200"
+              } ${isResizingRight ? (isDarkMode ? "bg-gray-600" : "bg-gray-400") : ""}`}
+              style={{
+                width: "2px",
+                zIndex: 10,
+                marginLeft: "-1px",
+                marginRight: "-1px",
+              }}
+            >
+              <div
+                className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 transition-opacity ${
+                  isResizingRight ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+                }`}
+                style={{ cursor: "col-resize" }}
+              />
+            </div>
 
-        <RightSidebar
+            <RightSidebar
           lectureMarkdown={lectureMarkdown}
           onLectureDataChange={(markdown, fileUrl, fileName) => {
             setLectureMarkdown(markdown);
@@ -393,9 +430,12 @@ const AppLayout: React.FC = () => {
           courseId={currentCourseId ?? undefined}
           lectureId={currentLectureId ?? undefined}
           viewMode={viewMode}
+          courseDetail={courseDetail}
           onCourseCreated={handleCourseCreated}
           onLectureCreated={handleLectureCreated}
-        />
+            />
+          </>
+        )}
       </div>
     </div>
   );
