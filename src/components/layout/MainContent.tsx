@@ -2,7 +2,8 @@ import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useTheme } from "../../contexts/ThemeContext";
-import type { Course, CourseDetail } from "../../services/api";
+import { useAuth } from "../../contexts/AuthContext";
+import { courseApi, lectureApi, type Course, type CourseDetail } from "../../services/api";
 
 type ViewMode = "course-list" | "course-detail";
 
@@ -16,11 +17,13 @@ interface MainContentProps {
   courseDetail: CourseDetail | null;
   isCourseDetailLoading: boolean;
   courseDetailError: string | null;
+  selectedLectureId?: number | null;
   lectureMarkdown?: string;
   fileUrl?: string;
   fileName?: string;
   onEditCourse?: (course: Course) => void;
   onDeleteCourse?: (course: Course) => void;
+  onCourseCreated?: (course: CourseDetail) => void;
 }
 
 const MainContent: React.FC<MainContentProps> = ({
@@ -33,14 +36,21 @@ const MainContent: React.FC<MainContentProps> = ({
   courseDetail,
   isCourseDetailLoading,
   courseDetailError,
+  selectedLectureId,
   lectureMarkdown,
   fileUrl,
   fileName,
   onEditCourse,
   onDeleteCourse,
+  onCourseCreated,
 }) => {
   const { isDarkMode } = useTheme();
+  const { user } = useAuth();
+  const isTeacher = user?.role === "TEACHER";
   const [openCourseMenuId, setOpenCourseMenuId] = React.useState<number | null>(null);
+  const [isCourseModalOpen, setIsCourseModalOpen] = React.useState(false);
+  const [courseModalTitle, setCourseModalTitle] = React.useState("");
+  const [courseModalDescription, setCourseModalDescription] = React.useState("");
   const actionMenuRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
@@ -77,6 +87,44 @@ const MainContent: React.FC<MainContentProps> = ({
   const handleCourseSelect = (courseId: number) => {
     onSelectCourse(courseId);
     setOpenCourseMenuId(null);
+  };
+
+  const handleCreateCourse = async () => {
+    if (!courseModalTitle.trim()) {
+      window.alert("과목 제목을 입력해주세요.");
+      return;
+    }
+
+    try {
+      const course = await courseApi.createCourse({
+        title: courseModalTitle.trim(),
+        description: courseModalDescription.trim() || '',
+      });
+
+      // 자동으로 OT 강의 생성
+      try {
+        const otLecture = await lectureApi.createLecture(course.courseId, {
+          title: "OT",
+          weekNumber: 0,
+          description: "오리엔테이션",
+        });
+
+        onCourseCreated?.({
+          ...course,
+          lectures: [otLecture],
+        });
+      } catch {
+        onCourseCreated?.(course);
+      }
+
+      setCourseModalTitle("");
+      setCourseModalDescription("");
+      setIsCourseModalOpen(false);
+      window.alert("과목이 생성되었습니다!");
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : '과목 생성에 실패했습니다.';
+      window.alert(errorMsg);
+    }
   };
 
   const renderCourseList = () => {
@@ -129,10 +177,25 @@ const MainContent: React.FC<MainContentProps> = ({
 
     return (
       <div className="space-y-6">
-        <div>
-          <h2 className="text-2xl font-semibold mb-1">내 과목</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-2xl font-semibold">내 과목</h2>
+          {isTeacher && (
+            <button
+              onClick={() => setIsCourseModalOpen(true)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                isDarkMode
+                  ? "bg-blue-600 hover:bg-blue-700 text-white"
+                  : "bg-blue-500 hover:bg-blue-600 text-white"
+              }`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              과목 생성
+            </button>
+          )}
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {courses.map((course) => (
             <div
               key={course.courseId}
@@ -145,7 +208,7 @@ const MainContent: React.FC<MainContentProps> = ({
                   handleCourseSelect(course.courseId);
                 }
               }}
-              className={`text-left p-3 md:p-4 rounded-xl border shadow-sm transition-all ${
+              className={`text-left p-4 rounded-xl border shadow-sm transition-all flex flex-col h-32 ${
                 isDarkMode
                   ? "bg-gray-800 border-gray-700 hover:border-blue-500 hover:shadow-blue-500/30"
                   : "bg-white border-gray-200 hover:border-blue-500/40 hover:shadow-blue-500/20"
@@ -153,84 +216,86 @@ const MainContent: React.FC<MainContentProps> = ({
                 isDarkMode ? "focus:ring-offset-gray-900" : "focus:ring-offset-white"
               }`}
             >
-              <div className="flex items-start justify-between gap-2">
-                <h3 className="text-lg font-semibold">{course.title}</h3>
-                <div className="relative -mr-1">
-                  <button
-                    type="button"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      toggleCourseMenu(course.courseId);
-                    }}
-                    className={`inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
-                      isDarkMode
-                        ? "text-gray-300 hover:text-white hover:bg-gray-700"
-                        : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                    }`}
-                    aria-haspopup="menu"
-                    aria-expanded={openCourseMenuId === course.courseId}
-                    aria-label="과목 옵션 열기"
-                  >
-                    ⋮
-                  </button>
-                  {openCourseMenuId === course.courseId && (
-                    <div
-                      ref={(node) => {
-                        if (openCourseMenuId === course.courseId) {
-                          actionMenuRef.current = node;
-                        }
+              <div className="flex flex-col h-full">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <h3 className="text-base font-semibold line-clamp-2 flex-1">{course.title}</h3>
+                  <div className="relative flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        toggleCourseMenu(course.courseId);
                       }}
-                      className={`absolute right-0 mt-2 w-40 rounded-lg border shadow-lg z-10 ${
-                        isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+                      className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors ${
+                        isDarkMode
+                          ? "text-gray-300 hover:text-white hover:bg-gray-700"
+                          : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
                       }`}
-                      role="menu"
-                      aria-label="과목 옵션 메뉴"
+                      aria-haspopup="menu"
+                      aria-expanded={openCourseMenuId === course.courseId}
+                      aria-label="과목 옵션 열기"
                     >
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setOpenCourseMenuId(null);
-                          onEditCourse?.(course);
+                      ⋮
+                    </button>
+                    {openCourseMenuId === course.courseId && (
+                      <div
+                        ref={(node) => {
+                          if (openCourseMenuId === course.courseId) {
+                            actionMenuRef.current = node;
+                          }
                         }}
-                        className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                          isDarkMode
-                            ? "text-gray-200 hover:bg-gray-700"
-                            : "text-gray-700 hover:bg-gray-100"
+                        className={`absolute right-0 mt-1 w-36 rounded-lg border shadow-lg z-20 ${
+                          isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
                         }`}
-                        role="menuitem"
+                        role="menu"
+                        aria-label="과목 옵션 메뉴"
                       >
-                        과목 수정
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          setOpenCourseMenuId(null);
-                          onDeleteCourse?.(course);
-                        }}
-                        className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                          isDarkMode
-                            ? "text-red-300 hover:bg-red-900/20 hover:text-red-200"
-                            : "text-red-600 hover:bg-red-50"
-                        }`}
-                        role="menuitem"
-                      >
-                        과목 삭제
-                      </button>
-                    </div>
-                  )}
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setOpenCourseMenuId(null);
+                            onEditCourse?.(course);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-xs transition-colors rounded-t-lg ${
+                            isDarkMode
+                              ? "text-gray-200 hover:bg-gray-700"
+                              : "text-gray-700 hover:bg-gray-100"
+                          }`}
+                          role="menuitem"
+                        >
+                          과목 수정
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setOpenCourseMenuId(null);
+                            onDeleteCourse?.(course);
+                          }}
+                          className={`w-full text-left px-3 py-2 text-xs transition-colors rounded-b-lg ${
+                            isDarkMode
+                              ? "text-red-300 hover:bg-red-900/20 hover:text-red-200"
+                              : "text-red-600 hover:bg-red-50"
+                          }`}
+                          role="menuitem"
+                        >
+                          과목 삭제
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
+                {course.description && (
+                  <p
+                    className={`text-xs line-clamp-3 flex-1 ${
+                      isDarkMode ? "text-gray-400" : "text-gray-600"
+                    }`}
+                  >
+                    {course.description}
+                  </p>
+                )}
               </div>
-              {course.description && (
-                <p
-                  className={`mt-3 text-sm line-clamp-3 ${
-                    isDarkMode ? "text-gray-400" : "text-gray-600"
-                  }`}
-                >
-                  {course.description}
-                </p>
-              )}
             </div>
           ))}
         </div>
@@ -280,25 +345,34 @@ const MainContent: React.FC<MainContentProps> = ({
     }
 
     const hasLectureContent = Boolean(lectureMarkdown) || Boolean(fileUrl);
+    
+    // 선택된 강의가 OT(0주차)인지 확인
+    const selectedLecture = courseDetail.lectures?.find(
+      (lecture) => lecture.lectureId === selectedLectureId
+    );
+    const isOTSelected = selectedLecture?.weekNumber === 0;
 
     return (
       <div className="flex flex-col gap-4 h-full">
-        <div
-          className={`p-4 rounded-xl border ${
-            isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
-          }`}
-        >
-          <div className="flex flex-col gap-3">
-            <div className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-              담당: {courseDetail.teacherName}
+        {/* OT(0주차)를 선택했을 때만 담당과 강의 설명 표시 */}
+        {isOTSelected && (
+          <div
+            className={`p-4 rounded-xl border ${
+              isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+            }`}
+          >
+            <div className="flex flex-col gap-3">
+              <div className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+                담당: {courseDetail.teacherName}
+              </div>
+              {courseDetail.description && (
+                <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                  {courseDetail.description}
+                </p>
+              )}
             </div>
-            {courseDetail.description && (
-              <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-                {courseDetail.description}
-              </p>
-            )}
           </div>
-        </div>
+        )}
 
         {hasLectureContent ? (
           <div className="flex-1 flex flex-col gap-6">
@@ -378,13 +452,89 @@ const MainContent: React.FC<MainContentProps> = ({
   };
 
   return (
-    <div
-      className={`flex-1 min-h-0 p-4 overflow-y-auto scrollbar-hide transition-colors ${
-        isDarkMode ? "bg-gray-900" : "bg-gray-50"
-      }`}
-    >
-      {viewMode === "course-list" ? renderCourseList() : renderCourseDetail()}
-    </div>
+    <>
+      <div
+        className={`flex-1 min-h-0 p-4 overflow-y-auto scrollbar-hide transition-colors ${
+          isDarkMode ? "bg-gray-900" : "bg-gray-50"
+        }`}
+      >
+        {viewMode === "course-list" ? renderCourseList() : renderCourseDetail()}
+      </div>
+
+      {/* 과목 생성 모달 */}
+      {isCourseModalOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={() => setIsCourseModalOpen(false)}
+        >
+          <div
+            className={`w-full max-w-md p-6 rounded-xl shadow-xl ${
+              isDarkMode ? "bg-gray-800" : "bg-white"
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-semibold mb-4">새 과목 생성</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">과목 제목 *</label>
+                <input
+                  type="text"
+                  value={courseModalTitle}
+                  onChange={(e) => setCourseModalTitle(e.target.value)}
+                  placeholder="예: Python 기초 프로그래밍"
+                  className={`w-full px-3 py-2 rounded-lg border ${
+                    isDarkMode
+                      ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
+                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
+                  } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">과목 설명</label>
+                <textarea
+                  value={courseModalDescription}
+                  onChange={(e) => setCourseModalDescription(e.target.value)}
+                  placeholder="과목에 대한 설명을 입력하세요"
+                  rows={3}
+                  className={`w-full px-3 py-2 rounded-lg border ${
+                    isDarkMode
+                      ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
+                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
+                  } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={handleCreateCourse}
+                  className={`flex-1 px-4 py-2 rounded-lg font-medium ${
+                    isDarkMode
+                      ? "bg-blue-600 hover:bg-blue-700 text-white"
+                      : "bg-blue-500 hover:bg-blue-600 text-white"
+                  }`}
+                >
+                  생성
+                </button>
+                <button
+                  onClick={() => {
+                    setIsCourseModalOpen(false);
+                    setCourseModalTitle("");
+                    setCourseModalDescription("");
+                  }}
+                  className={`flex-1 px-4 py-2 rounded-lg font-medium ${
+                    isDarkMode
+                      ? "bg-gray-700 hover:bg-gray-600 text-white"
+                      : "bg-gray-200 hover:bg-gray-300 text-gray-700"
+                  }`}
+                >
+                  취소
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 
