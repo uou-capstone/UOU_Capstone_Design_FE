@@ -8,7 +8,7 @@
 # API 프록시 설정 (Mixed Content 문제 해결)
 [[redirects]]
   from = "/api/*"
-  to = "http://3.36.233.169:8080/api/:splat"
+  to = "http://3.36.233.169/api/:splat"
   status = 200
   force = true
 

@@ -1,4 +1,4 @@
-const BACKEND_URL = 'http://3.36.233.169:8080';
+const BACKEND_URL = 'http://3.36.233.169';
 
 // 프로덕션 환경에서는 Netlify 프록시를 통해 상대 경로로 요청
 // 개발 환경에서는 직접 백엔드 서버로 요청
