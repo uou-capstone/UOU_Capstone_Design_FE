@@ -714,4 +714,9 @@ export const streamingApi = {
       body: JSON.stringify(payload),
     });
   },
+  cancel: async (lectureId: number): Promise<void> => {
+    return apiRequest<void>(`/api/lectures/${lectureId}/stream/cancel`, {
+      method: 'POST',
+    });
+  },
 };

@@ -360,6 +360,17 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     []
   );
 
+  // 컴포넌트 언마운트 또는 lectureId 변경 시 스트리밍 취소
+  useEffect(() => {
+    return () => {
+      if (isStreaming && currentLectureId) {
+        streamingApi.cancel(currentLectureId).catch((error) => {
+          console.error('스트리밍 취소 실패 (cleanup):', error);
+        });
+      }
+    };
+  }, [currentLectureId, isStreaming]);
+
   useEffect(() => {
     if (!isActionMenuOpen) return;
 
@@ -377,6 +388,37 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isActionMenuOpen]);
+
+  // 스트리밍 중지 함수
+  const handleCancelStream = async () => {
+    if (!currentLectureId) return;
+
+    try {
+      await streamingApi.cancel(currentLectureId);
+      setIsStreaming(false);
+      setWaitingForAnswer(false);
+      setCurrentAiQuestionId(null);
+      setIsFetchingNext(false);
+      
+      const cancelMessage: ChatMessage = {
+        id: Date.now(),
+        text: "학습이 중지되었습니다.",
+        isUser: false,
+        isLoading: false,
+      };
+      setMessages((prev) => [...prev, cancelMessage]);
+    } catch (error) {
+      console.error('스트리밍 중지 실패:', error);
+      const errorMsg = error instanceof Error ? error.message : '중지에 실패했습니다.';
+      const errorMessage: ChatMessage = {
+        id: Date.now(),
+        text: `중지 오류: ${errorMsg}`,
+        isUser: false,
+        isLoading: false,
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    }
+  };
 
   const handleFileUpload = async (file: File) => {
     // 파일 타입 검증
@@ -1017,6 +1059,30 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             rows={1}
             style={{ minHeight: "40px", maxHeight: "120px" }}
           />
+
+          {/* 중지 버튼 (스트리밍 또는 업로드 중일 때 표시) */}
+          {(isStreaming || isUploading || isFetchingNext) && (
+            <button
+              onClick={handleCancelStream}
+              type="button"
+              className={`p-2.5 flex items-center justify-center rounded transition-all flex-shrink-0 ${
+                isDarkMode
+                  ? "text-red-400 hover:text-red-300 hover:bg-red-900/20"
+                  : "text-red-600 hover:text-red-700 hover:bg-red-50"
+              }`}
+              title="학습 중지"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                stroke="none"
+              >
+                <rect x="6" y="6" width="12" height="12" rx="1" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
     </aside>
