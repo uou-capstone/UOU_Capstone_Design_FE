@@ -160,16 +160,38 @@ const MainContent: React.FC<MainContentProps> = ({
 
     if (!courses.length) {
       return (
-        <div
-          className={`h-full flex items-center justify-center ${
-            isDarkMode ? "text-gray-400" : "text-gray-500"
-          }`}
-        >
-          <div className="text-center space-y-2">
-            <p className="text-lg font-medium">등록된 과목이 없습니다.</p>
-            <p className="text-sm">
-              오른쪽 사이드바의 + 버튼을 눌러 과목을 생성해보세요.
-            </p>
+        <div className="h-full flex flex-col">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-semibold">내 과목</h2>
+            {isTeacher && (
+              <button
+                onClick={() => setIsCourseModalOpen(true)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                  isDarkMode
+                    ? "bg-blue-600 hover:bg-blue-700 text-white"
+                    : "bg-blue-500 hover:bg-blue-600 text-white"
+                }`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                과목 생성
+              </button>
+            )}
+          </div>
+          <div
+            className={`flex-1 flex items-center justify-center ${
+              isDarkMode ? "text-gray-400" : "text-gray-500"
+            }`}
+          >
+            <div className="text-center space-y-2">
+              <p className="text-lg font-medium">등록된 과목이 없습니다.</p>
+              {isTeacher ? (
+                <p className="text-sm">위의 '과목 생성' 버튼을 눌러 새 과목을 만들어보세요.</p>
+              ) : (
+                <p className="text-sm">담당 선생님이 과목을 생성하면 여기에 표시됩니다.</p>
+              )}
+            </div>
           </div>
         </div>
       );
