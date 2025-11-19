@@ -119,8 +119,8 @@ yarn lint
 
 ### 환경 변수
 
-**개발 환경**: `http://3.36.233.169:8080` (직접 연결)
-**프로덕션 환경**: Netlify 프록시를 통한 상대 경로 (Mixed Content 문제 해결)
+**백엔드 서버**: `https://uouaitutor.duckdns.org` (HTTPS 직접 연결)
+**개발/프로덕션**: 모두 동일한 HTTPS 백엔드 사용
 
 프로덕션 환경에서 다른 API URL을 사용하려면 `.env` 파일을 생성하고 다음을 추가하세요:
 
@@ -134,13 +134,13 @@ VITE_API_URL=http://your-api-url.com
 
 1. Netlify에 프로젝트 연결
 2. 빌드 설정은 `netlify.toml`에 정의되어 있음
-3. `netlify.toml`이 자동으로 API 요청을 백엔드 서버(`http://3.36.233.169:8080`)로 프록시
+3. HTTPS 백엔드로 직접 연결 (`https://uouaitutor.duckdns.org`)
 
-#### AWS EC2 백엔드 연결
+#### 백엔드 연결
 
-- 백엔드 서버: `http://3.36.233.169:8080`
-- Netlify 프록시가 `/api/*` 요청을 백엔드로 전달
-- Mixed Content 문제 없이 HTTPS에서 HTTP 백엔드 사용 가능
+- 백엔드 서버: `https://uouaitutor.duckdns.org`
+- HTTPS 도메인으로 Mixed Content 문제 해결
+- Netlify 타임아웃 제한 없이 직접 연결 가능
 
 ## 📝 라이선스
 

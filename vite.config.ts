@@ -24,9 +24,9 @@ export default defineConfig({
     open: false,
     proxy: {
       '/api': {
-        target: 'http://3.36.233.169:8080',
+        target: 'https://uouaitutor.duckdns.org',
         changeOrigin: true,
-        secure: false,
+        secure: true,
         ws: false,
         timeout: 60000, // 60초 타임아웃 (파일 업로드용)
         rewrite: (path) => {
@@ -43,7 +43,7 @@ export default defineConfig({
             // 연결 오류인 경우 더 자세한 정보 제공
             if (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT' || err.code === 'ENOTFOUND') {
               console.error('[Vite Proxy] ⚠️ 백엔드 서버에 연결할 수 없습니다.');
-              console.error('[Vite Proxy] 백엔드 URL: http://3.36.233.169:8080');
+              console.error('[Vite Proxy] 백엔드 URL: https://uouaitutor.duckdns.org');
             }
             
             if (res && !res.headersSent) {
@@ -64,7 +64,7 @@ export default defineConfig({
               
               console.log('[Vite Proxy] ➡️ Forwarding:', req.method, req.url);
               console.log('[Vite Proxy] Content-Type:', req.headers['content-type'] || '(없음)');
-              console.log('[Vite Proxy] Target:', 'http://3.36.233.169:8080' + req.url);
+              console.log('[Vite Proxy] Target:', 'https://uouaitutor.duckdns.org' + req.url);
             } catch (err) {
               // 헤더 설정 실패 시 무시 (이미 설정되었을 수 있음)
               console.warn('[Vite Proxy] ⚠️ Failed to set headers:', err);
