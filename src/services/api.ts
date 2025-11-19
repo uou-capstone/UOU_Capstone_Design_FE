@@ -1,10 +1,7 @@
-const BACKEND_URL = 'http://3.36.233.169:8080';
+const BACKEND_URL = 'https://uouaitutor.duckdns.org';
 
-// 프로덕션 환경에서는 Netlify 프록시를 통해 상대 경로로 요청
-// 개발 환경에서는 직접 백엔드 서버로 요청
-const API_BASE_URL = import.meta.env.PROD 
-  ? (import.meta.env.VITE_API_URL || '') // 프로덕션: 빈 문자열(상대 경로)
-  : BACKEND_URL; // 개발: 직접 백엔드 주소
+// HTTPS 백엔드이므로 개발/프로덕션 모두 직접 연결
+const API_BASE_URL = import.meta.env.VITE_API_URL || BACKEND_URL;
 
 // API 응답 타입
 export interface ApiResponse<T = any> {
