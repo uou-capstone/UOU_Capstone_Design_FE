@@ -1,0 +1,28 @@
+# Netlify 배포 설정
+
+# 빌드 설정
+[build]
+  command = "yarn build"
+  publish = "dist"
+
+# API 프록시 설정 (Mixed Content 문제 해결)
+[[redirects]]
+  from = "/api/*"
+  to = "http://3.36.233.169:8080/api/:splat"
+  status = 200
+  force = true
+
+# SPA 라우팅 지원 (React Router)
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# 헤더 설정
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
