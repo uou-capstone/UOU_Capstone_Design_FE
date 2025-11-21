@@ -688,6 +688,17 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         ...prev,
         { id: Date.now(), text: `오류: ${msg}`, isUser: false },
       ]);
+      if (/waiting\s*for\s*answer/i.test(msg)) {
+        setWaitingForAnswer(true);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now() + 1,
+            text: "질문에 대한 답변을 입력할 차례입니다.",
+            isUser: false,
+          },
+        ]);
+      }
     } finally {
       setIsFetchingNext(false);
       setTimeout(() => {
