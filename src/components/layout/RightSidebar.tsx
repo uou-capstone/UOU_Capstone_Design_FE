@@ -76,6 +76,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const dragCounterRef = useRef<number>(0);
   const previewObjectUrlRef = useRef<string | null>(null);
   const actionMenuContainerRef = useRef<HTMLDivElement>(null);
+  const shouldAbortPollingRef = useRef<boolean>(false);
 
   const allowedFileTypes = ['.pdf', '.ppt', '.pptx', '.doc', '.docx'];
   
@@ -189,7 +190,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       } catch (otError) {
         // OT 생성 실패해도 과목은 생성되었으므로 계속 진행
         console.error("OT 강의 자동 생성 실패:", otError);
-        onCourseCreated(course);
+      onCourseCreated(course);
       }
       
       setCurrentLectureId(null);
@@ -364,6 +365,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   useEffect(() => {
     return () => {
       if (isStreaming && currentLectureId) {
+        shouldAbortPollingRef.current = true;
         streamingApi.cancel(currentLectureId).catch((error) => {
           console.error('스트리밍 취소 실패 (cleanup):', error);
         });
@@ -394,6 +396,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     if (!currentLectureId) return;
 
     try {
+      shouldAbortPollingRef.current = true;
       await streamingApi.cancel(currentLectureId);
       setIsStreaming(false);
       setWaitingForAnswer(false);
@@ -654,9 +657,21 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   // 스트리밍: 다음 세그먼트 가져오기
   const fetchNextSegment = async () => {
     if (!currentLectureId || isFetchingNext) return;
+    shouldAbortPollingRef.current = false;
     setIsFetchingNext(true);
-    try {
+    const pollNext = async (): Promise<void> => {
+      if (!currentLectureId || shouldAbortPollingRef.current) {
+        return;
+      }
       const res = await streamingApi.next(currentLectureId);
+      const status = (res.status || "").toUpperCase();
+      if (status === "PROCESSING") {
+        await sleep(2000);
+        if (shouldAbortPollingRef.current) {
+          return;
+        }
+        return pollNext();
+      }
       await mapNextToMessages(
         res,
         setMessages,
@@ -664,6 +679,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         setCurrentAiQuestionId,
         setHasMoreStream
       );
+    };
+    try {
+      await pollNext();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "다음 세그먼트 수신 실패";
       setMessages((prev) => [
@@ -1315,4 +1333,10 @@ async function mapNextToMessages(
     setWaiting(false);
     setQuestionId(null);
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
