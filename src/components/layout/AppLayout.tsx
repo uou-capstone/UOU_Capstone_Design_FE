@@ -342,36 +342,36 @@ const AppLayout: React.FC = () => {
         {/* 과목 상세 페이지에만 좌측 사이드바 표시 */}
         {viewMode === "course-detail" && (
           <>
-            <LeftSidebar
-              width={leftSidebarWidth}
-              viewMode={viewMode}
-              courseDetail={courseDetail}
-              selectedLectureId={currentLectureId}
-              onSelectLecture={handleLectureSelect}
+        <LeftSidebar
+          width={leftSidebarWidth}
+          viewMode={viewMode}
+          courseDetail={courseDetail}
+          selectedLectureId={currentLectureId}
+          onSelectLecture={handleLectureSelect}
               onDeleteLecture={handleLectureDelete}
-              isCourseDetailLoading={isCourseDetailLoading}
-            />
-            <div
-              ref={leftResizeRef}
-              onMouseDown={handleLeftMouseDown}
-              onDoubleClick={handleLeftDoubleClick}
-              className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
-                isDarkMode ? "bg-gray-800" : "bg-gray-200"
-              } ${isResizingLeft ? (isDarkMode ? "bg-gray-600" : "bg-gray-400") : ""}`}
-              style={{
-                width: "2px",
-                zIndex: 10,
-                marginLeft: "-1px",
-                marginRight: "-1px",
-              }}
-            >
-              <div
-                className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 transition-opacity ${
-                  isResizingLeft ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                }`}
-                style={{ cursor: "col-resize" }}
-              />
-            </div>
+          isCourseDetailLoading={isCourseDetailLoading}
+        />
+        <div
+          ref={leftResizeRef}
+          onMouseDown={handleLeftMouseDown}
+          onDoubleClick={handleLeftDoubleClick}
+          className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
+            isDarkMode ? "bg-gray-800" : "bg-gray-200"
+          } ${isResizingLeft ? (isDarkMode ? "bg-gray-600" : "bg-gray-400") : ""}`}
+          style={{
+            width: "2px",
+            zIndex: 10,
+            marginLeft: "-1px",
+            marginRight: "-1px",
+          }}
+        >
+          <div
+            className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 transition-opacity ${
+              isResizingLeft ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            }`}
+            style={{ cursor: "col-resize" }}
+          />
+        </div>
           </>
         )}
 
@@ -397,29 +397,29 @@ const AppLayout: React.FC = () => {
         {/* 과목 상세 페이지에만 우측 사이드바 표시 */}
         {viewMode === "course-detail" && (
           <>
-            <div
-              ref={rightResizeRef}
-              onMouseDown={handleRightMouseDown}
-              onDoubleClick={handleRightDoubleClick}
-              className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
-                isDarkMode ? "bg-gray-800" : "bg-gray-200"
-              } ${isResizingRight ? (isDarkMode ? "bg-gray-600" : "bg-gray-400") : ""}`}
-              style={{
-                width: "2px",
-                zIndex: 10,
-                marginLeft: "-1px",
-                marginRight: "-1px",
-              }}
-            >
-              <div
-                className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 transition-opacity ${
-                  isResizingRight ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-                }`}
-                style={{ cursor: "col-resize" }}
-              />
-            </div>
+        <div
+          ref={rightResizeRef}
+          onMouseDown={handleRightMouseDown}
+          onDoubleClick={handleRightDoubleClick}
+          className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
+            isDarkMode ? "bg-gray-800" : "bg-gray-200"
+          } ${isResizingRight ? (isDarkMode ? "bg-gray-600" : "bg-gray-400") : ""}`}
+          style={{
+            width: "2px",
+            zIndex: 10,
+            marginLeft: "-1px",
+            marginRight: "-1px",
+          }}
+        >
+          <div
+            className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 transition-opacity ${
+              isResizingRight ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            }`}
+            style={{ cursor: "col-resize" }}
+          />
+        </div>
 
-            <RightSidebar
+        <RightSidebar
           lectureMarkdown={lectureMarkdown}
           onLectureDataChange={(markdown, fileUrl, fileName) => {
             setLectureMarkdown(markdown);
@@ -433,7 +433,7 @@ const AppLayout: React.FC = () => {
           courseDetail={courseDetail}
           onCourseCreated={handleCourseCreated}
           onLectureCreated={handleLectureCreated}
-            />
+        />
           </>
         )}
       </div>
