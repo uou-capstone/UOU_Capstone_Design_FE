@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { authApi, User, getAuthToken, setAuthToken, removeAuthToken } from '../services/api';
 
 interface AuthContextType {
@@ -10,6 +10,9 @@ interface AuthContextType {
   logout: () => void;
   refreshUser: () => Promise<void>;
 }
+
+// 자동 로그아웃 시간 (밀리초) - 30분
+const AUTO_LOGOUT_TIME = 30 * 60 * 1000;
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -28,6 +31,8 @@ interface AuthProviderProps {
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const logoutTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lastActivityRef = useRef<number>(Date.now());
 
   // 초기 로드 시 토큰 확인 및 사용자 정보 가져오기
   useEffect(() => {
@@ -107,7 +112,71 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = (): void => {
     removeAuthToken();
     setUser(null);
+    // 타이머 정리
+    if (logoutTimerRef.current) {
+      clearTimeout(logoutTimerRef.current);
+      logoutTimerRef.current = null;
+    }
   };
+
+  // 자동 로그아웃 타이머 설정
+  const resetLogoutTimer = () => {
+    // 기존 타이머 제거
+    if (logoutTimerRef.current) {
+      clearTimeout(logoutTimerRef.current);
+    }
+
+    // 사용자가 로그인되어 있을 때만 타이머 설정
+    if (user) {
+      logoutTimerRef.current = setTimeout(() => {
+        logout();
+        // 로그인 페이지로 이동
+        window.location.href = '/login';
+      }, AUTO_LOGOUT_TIME);
+    }
+  };
+
+  // 사용자 활동 감지
+  useEffect(() => {
+    if (!user) {
+      // 로그인되지 않은 경우 타이머 정리
+      if (logoutTimerRef.current) {
+        clearTimeout(logoutTimerRef.current);
+        logoutTimerRef.current = null;
+      }
+      return;
+    }
+
+    // 초기 타이머 설정
+    resetLogoutTimer();
+
+    // 사용자 활동 이벤트 리스너
+    const handleUserActivity = () => {
+      const now = Date.now();
+      // 마지막 활동으로부터 1분 이상 지났을 때만 타이머 리셋 (성능 최적화)
+      if (now - lastActivityRef.current > 60000) {
+        lastActivityRef.current = now;
+        resetLogoutTimer();
+      }
+    };
+
+    // 다양한 사용자 활동 이벤트 감지
+    const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+    events.forEach(event => {
+      document.addEventListener(event, handleUserActivity, { passive: true });
+    });
+
+    return () => {
+      // 이벤트 리스너 제거
+      events.forEach(event => {
+        document.removeEventListener(event, handleUserActivity);
+      });
+      // 타이머 정리
+      if (logoutTimerRef.current) {
+        clearTimeout(logoutTimerRef.current);
+      }
+    };
+  }, [user]);
 
   const refreshUser = async (): Promise<void> => {
     try {
