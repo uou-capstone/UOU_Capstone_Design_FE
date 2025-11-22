@@ -7,7 +7,6 @@ import {
   lectureApi,
   courseApi,
   getAuthToken,
-  type LectureDetailResponseDto,
   type CourseDetail,
   type LectureResponseDto,
   streamingApi,
@@ -58,11 +57,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const [isFetchingNext, setIsFetchingNext] = useState(false);
   const [waitingForAnswer, setWaitingForAnswer] = useState(false);
   const [currentAiQuestionId, setCurrentAiQuestionId] = useState<string | null>(null);
-  const [hasMoreStream, setHasMoreStream] = useState<boolean>(false);
   const [currentLectureId, setCurrentLectureId] = useState<number | null>(lectureId || null);
   const [currentCourseId, setCurrentCourseId] = useState<number | null>(courseId || null);
-  const [uploadedFileDisplayUrl, setUploadedFileDisplayUrl] = useState<string>("");
-  const [uploadedFileName, setUploadedFileName] = useState<string>("");
+  // uploadedFileDisplayUrl과 uploadedFileName은 onLectureDataChange로 직접 전달되므로 상태로 관리하지 않음
+  const [, setUploadedFileDisplayUrl] = useState<string>("");
+  const [, setUploadedFileName] = useState<string>("");
   const [hasUploadedMaterial, setHasUploadedMaterial] = useState<boolean>(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const [isCourseModalOpen, setIsCourseModalOpen] = useState(false);
@@ -361,17 +360,54 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     []
   );
 
+  // 메시지가 추가될 때마다 자동으로 스크롤 내리기
+  useEffect(() => {
+    const chatContainer = document.getElementById("chat-messages");
+    if (chatContainer) {
+      // 약간의 딜레이를 두어 DOM 업데이트 후 스크롤
+      setTimeout(() => {
+        chatContainer.scrollTop = chatContainer.scrollHeight;
+      }, 0);
+    }
+  }, [messages]);
+
+  // 스트리밍 취소 함수
+  const cancelStreaming = useCallback(async () => {
+    if (isStreaming && currentLectureId) {
+      shouldAbortPollingRef.current = true;
+      try {
+        await streamingApi.cancel(currentLectureId);
+      } catch (error) {
+        console.error('스트리밍 취소 실패:', error);
+      }
+    }
+  }, [isStreaming, currentLectureId]);
+
   // 컴포넌트 언마운트 또는 lectureId 변경 시 스트리밍 취소
   useEffect(() => {
     return () => {
+      void cancelStreaming();
+    };
+  }, [cancelStreaming]);
+
+  // 페이지 이동/새로고침/탭 닫기 시 스트리밍 취소
+  useEffect(() => {
+    const handleBeforeUnload = () => {
       if (isStreaming && currentLectureId) {
+        // 폴링 중단 플래그 설정
         shouldAbortPollingRef.current = true;
-        streamingApi.cancel(currentLectureId).catch((error) => {
-          console.error('스트리밍 취소 실패 (cleanup):', error);
-        });
+        // 동기적으로 취소 요청 시도 (페이지가 닫히기 전에)
+        // 주의: beforeunload에서는 비동기 작업이 완료되지 않을 수 있으므로
+        // cleanup 함수에서도 처리되도록 보장
+        void cancelStreaming();
       }
     };
-  }, [currentLectureId, isStreaming]);
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [isStreaming, currentLectureId, cancelStreaming]);
 
   useEffect(() => {
     if (!isActionMenuOpen) return;
@@ -655,7 +691,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   // generate-content 제거로 해당 핸들러 삭제
 
   // 스트리밍: 다음 세그먼트 가져오기
-  const fetchNextSegment = async () => {
+  const fetchNextSegment = async (loadingMessageId?: number) => {
     if (!currentLectureId || isFetchingNext) return;
     shouldAbortPollingRef.current = false;
     setIsFetchingNext(true);
@@ -672,13 +708,64 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         }
         return pollNext();
       }
-      await mapNextToMessages(
+      const shouldContinue = await mapNextToMessages(
         res,
         setMessages,
         setWaitingForAnswer,
         setCurrentAiQuestionId,
-        setHasMoreStream
+        () => {}, // hasMoreStream은 사용하지 않으므로 빈 함수
+        loadingMessageId
       );
+      
+      // 개념 설명 후 자동으로 다음 세그먼트(질문) 가져오기
+      if (shouldContinue && !shouldAbortPollingRef.current && currentLectureId) {
+        // 질문 로딩 메시지 추가
+        const questionLoadingId = Date.now();
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: questionLoadingId,
+            text: "",
+            isUser: false,
+            isLoading: true,
+          },
+        ]);
+        
+        await sleep(500); // 약간의 딜레이 후 다음 세그먼트 가져오기
+        if (!shouldAbortPollingRef.current) {
+          // 다음 세그먼트 가져오기 (재귀 호출)
+          const nextPoll = async (): Promise<void> => {
+            if (!currentLectureId || shouldAbortPollingRef.current) {
+              setMessages((prev) => prev.filter((m) => m.id !== questionLoadingId));
+              return;
+            }
+            const nextRes = await streamingApi.next(currentLectureId);
+            const nextStatus = (nextRes.status || "").toUpperCase();
+            if (nextStatus === "PROCESSING") {
+              await sleep(2000);
+              if (!shouldAbortPollingRef.current) {
+                return nextPoll();
+              } else {
+                setMessages((prev) => prev.filter((m) => m.id !== questionLoadingId));
+              }
+            } else {
+              // 질문이 도착했으므로 로딩 메시지 제거하고 메시지 추가
+              setMessages((prev) => prev.filter((m) => m.id !== questionLoadingId));
+              await mapNextToMessages(
+                nextRes,
+                setMessages,
+                setWaitingForAnswer,
+                setCurrentAiQuestionId,
+                () => {} // hasMoreStream은 사용하지 않으므로 빈 함수
+              );
+            }
+          };
+          return nextPoll();
+        } else {
+          // 중단된 경우 로딩 메시지 제거
+          setMessages((prev) => prev.filter((m) => m.id !== questionLoadingId));
+        }
+      }
     };
     try {
       await pollNext();
@@ -756,7 +843,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       // 보조 설명 대기 메시지
       const pendingReply: ChatMessage = {
         id: Date.now() + 1,
-        text: "답변 평가 및 보충 설명 생성 중...",
+        text: "",
         isUser: false,
         isLoading: true,
       };
@@ -818,19 +905,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     // 파일이 업로드되었고 스트리밍이 시작되지 않았을 때: Enter로 스트리밍 시작
     if (!isStreaming && hasUploadedMaterial && currentLectureId) {
       resetInputText(); // 입력창 비우기
+      const initMessageId = Date.now();
       setMessages((prev) => [
         ...prev,
-        { id: Date.now(), text: "스트리밍 세션 초기화 중...", isUser: false, isLoading: true },
+        { id: initMessageId, text: "", isUser: false, isLoading: true },
       ]);
       streamingApi.initialize(currentLectureId)
         .then(() => {
           setIsStreaming(true);
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.isLoading ? { ...m, text: "스트리밍 세션 시작!", isLoading: false } : m
-            )
-          );
-          return fetchNextSegment();
+          return fetchNextSegment(initMessageId);
         })
         .catch((e) => {
           const msg = e instanceof Error ? e.message : "세션 초기화 실패";
@@ -925,9 +1008,33 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 }`}
               >
                 {message.isLoading && (
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
-                    <span>처리 중...</span>
+                  <div className="flex items-center gap-3 py-2">
+                    <div className="relative">
+                      <div className={`animate-spin rounded-full h-4 w-4 border-2 border-t-transparent ${
+                        isDarkMode ? 'border-gray-500' : 'border-gray-400'
+                      }`}></div>
+                      <div className={`absolute inset-0 animate-ping rounded-full h-4 w-4 border opacity-20 ${
+                        isDarkMode ? 'border-blue-400' : 'border-blue-500'
+                      }`}></div>
+                    </div>
+                    {message.text && (
+                      <div className="flex flex-col gap-1">
+                        <span className={`text-xs font-medium animate-pulse ${
+                          isDarkMode ? 'text-gray-300' : 'text-gray-700'
+                        }`}>{message.text}</span>
+                        <div className="flex gap-1">
+                          <div className={`h-1 w-1 rounded-full animate-bounce ${
+                            isDarkMode ? 'bg-gray-500' : 'bg-gray-400'
+                          }`} style={{ animationDelay: '0ms' }}></div>
+                          <div className={`h-1 w-1 rounded-full animate-bounce ${
+                            isDarkMode ? 'bg-gray-500' : 'bg-gray-400'
+                          }`} style={{ animationDelay: '150ms' }}></div>
+                          <div className={`h-1 w-1 rounded-full animate-bounce ${
+                            isDarkMode ? 'bg-gray-500' : 'bg-gray-400'
+                          }`} style={{ animationDelay: '300ms' }}></div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
                 {message.file && message.isUser ? (
@@ -1309,13 +1416,20 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 export default RightSidebar;
 
 // 내부 유틸: 다음 세그먼트 응답을 채팅 메시지로 변환
+// 반환값: 다음 세그먼트를 자동으로 가져올지 여부 (true면 자동으로 다음 세그먼트 가져오기)
 async function mapNextToMessages(
   res: StreamNextResponse,
   append: (msgs: ChatMessage[] | ((p: ChatMessage[]) => ChatMessage[])) => void,
   setWaiting: (v: boolean) => void,
   setQuestionId: (v: string | null) => void,
-  setHasMore: (v: boolean) => void
-) {
+  setHasMore: (v: boolean) => void,
+  loadingMessageId?: number
+): Promise<boolean> {
+  // 첫 번째 콘텐츠가 도착하면 로딩 메시지 제거
+  if (loadingMessageId !== undefined) {
+    append((prev) => prev.filter((m) => m.id !== loadingMessageId));
+  }
+  
   const type = (res.contentType || "").toUpperCase();
   const header =
     type === "QUESTION" ? "질문" : type === "SUPPLEMENTARY" ? "보충 설명" : "개념 설명";
@@ -1329,6 +1443,7 @@ async function mapNextToMessages(
     },
   ]);
   setHasMore(res.hasMore);
+  
   if (res.waitingForAnswer && res.aiQuestionId) {
     setWaiting(true);
     setQuestionId(res.aiQuestionId);
@@ -1340,9 +1455,13 @@ async function mapNextToMessages(
         isUser: false,
       },
     ]);
+    // 질문이 나왔으므로 자동으로 다음 세그먼트를 가져올 필요 없음
+    return false;
   } else {
     setWaiting(false);
     setQuestionId(null);
+    // 개념 설명이나 보충 설명이 나왔고, 더 많은 콘텐츠가 있으면 자동으로 다음 세그먼트 가져오기
+    return res.hasMore && type !== "QUESTION";
   }
 }
 
