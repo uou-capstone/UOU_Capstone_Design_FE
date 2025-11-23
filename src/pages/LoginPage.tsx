@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { checkServerStatus } from '../services/api';
 
 const LoginPage: React.FC = () => {
   const { isDarkMode } = useTheme();
@@ -13,6 +14,25 @@ const LoginPage: React.FC = () => {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [serverStatus, setServerStatus] = useState<{ online: boolean; message?: string } | null>(null);
+  const [isCheckingServer, setIsCheckingServer] = useState(true);
+
+  // 서버 상태 확인
+  useEffect(() => {
+    const checkStatus = async () => {
+      setIsCheckingServer(true);
+      const status = await checkServerStatus();
+      setServerStatus(status);
+      setIsCheckingServer(false);
+    };
+    
+    checkStatus();
+    
+    // 30초마다 서버 상태 확인
+    const interval = setInterval(checkStatus, 30000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
   // 회원가입 완료 후 전달된 메시지와 이메일 처리
   useEffect(() => {
@@ -71,6 +91,22 @@ const LoginPage: React.FC = () => {
             {successMessage}
           </div>
         )}
+        {/* 서버 상태 표시 */}
+        {serverStatus && (
+          <div className={`mb-4 flex items-center gap-2 text-sm ${
+            isDarkMode ? 'text-gray-400' : 'text-gray-600'
+          }`}>
+            <span>서버상태:</span>
+            <div className={`w-3 h-3 rounded-full ${
+              isCheckingServer 
+                ? 'bg-yellow-500 animate-pulse' 
+                : serverStatus.online 
+                  ? 'bg-green-500' 
+                  : 'bg-red-500'
+            }`}></div>
+          </div>
+        )}
+        
         {error && (
           <div className={`mb-4 p-3 rounded-lg ${
             isDarkMode ? 'bg-red-900/30 text-red-300' : 'bg-red-50 text-red-600'

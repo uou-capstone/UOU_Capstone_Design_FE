@@ -4,8 +4,19 @@ import remarkGfm from "remark-gfm";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { courseApi, lectureApi, type Course, type CourseDetail } from "../../services/api";
+import SettingsPage from "../pages/SettingsPage";
 
 type ViewMode = "course-list" | "course-detail";
+type MenuItem = 
+  | "dashboard" 
+  | "lectures" 
+  | "assignments" 
+  | "progress" 
+  | "ai-tutor" 
+  | "smart-recommendation" 
+  | "auto-evaluation" 
+  | "settings" 
+  | "help";
 
 interface MainContentProps {
   viewMode: ViewMode;
@@ -24,6 +35,7 @@ interface MainContentProps {
   onEditCourse?: (course: Course) => void;
   onDeleteCourse?: (course: Course) => void;
   onCourseCreated?: (course: CourseDetail) => void;
+  selectedMenu?: MenuItem;
 }
 
 const MainContent: React.FC<MainContentProps> = ({
@@ -43,6 +55,7 @@ const MainContent: React.FC<MainContentProps> = ({
   onEditCourse,
   onDeleteCourse,
   onCourseCreated,
+  selectedMenu = "dashboard",
 }) => {
   const { isDarkMode } = useTheme();
   const { user } = useAuth();
@@ -143,30 +156,17 @@ const MainContent: React.FC<MainContentProps> = ({
       );
     }
 
-    if (coursesError) {
-      return (
-        <div
-          className={`h-full flex items-center justify-center ${
-            isDarkMode ? "text-red-400" : "text-red-600"
-          }`}
-        >
-          <div className="text-center">
-            <p className="text-lg font-medium mb-2">과목 목록을 불러오지 못했습니다.</p>
-            <p className="text-sm">{coursesError}</p>
-          </div>
-        </div>
-      );
-    }
+    // 에러가 있어도 에러 메시지를 표시하지 않음 (빈 목록으로 처리)
 
     if (!courses.length) {
       return (
         <div className="h-full flex flex-col">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-semibold">내 과목</h2>
+            <h2 className="text-2xl font-semibold">내 강의실</h2>
             {isTeacher && (
               <button
                 onClick={() => setIsCourseModalOpen(true)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer ${
                   isDarkMode
                     ? "bg-blue-600 hover:bg-blue-700 text-white"
                     : "bg-blue-500 hover:bg-blue-600 text-white"
@@ -219,22 +219,15 @@ const MainContent: React.FC<MainContentProps> = ({
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {courses.map((course) => (
-            <div
+            <button
               key={course.courseId}
-              role="button"
-              tabIndex={0}
+              type="button"
               onClick={() => handleCourseSelect(course.courseId)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  handleCourseSelect(course.courseId);
-                }
-              }}
-              className={`text-left p-4 rounded-xl border shadow-sm transition-all flex flex-col h-32 ${
+              className={`text-left p-4 rounded-xl border shadow-sm transition-all flex flex-col h-32 cursor-pointer ${
                 isDarkMode
                   ? "bg-gray-800 border-gray-700 hover:border-blue-500 hover:shadow-blue-500/30"
                   : "bg-white border-gray-200 hover:border-blue-500/40 hover:shadow-blue-500/20"
-              } cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:ring-offset-2 ${
+              } focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:ring-offset-2 ${
                 isDarkMode ? "focus:ring-offset-gray-900" : "focus:ring-offset-white"
               }`}
             >
@@ -248,7 +241,7 @@ const MainContent: React.FC<MainContentProps> = ({
                         event.stopPropagation();
                         toggleCourseMenu(course.courseId);
                       }}
-                      className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors ${
+                      className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors cursor-pointer ${
                         isDarkMode
                           ? "text-gray-300 hover:text-white hover:bg-gray-700"
                           : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
@@ -279,7 +272,7 @@ const MainContent: React.FC<MainContentProps> = ({
                             setOpenCourseMenuId(null);
                             onEditCourse?.(course);
                           }}
-                          className={`w-full text-left px-3 py-2 text-xs transition-colors rounded-t-lg ${
+                          className={`w-full text-left px-3 py-2 text-xs transition-colors rounded-t-lg cursor-pointer ${
                             isDarkMode
                               ? "text-gray-200 hover:bg-gray-700"
                               : "text-gray-700 hover:bg-gray-100"
@@ -295,7 +288,7 @@ const MainContent: React.FC<MainContentProps> = ({
                             setOpenCourseMenuId(null);
                             onDeleteCourse?.(course);
                           }}
-                          className={`w-full text-left px-3 py-2 text-xs transition-colors rounded-b-lg ${
+                          className={`w-full text-left px-3 py-2 text-xs transition-colors rounded-b-lg cursor-pointer ${
                             isDarkMode
                               ? "text-red-300 hover:bg-red-900/20 hover:text-red-200"
                               : "text-red-600 hover:bg-red-50"
@@ -318,7 +311,7 @@ const MainContent: React.FC<MainContentProps> = ({
                   </p>
                 )}
               </div>
-            </div>
+            </button>
           ))}
         </div>
       </div>
@@ -353,7 +346,7 @@ const MainContent: React.FC<MainContentProps> = ({
             {courseDetailError && <p className="text-sm">{courseDetailError}</p>}
             <button
               onClick={onBackToCourses}
-              className={`mt-2 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg ${
+              className={`mt-2 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg cursor-pointer ${
                 isDarkMode
                   ? "bg-gray-800 hover:bg-gray-700 text-white"
                   : "bg-gray-200 hover:bg-gray-300 text-gray-800"
@@ -480,7 +473,21 @@ const MainContent: React.FC<MainContentProps> = ({
           isDarkMode ? "bg-gray-900" : "bg-gray-50"
         }`}
       >
-        {viewMode === "course-list" ? renderCourseList() : renderCourseDetail()}
+        {viewMode === "course-list" ? (
+          selectedMenu === "settings" ? (
+            <SettingsPage />
+          ) : selectedMenu === "lectures" ? (
+            renderCourseList()
+          ) : (
+            <div className={`h-full flex items-center justify-center ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+              <div className="text-center">
+                <p className="text-lg">메뉴를 선택해주세요.</p>
+              </div>
+            </div>
+          )
+        ) : (
+          renderCourseDetail()
+        )}
       </div>
 
       {/* 과목 생성 모달 */}
@@ -529,7 +536,7 @@ const MainContent: React.FC<MainContentProps> = ({
               <div className="flex gap-2 pt-2">
                 <button
                   onClick={handleCreateCourse}
-                  className={`flex-1 px-4 py-2 rounded-lg font-medium ${
+                  className={`flex-1 px-4 py-2 rounded-lg font-medium cursor-pointer ${
                     isDarkMode
                       ? "bg-blue-600 hover:bg-blue-700 text-white"
                       : "bg-blue-500 hover:bg-blue-600 text-white"
@@ -543,7 +550,7 @@ const MainContent: React.FC<MainContentProps> = ({
                     setCourseModalTitle("");
                     setCourseModalDescription("");
                   }}
-                  className={`flex-1 px-4 py-2 rounded-lg font-medium ${
+                  className={`flex-1 px-4 py-2 rounded-lg font-medium cursor-pointer ${
                     isDarkMode
                       ? "bg-gray-700 hover:bg-gray-600 text-white"
                       : "bg-gray-200 hover:bg-gray-300 text-gray-700"
