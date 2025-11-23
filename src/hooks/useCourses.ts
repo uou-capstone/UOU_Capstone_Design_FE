@@ -15,8 +15,10 @@ export const useCourses = () => {
       const fetchedCourses = await courseApi.getAllCourses();
       setCourses(fetchedCourses);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '과목을 불러오는데 실패했습니다.';
-      setError(errorMessage);
+      // 에러 발생 시 조용히 처리 (빈 목록으로 표시)
+      // 회원가입 직후나 서버 오류 시에도 에러 메시지를 표시하지 않음
+      setCourses([]);
+      setError(null); // 에러 상태를 null로 유지하여 에러 메시지가 표시되지 않도록 함
       console.error('Failed to fetch courses:', err);
     } finally {
       setIsLoading(false);

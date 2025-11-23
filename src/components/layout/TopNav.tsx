@@ -9,7 +9,7 @@ interface TopNavProps {
 }
 
 const TopNav: React.FC<TopNavProps> = ({ currentCourseTitle, onNavigateHome }) => {
-  const { isDarkMode, toggleTheme } = useTheme();
+  const { isDarkMode } = useTheme();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [isUserMenuOpen, setIsUserMenuOpen] = React.useState(false);
@@ -142,49 +142,6 @@ const TopNav: React.FC<TopNavProps> = ({ currentCourseTitle, onNavigateHome }) =
                   >
                     {roleLabel}
                   </span>
-                </div>
-                <div className="px-3 py-3 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm">테마</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        toggleTheme();
-                      }}
-                      className={`relative inline-flex h-7 w-16 items-center rounded-full transition-colors ${
-                        isDarkMode ? "bg-blue-600" : "bg-gray-300"
-                      }`}
-                      aria-label="테마 전환"
-                    >
-                      <span className="absolute left-1.5 flex items-center justify-center h-5 w-5">
-                        {isDarkMode ? (
-                          <svg className="w-3.5 h-3.5 text-white" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z" />
-                          </svg>
-                        ) : (
-                          <svg className="w-3.5 h-3.5 text-gray-600" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M12 4.5a1 1 0 011 1V7a1 1 0 11-2 0V5.5a1 1 0 011-1zm0 10a3.5 3.5 0 100-7 3.5 3.5 0 000 7zm7-3.5a1 1 0 011 1v1.5a1 1 0 11-2 0V12a1 1 0 011-1zm-14 0a1 1 0 011 1v1.5a1 1 0 11-2 0V12a1 1 0 011-1zm11.95 5.536a1 1 0 011.414 0l1.06 1.06a1 1 0 11-1.414 1.415l-1.06-1.06a1 1 0 010-1.415zM5.576 6.576a1 1 0 011.414 0l1.06 1.06A1 1 0 016.636 9.05l-1.06-1.06a1 1 0 010-1.414zm11.95-1.06a1 1 0 000 1.414l1.06 1.06a1 1 0 101.414-1.414l-1.06-1.06a1 1 0 00-1.414 0zM5.576 16.424a1 1 0 000 1.414l1.06 1.06a1 1 0 001.414-1.414l-1.06-1.06a1 1 0 00-1.414 0z" />
-                          </svg>
-                        )}
-                      </span>
-                      <span className="absolute right-1.5 flex items-center justify-center h-5 w-5">
-                        {isDarkMode ? (
-                          <svg className="w-3.5 h-3.5 text-white/80" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M21 12.79A9 9 0 1111.21 3a7 7 0 009.79 9.79z" />
-                          </svg>
-                        ) : (
-                          <svg className="w-3.5 h-3.5 text-gray-600/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-                          </svg>
-                        )}
-                      </span>
-                      <span
-                        className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-                          isDarkMode ? "translate-x-[2.45rem]" : "translate-x-[0.3rem]"
-                        }`}
-                      />
-                    </button>
-                  </div>
                 </div>
                 <div className={`border-t ${isDarkMode ? "border-gray-700" : "border-gray-200"}`}>
                   <button

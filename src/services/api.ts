@@ -410,6 +410,53 @@ const apiRequest = async <T>(
   }
 };
 
+// 서버 상태 확인
+export const checkServerStatus = async (): Promise<{ online: boolean; message?: string }> => {
+  try {
+    const url = API_BASE_URL ? `${API_BASE_URL}/api/health` : `${BACKEND_URL}/api/health`;
+    
+    // Health check 엔드포인트가 없을 수 있으므로 간단한 요청으로 대체
+    // OPTIONS 요청으로 서버 연결 확인
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3초 타임아웃
+    
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        mode: 'cors',
+        credentials: 'omit',
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      
+      // 200-299 또는 404 (엔드포인트가 없어도 서버는 응답함)면 서버는 온라인
+      if (response.status < 500) {
+        return { online: true };
+      } else {
+        return { online: false, message: '서버 오류' };
+      }
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      
+      // CORS 오류는 서버가 응답했다는 의미일 수 있음
+      if (fetchError instanceof TypeError && fetchError.message.includes('fetch')) {
+        // 네트워크 오류인 경우 서버가 오프라인일 가능성
+        return { online: false, message: '서버에 연결할 수 없습니다' };
+      }
+      
+      // AbortError는 타임아웃
+      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
+        return { online: false, message: '서버 응답 시간 초과' };
+      }
+      
+      return { online: false, message: '서버 상태 확인 실패' };
+    }
+  } catch (error) {
+    return { online: false, message: '서버 상태 확인 실패' };
+  }
+};
+
 // 인증 API
 export const authApi = {
   // 회원가입

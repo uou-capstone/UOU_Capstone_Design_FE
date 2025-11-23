@@ -9,6 +9,16 @@ import { useCourses } from "../../hooks/useCourses";
 import type { Course, CourseDetail, LectureResponseDto } from "../../services/api";
 
 type ViewMode = "course-list" | "course-detail";
+type MenuItem = 
+  | "dashboard" 
+  | "lectures" 
+  | "assignments" 
+  | "progress" 
+  | "ai-tutor" 
+  | "smart-recommendation" 
+  | "auto-evaluation" 
+  | "settings" 
+  | "help";
 
 const DEFAULT_LEFT_SIDEBAR_WIDTH = 224;
 const DEFAULT_RIGHT_SIDEBAR_WIDTH = 420;
@@ -48,6 +58,9 @@ const AppLayout: React.FC = () => {
   const [isResizingRight, setIsResizingRight] = useState<boolean>(false);
   const leftResizeRef = useRef<HTMLDivElement>(null);
   const rightResizeRef = useRef<HTMLDivElement>(null);
+  
+  // 메뉴 상태 관리 (메인 페이지일 때만 사용)
+  const [selectedMenu, setSelectedMenu] = useState<MenuItem>("dashboard");
 
   const viewMode: ViewMode = selectedCourseId ? "course-detail" : "course-list";
   const currentCourseTitle =
@@ -99,6 +112,8 @@ const AppLayout: React.FC = () => {
       setCurrentCourseId(null);
       setCurrentLectureId(null);
       resetLectureOutputs();
+      // 메인 페이지로 돌아올 때 대시보드로 리셋
+      setSelectedMenu("dashboard");
       return;
     }
 
@@ -339,17 +354,17 @@ const AppLayout: React.FC = () => {
     >
       <TopNav currentCourseTitle={currentCourseTitle} onNavigateHome={handleBackToCourses} />
       <div className="flex flex-1 overflow-hidden min-h-0">
-        {/* 과목 상세 페이지에만 좌측 사이드바 표시 */}
-        {viewMode === "course-detail" && (
-          <>
+        {/* 좌측 사이드바 (항상 표시) */}
         <LeftSidebar
           width={leftSidebarWidth}
           viewMode={viewMode}
           courseDetail={courseDetail}
           selectedLectureId={currentLectureId}
           onSelectLecture={handleLectureSelect}
-              onDeleteLecture={handleLectureDelete}
+          onDeleteLecture={handleLectureDelete}
           isCourseDetailLoading={isCourseDetailLoading}
+          selectedMenu={selectedMenu}
+          onMenuSelect={setSelectedMenu}
         />
         <div
           ref={leftResizeRef}
@@ -372,8 +387,6 @@ const AppLayout: React.FC = () => {
             style={{ cursor: "col-resize" }}
           />
         </div>
-          </>
-        )}
 
          <MainContent
           viewMode={viewMode}
@@ -392,11 +405,10 @@ const AppLayout: React.FC = () => {
           onEditCourse={handleCourseEdit}
           onDeleteCourse={handleCourseDelete}
           onCourseCreated={handleCourseCreated}
+          selectedMenu={selectedMenu}
         />
 
-        {/* 과목 상세 페이지에만 우측 사이드바 표시 */}
-        {viewMode === "course-detail" && (
-          <>
+        {/* 우측 사이드바 (항상 표시) */}
         <div
           ref={rightResizeRef}
           onMouseDown={handleRightMouseDown}
@@ -434,8 +446,6 @@ const AppLayout: React.FC = () => {
           onCourseCreated={handleCourseCreated}
           onLectureCreated={handleLectureCreated}
         />
-          </>
-        )}
       </div>
     </div>
   );

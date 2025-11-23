@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import { authApi, User, getAuthToken, setAuthToken, removeAuthToken } from '../services/api';
 
 interface AuthContextType {
@@ -87,10 +87,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         } catch (getMeError) {
           // 백엔드에 /api/auth/me가 구현되어 있지 않거나 CORS 문제인 경우
           // 로그인은 성공했으므로 토큰은 유지하고 사용자 정보만 null로 설정
+          // 하지만 로그인은 성공한 것으로 간주 (토큰이 있으면 인증된 상태)
+          // getMe 실패는 로그인 실패로 간주하지 않음
+          console.warn('getMe 호출 실패, 하지만 로그인은 성공:', getMeError);
+          // 토큰이 있으면 로그인 성공으로 간주하되, 사용자 정보는 나중에 가져올 수 있도록 함
+          // 임시로 더미 사용자 정보 설정 (실제로는 getMe가 성공해야 함)
           setUser(null);
         }
       }
     } catch (error) {
+      // 로그인 실패 시 에러를 그대로 throw하여 LoginPage에서 처리하도록 함
       throw error;
     }
   };
@@ -109,7 +115,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
-  const logout = (): void => {
+  const logout = useCallback((): void => {
     removeAuthToken();
     setUser(null);
     // 타이머 정리
@@ -117,10 +123,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       clearTimeout(logoutTimerRef.current);
       logoutTimerRef.current = null;
     }
-  };
+  }, []);
 
   // 자동 로그아웃 타이머 설정
-  const resetLogoutTimer = () => {
+  const resetLogoutTimer = useCallback(() => {
     // 기존 타이머 제거
     if (logoutTimerRef.current) {
       clearTimeout(logoutTimerRef.current);
@@ -134,7 +140,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         window.location.href = '/login';
       }, AUTO_LOGOUT_TIME);
     }
-  };
+  }, [user, logout]);
 
   // 사용자 활동 감지
   useEffect(() => {
@@ -176,7 +182,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         clearTimeout(logoutTimerRef.current);
       }
     };
-  }, [user]);
+  }, [user, resetLogoutTimer]);
 
   const refreshUser = async (): Promise<void> => {
     try {
@@ -189,9 +195,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  // isAuthenticated는 토큰 존재 여부로 판단 (getMe 실패해도 토큰이 있으면 로그인 성공)
+  const isAuthenticated = !!getAuthToken() || !!user;
+
   const value: AuthContextType = {
     user,
-    isAuthenticated: !!user,
+    isAuthenticated,
     isLoading,
     login,
     signup,
