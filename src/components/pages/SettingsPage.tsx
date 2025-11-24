@@ -99,16 +99,26 @@ const SettingsPage: React.FC = () => {
                   onClick={() => fileInputRef.current?.click()}
                   className="relative group focus:outline-none focus:ring-2 focus:ring-emerald-500 rounded-full cursor-pointer"
                 >
-                  <img
-                    src={profileImage || "/default-avatar.png"}
-                    alt="Profile"
-                    className="w-24 h-24 rounded-full object-cover border-2 border-gray-300 transition-opacity group-hover:opacity-80"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%23e5e7eb'/%3E%3Ctext x='50' y='60' text-anchor='middle' font-size='40' fill='%239ca3af'%3E%3F%3C/text%3E%3C/svg%3E";
-                    }}
-                  />
-                  <div className={`absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity ${isDarkMode ? "text-white" : "text-white"}`}>
-                    <span className="text-sm font-medium">클릭하여 변경</span>
+                  {profileImage ? (
+                    <img
+                      src={profileImage}
+                      alt="Profile"
+                      className="w-16 h-16 rounded-full object-cover transition-opacity group-hover:opacity-80"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%23e5e7eb'/%3E%3Ctext x='50' y='60' text-anchor='middle' font-size='40' fill='%239ca3af'%3E%3F%3C/text%3E%3C/svg%3E";
+                      }}
+                    />
+                  ) : (
+                    <div
+                      className={`w-16 h-16 rounded-full flex items-center justify-center text-white font-semibold text-lg ${
+                        isDarkMode ? "bg-gray-600 hover:bg-gray-700" : "bg-gray-500 hover:bg-gray-600"
+                      }`}
+                    >
+                      {user?.fullName?.charAt(0).toUpperCase() || "?"}
+                    </div>
+                  )}
+                  <div className={`absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white`}>
+                    <span className="text-xs font-medium">변경</span>
                   </div>
                 </button>
                 <input
@@ -118,9 +128,6 @@ const SettingsPage: React.FC = () => {
                   onChange={handleProfileImageChange}
                   className="hidden"
                 />
-                <p className={`text-xs text-center ${isDarkMode ? "text-slate-400" : "text-gray-500"}`}>
-                  JPG 또는 PNG 파일 (최대 5MB)
-                </p>
               </div>
 
               {/* 이메일 */}
@@ -132,7 +139,7 @@ const SettingsPage: React.FC = () => {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className={`w-full px-4 py-2 rounded-lg border ${
+                  className={`w-full px-4 py-2 rounded-lg border text-sm ${
                     isDarkMode
                       ? "bg-slate-700 border-slate-600 text-white placeholder-slate-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
@@ -150,7 +157,7 @@ const SettingsPage: React.FC = () => {
                   type="text"
                   value={nickname}
                   onChange={(e) => setNickname(e.target.value)}
-                  className={`w-full px-4 py-2 rounded-lg border ${
+                  className={`w-full px-4 py-2 rounded-lg border text-sm ${
                     isDarkMode
                       ? "bg-slate-700 border-slate-600 text-white placeholder-slate-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"

@@ -78,7 +78,7 @@ const TopNav: React.FC<TopNavProps> = ({ currentCourseTitle, onNavigateHome }) =
             <button
               type="button"
               onClick={handleNavigateHome}
-              className={`inline-flex items-center justify-center w-9 h-9 rounded-lg border transition-colors ${
+              className={`inline-flex items-center justify-center w-9 h-9 rounded-lg border transition-colors cursor-pointer ${
                 isDarkMode
                   ? "border-gray-700 text-gray-200 hover:bg-gray-700"
                   : "border-gray-200 text-gray-700 hover:bg-gray-100"

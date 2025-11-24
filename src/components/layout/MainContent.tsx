@@ -423,10 +423,30 @@ const MainContent: React.FC<MainContentProps> = ({
                 <h2 className="text-xl font-semibold mb-4">AI 생성 강의 자료</h2>
                 <div
                   className={`prose prose-sm max-w-none leading-relaxed ${
-                    isDarkMode ? "prose-invert" : ""
+                    isDarkMode 
+                      ? "prose-invert prose-headings:text-slate-100 prose-p:text-slate-200 prose-strong:text-slate-100 prose-ul:text-slate-200 prose-ol:text-slate-200 prose-li:text-slate-200 prose-code:text-slate-100 prose-pre:text-slate-100 prose-blockquote:text-slate-300 prose-a:text-emerald-400" 
+                      : "prose-headings:text-gray-900 prose-p:text-gray-700 prose-strong:text-gray-900 prose-ul:text-gray-700 prose-ol:text-gray-700 prose-li:text-gray-700 prose-code:text-gray-900 prose-pre:text-gray-900 prose-blockquote:text-gray-600 prose-a:text-emerald-600"
                   }`}
+                  style={{
+                    lineHeight: '1.75',
+                  }}
                 >
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  <ReactMarkdown 
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      p: ({node, ...props}) => <p className="mb-4" {...props} />,
+                      h1: ({node, ...props}) => <h1 className="text-2xl font-bold mt-6 mb-4" {...props} />,
+                      h2: ({node, ...props}) => <h2 className="text-xl font-semibold mt-5 mb-3" {...props} />,
+                      h3: ({node, ...props}) => <h3 className="text-lg font-semibold mt-4 mb-2" {...props} />,
+                      ul: ({node, ...props}) => <ul className="list-disc pl-6 mb-4 space-y-1" {...props} />,
+                      ol: ({node, ...props}) => <ol className="list-decimal pl-6 mb-4 space-y-1" {...props} />,
+                      li: ({node, ...props}) => <li className="mb-1" {...props} />,
+                      strong: ({node, ...props}) => <strong className="font-semibold" {...props} />,
+                      em: ({node, ...props}) => <em className="italic" {...props} />,
+                      code: ({node, ...props}) => <code className={`px-1.5 py-0.5 rounded text-sm ${isDarkMode ? "bg-slate-800 text-emerald-300" : "bg-gray-100 text-emerald-700"}`} {...props} />,
+                      blockquote: ({node, ...props}) => <blockquote className={`border-l-4 pl-4 italic my-4 ${isDarkMode ? "border-slate-500 text-slate-300" : "border-gray-300 text-gray-600"}`} {...props} />,
+                    }}
+                  >
                     {lectureMarkdown}
                   </ReactMarkdown>
                 </div>
