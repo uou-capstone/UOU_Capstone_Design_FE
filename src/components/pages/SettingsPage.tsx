@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useTheme, type ThemeMode } from "../../contexts/ThemeContext";
+import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
 
 const SettingsPage: React.FC = () => {
-  const { isDarkMode, themeMode, setThemeMode } = useTheme();
+  const { isDarkMode } = useTheme();
   const { user, refreshUser } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -81,89 +81,92 @@ const SettingsPage: React.FC = () => {
   return (
     <div className="h-full overflow-y-auto p-6">
       <div className="max-w-6xl mx-auto">
-        <h1 className={`text-2xl font-bold mb-8 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+        <h1 className={`text-2xl font-bold mb-6 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
           설정
         </h1>
 
-        <div className="grid grid-cols-2 gap-6">
-          {/* 프로필 사진 */}
-          <div className={`p-6 rounded-lg border ${isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
-          <h2 className={`text-lg font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-            프로필 사진
-          </h2>
-          <div className="flex flex-col items-center gap-4">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="relative group focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-full"
-            >
-              <img
-                src={profileImage || "/default-avatar.png"}
-                alt="Profile"
-                className="w-32 h-32 rounded-full object-cover border-2 border-gray-300 transition-opacity group-hover:opacity-80"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%23e5e7eb'/%3E%3Ctext x='50' y='60' text-anchor='middle' font-size='40' fill='%239ca3af'%3E%3F%3C/text%3E%3C/svg%3E";
-                }}
-              />
-              <div className={`absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity ${isDarkMode ? "text-white" : "text-white"}`}>
-                <span className="text-sm font-medium">클릭하여 변경</span>
+        <div className="grid grid-cols-2 gap-4">
+          {/* 프로필 정보 */}
+          <div className={`p-4 rounded-lg border ${isDarkMode ? "bg-slate-800 border-slate-600" : "bg-white border-gray-200"}`}>
+            <h2 className={`text-base font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+              프로필 정보
+            </h2>
+            <div className="space-y-4">
+              {/* 프로필 사진 */}
+              <div className="flex flex-col items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="relative group focus:outline-none focus:ring-2 focus:ring-emerald-500 rounded-full cursor-pointer"
+                >
+                  <img
+                    src={profileImage || "/default-avatar.png"}
+                    alt="Profile"
+                    className="w-24 h-24 rounded-full object-cover border-2 border-gray-300 transition-opacity group-hover:opacity-80"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%23e5e7eb'/%3E%3Ctext x='50' y='60' text-anchor='middle' font-size='40' fill='%239ca3af'%3E%3F%3C/text%3E%3C/svg%3E";
+                    }}
+                  />
+                  <div className={`absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity ${isDarkMode ? "text-white" : "text-white"}`}>
+                    <span className="text-sm font-medium">클릭하여 변경</span>
+                  </div>
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/jpg,image/png"
+                  onChange={handleProfileImageChange}
+                  className="hidden"
+                />
+                <p className={`text-xs text-center ${isDarkMode ? "text-slate-400" : "text-gray-500"}`}>
+                  JPG 또는 PNG 파일 (최대 5MB)
+                </p>
               </div>
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/jpg,image/png"
-              onChange={handleProfileImageChange}
-              className="hidden"
-            />
-            <p className={`text-sm text-center ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-              JPG 또는 PNG 파일 (최대 5MB)
-            </p>
-          </div>
-          </div>
 
-          {/* 이메일 */}
-          <div className={`p-6 rounded-lg border ${isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
-          <h2 className={`text-lg font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-            이메일
-          </h2>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className={`w-full px-4 py-2 rounded-lg border ${
-              isDarkMode
-                ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
-                : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
-            } focus:outline-none focus:ring-2 focus:ring-blue-500`}
-            placeholder="이메일 주소"
-          />
-          </div>
+              {/* 이메일 */}
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? "text-slate-300" : "text-gray-700"}`}>
+                  이메일
+                </label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className={`w-full px-4 py-2 rounded-lg border ${
+                    isDarkMode
+                      ? "bg-slate-700 border-slate-600 text-white placeholder-slate-400"
+                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
+                  } focus:outline-none focus:ring-2 focus:ring-emerald-500`}
+                  placeholder="이메일 주소"
+                />
+              </div>
 
-          {/* 닉네임 */}
-          <div className={`p-6 rounded-lg border ${isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
-          <h2 className={`text-lg font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-            닉네임
-          </h2>
-          <input
-            type="text"
-            value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
-            className={`w-full px-4 py-2 rounded-lg border ${
-              isDarkMode
-                ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
-                : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
-            } focus:outline-none focus:ring-2 focus:ring-blue-500`}
-            placeholder="닉네임"
-          />
+              {/* 닉네임 */}
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? "text-slate-300" : "text-gray-700"}`}>
+                  닉네임
+                </label>
+                <input
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  className={`w-full px-4 py-2 rounded-lg border ${
+                    isDarkMode
+                      ? "bg-slate-700 border-slate-600 text-white placeholder-slate-400"
+                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
+                  } focus:outline-none focus:ring-2 focus:ring-emerald-500`}
+                  placeholder="닉네임"
+                />
+              </div>
+            </div>
           </div>
 
           {/* 비밀번호 변경 */}
-          <div className={`p-6 rounded-lg border ${isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
-          <h2 className={`text-lg font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+          <div className={`p-4 rounded-lg border ${isDarkMode ? "bg-slate-800 border-slate-600" : "bg-white border-gray-200"}`}>
+          <h2 className={`text-base font-semibold mb-3 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
             비밀번호 변경
           </h2>
-          <div className="space-y-4">
+          <div className="space-y-3">
             <input
               type="password"
               value={currentPassword}
@@ -172,7 +175,7 @@ const SettingsPage: React.FC = () => {
                 isDarkMode
                   ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
                   : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
-              } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+              } focus:outline-none focus:ring-2 focus:ring-emerald-500`}
               placeholder="현재 비밀번호"
             />
             <input
@@ -183,7 +186,7 @@ const SettingsPage: React.FC = () => {
                 isDarkMode
                   ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
                   : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
-              } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+              } focus:outline-none focus:ring-2 focus:ring-emerald-500`}
               placeholder="새 비밀번호"
             />
             <input
@@ -194,7 +197,7 @@ const SettingsPage: React.FC = () => {
                 isDarkMode
                   ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
                   : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
-              } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+              } focus:outline-none focus:ring-2 focus:ring-emerald-500`}
               placeholder="새 비밀번호 확인"
             />
             <button
@@ -204,63 +207,21 @@ const SettingsPage: React.FC = () => {
               className={`px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer ${
                 isSaving || !currentPassword || !newPassword || !confirmPassword
                   ? isDarkMode
-                    ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                    ? "bg-slate-700 text-slate-400 cursor-not-allowed"
                     : "bg-gray-200 text-gray-400 cursor-not-allowed"
                   : isDarkMode
-                  ? "bg-blue-600 hover:bg-blue-700 text-white"
-                  : "bg-blue-600 hover:bg-blue-700 text-white"
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  : "bg-emerald-600 hover:bg-emerald-700 text-white"
               }`}
             >
               {isSaving ? "변경 중..." : "비밀번호 변경"}
             </button>
           </div>
           </div>
-
-          {/* 테마 설정 */}
-          <div className={`p-6 rounded-lg border ${isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"}`}>
-          <h2 className={`text-lg font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-            테마
-          </h2>
-          <div className="space-y-3">
-            <label className={`flex items-center gap-3 cursor-pointer ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>
-              <input
-                type="radio"
-                name="theme"
-                value="light"
-                checked={themeMode === "light"}
-                onChange={() => setThemeMode("light")}
-                className="w-4 h-4 text-blue-600 focus:ring-blue-500"
-              />
-              <span>라이트 모드</span>
-            </label>
-            <label className={`flex items-center gap-3 cursor-pointer ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>
-              <input
-                type="radio"
-                name="theme"
-                value="dark"
-                checked={themeMode === "dark"}
-                onChange={() => setThemeMode("dark")}
-                className="w-4 h-4 text-blue-600 focus:ring-blue-500"
-              />
-              <span>다크 모드</span>
-            </label>
-            <label className={`flex items-center gap-3 cursor-pointer ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>
-              <input
-                type="radio"
-                name="theme"
-                value="system"
-                checked={themeMode === "system"}
-                onChange={() => setThemeMode("system")}
-                className="w-4 h-4 text-blue-600 focus:ring-blue-500"
-              />
-              <span>시스템 모드 (시스템 설정에 따라 자동 변경)</span>
-            </label>
-          </div>
-          </div>
         </div>
 
         {/* 저장 버튼 */}
-        <div className="flex justify-end gap-4 mt-6">
+        <div className="flex justify-end gap-4 mt-4">
           <button
             type="button"
             onClick={handleSaveProfile}
@@ -271,8 +232,8 @@ const SettingsPage: React.FC = () => {
                   ? "bg-gray-700 text-gray-400 cursor-not-allowed"
                   : "bg-gray-200 text-gray-400 cursor-not-allowed"
                 : isDarkMode
-                ? "bg-blue-600 hover:bg-blue-700 text-white"
-                : "bg-blue-600 hover:bg-blue-700 text-white"
+                ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                : "bg-emerald-600 hover:bg-emerald-700 text-white"
             }`}
           >
             {isSaving ? "저장 중..." : "저장"}

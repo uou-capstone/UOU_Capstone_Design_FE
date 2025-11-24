@@ -9,10 +9,9 @@ type MenuItem =
   | "dashboard" 
   | "lectures" 
   | "assignments" 
-  | "progress" 
-  | "ai-tutor" 
-  | "smart-recommendation" 
-  | "auto-evaluation" 
+  | "exam-creation"
+  | "reports"
+  | "student-management"
   | "settings" 
   | "help";
 
@@ -60,7 +59,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
       return (
         <div
           className={`text-sm ${
-            isDarkMode   ? "text-gray-400" : "text-gray-500"
+            isDarkMode   ? "text-slate-400" : "text-gray-500"
           }`}
         >
           강의 목록을 불러오는 중...
@@ -72,7 +71,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
       return (
         <div
           className={`text-sm ${
-            isDarkMode ? "text-gray-500" : "text-gray-500"
+            isDarkMode ? "text-slate-400" : "text-gray-500"
           }`}
         >
           등록된 강의가 없습니다.
@@ -93,10 +92,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
             className={`w-full text-left px-3 py-2 rounded-lg transition-colors cursor-pointer ${
               isSelected
                 ? isDarkMode
-                  ? "bg-blue-600/25 text-blue-100"
-                  : "bg-blue-200/80 text-blue-800"
+                  ? "bg-emerald-600/25 text-emerald-100"
+                  : "bg-emerald-100 text-emerald-800"
                 : isDarkMode
-                ? "hover:bg-gray-800 text-gray-200"
+                ? "hover:bg-slate-800 text-slate-200"
                 : "hover:bg-gray-100 text-gray-700"
             }`}
           >
@@ -107,8 +106,8 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   className={`text-xs ${
                     isSelected
                       ? isDarkMode
-                        ? "text-blue-200"
-                        : "text-blue-600"
+                        ? "text-emerald-200"
+                        : "text-emerald-600"
                       : isDarkMode
                       ? "text-gray-400"
                       : "text-gray-500"
@@ -149,7 +148,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     <aside
       className={`h-full overflow-y-auto border-r scrollbar-hide transition-colors flex-shrink-0 ${
         isDarkMode
-          ? "bg-gray-900 border-gray-800"
+          ? "bg-slate-900 border-slate-700"
           : "bg-white border-gray-100"
       }`}
       style={{ width: `${width}px` }}
@@ -169,7 +168,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
             {/* 학습 섹션 */}
             <div>
               <h3 className={`text-xs font-semibold mb-3 ${
-                isDarkMode ? "text-gray-500" : "text-gray-500"
+                isDarkMode ? "text-slate-400" : "text-gray-500"
               }`}>
                 학습
               </h3>
@@ -179,9 +178,9 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   onClick={() => handleMenuSelect("dashboard")}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
                     selectedMenu === "dashboard"
-                      ? "bg-purple-600 text-white"
+                      ? "bg-emerald-600 text-white"
                       : isDarkMode
-                      ? "text-gray-300 hover:bg-gray-800"
+                      ? "text-slate-200 hover:bg-slate-800"
                       : "text-gray-700 hover:bg-gray-100"
                   }`}
                 >
@@ -195,9 +194,9 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   onClick={() => handleMenuSelect("lectures")}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
                     selectedMenu === "lectures"
-                      ? "bg-purple-600 text-white"
+                      ? "bg-emerald-600 text-white"
                       : isDarkMode
-                      ? "text-gray-300 hover:bg-gray-800"
+                      ? "text-slate-200 hover:bg-slate-800"
                       : "text-gray-700 hover:bg-gray-100"
                   }`}
                 >
@@ -211,9 +210,9 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   onClick={() => handleMenuSelect("assignments")}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
                     selectedMenu === "assignments"
-                      ? "bg-purple-600 text-white"
+                      ? "bg-emerald-600 text-white"
                       : isDarkMode
-                      ? "text-gray-300 hover:bg-gray-800"
+                      ? "text-slate-200 hover:bg-slate-800"
                       : "text-gray-700 hover:bg-gray-100"
                   }`}
                 >
@@ -224,92 +223,76 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleMenuSelect("progress")}
+                  onClick={() => handleMenuSelect("exam-creation")}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
-                    selectedMenu === "progress"
-                      ? "bg-purple-600 text-white"
+                    selectedMenu === "exam-creation"
+                      ? "bg-emerald-600 text-white"
                       : isDarkMode
-                      ? "text-gray-300 hover:bg-gray-800"
+                      ? "text-slate-200 hover:bg-slate-800"
                       : "text-gray-700 hover:bg-gray-100"
                   }`}
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  <span>진도율</span>
+                  <span>시험생성</span>
                 </button>
               </div>
             </div>
 
             {/* 구분선 */}
-            <div className={`border-t ${isDarkMode ? "border-gray-700" : "border-gray-200"}`}></div>
+            <div className={`border-t ${isDarkMode ? "border-slate-600" : "border-gray-200"}`}></div>
 
-            {/* AI 도구 섹션 */}
+            {/* 관리 섹션 */}
             <div>
               <h3 className={`text-xs font-semibold mb-3 ${
-                isDarkMode ? "text-gray-500" : "text-gray-500"
+                isDarkMode ? "text-slate-400" : "text-gray-500"
               }`}>
-                AI 도구
+                관리
               </h3>
               <div className="flex flex-col gap-1">
                 <button
                   type="button"
-                  onClick={() => handleMenuSelect("ai-tutor")}
+                  onClick={() => handleMenuSelect("reports")}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
-                    selectedMenu === "ai-tutor"
-                      ? "bg-purple-600 text-white"
+                    selectedMenu === "reports"
+                      ? "bg-emerald-600 text-white"
                       : isDarkMode
-                      ? "text-gray-300 hover:bg-gray-800"
+                      ? "text-slate-200 hover:bg-slate-800"
                       : "text-gray-700 hover:bg-gray-100"
                   }`}
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  <span>AI 튜터</span>
+                  <span>보고서</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleMenuSelect("smart-recommendation")}
+                  onClick={() => handleMenuSelect("student-management")}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
-                    selectedMenu === "smart-recommendation"
-                      ? "bg-purple-600 text-white"
+                    selectedMenu === "student-management"
+                      ? "bg-emerald-600 text-white"
                       : isDarkMode
-                      ? "text-gray-300 hover:bg-gray-800"
+                      ? "text-slate-200 hover:bg-slate-800"
                       : "text-gray-700 hover:bg-gray-100"
                   }`}
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                   </svg>
-                  <span>스마트 추천</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleMenuSelect("auto-evaluation")}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
-                    selectedMenu === "auto-evaluation"
-                      ? "bg-purple-600 text-white"
-                      : isDarkMode
-                      ? "text-gray-300 hover:bg-gray-800"
-                      : "text-gray-700 hover:bg-gray-100"
-                  }`}
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                  </svg>
-                  <span>자동 평가</span>
+                  <span>학생관리</span>
                 </button>
               </div>
             </div>
 
             {/* 구분선 */}
-            <div className={`border-t ${isDarkMode ? "border-gray-700" : "border-gray-200"}`}></div>
+            <div className={`border-t ${isDarkMode ? "border-slate-600" : "border-gray-200"}`}></div>
 
             {/* 설정 섹션 */}
             <div>
               <h3 className={`text-xs font-semibold mb-3 ${
-                isDarkMode ? "text-gray-500" : "text-gray-500"
+                isDarkMode ? "text-slate-400" : "text-gray-500"
               }`}>
                 설정
               </h3>
@@ -319,9 +302,9 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   onClick={() => handleMenuSelect("settings")}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
                     selectedMenu === "settings"
-                      ? "bg-purple-600 text-white"
+                      ? "bg-emerald-600 text-white"
                       : isDarkMode
-                      ? "text-gray-300 hover:bg-gray-800"
+                      ? "text-slate-200 hover:bg-slate-800"
                       : "text-gray-700 hover:bg-gray-100"
                   }`}
                 >
@@ -336,9 +319,9 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   onClick={() => handleMenuSelect("help")}
                   className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
                     selectedMenu === "help"
-                      ? "bg-purple-600 text-white"
+                      ? "bg-emerald-600 text-white"
                       : isDarkMode
-                      ? "text-gray-300 hover:bg-gray-800"
+                      ? "text-slate-200 hover:bg-slate-800"
                       : "text-gray-700 hover:bg-gray-100"
                   }`}
                 >
@@ -353,8 +336,8 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
         )}
         
         {/* Version 표시 (하단 고정) */}
-        <div className={`mt-auto pt-4 border-t ${isDarkMode ? "border-gray-700" : "border-gray-200"}`}>
-          <p className={`text-xs text-center ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
+        <div className={`mt-auto pt-4 border-t ${isDarkMode ? "border-slate-600" : "border-gray-200"}`}>
+          <p className={`text-xs text-center ${isDarkMode ? "text-slate-400" : "text-gray-400"}`}>
             Version 1.0
           </p>
         </div>
