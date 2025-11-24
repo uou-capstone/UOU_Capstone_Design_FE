@@ -16,6 +16,7 @@ const LoginPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [serverStatus, setServerStatus] = useState<{ online: boolean; message?: string } | null>(null);
   const [isCheckingServer, setIsCheckingServer] = useState(true);
+  const [isInfoOpen, setIsInfoOpen] = useState(true);
 
   // 서버 상태 확인
   useEffect(() => {
@@ -66,10 +67,10 @@ const LoginPage: React.FC = () => {
 
   return (
     <div className={`min-h-screen flex items-center justify-center transition-colors ${
-      isDarkMode ? 'bg-gray-900' : 'bg-gray-50'
+      isDarkMode ? 'bg-slate-900' : 'bg-gray-50'
     }`}>
       <div className={`w-full max-w-md p-8 rounded-lg shadow-lg ${
-        isDarkMode ? 'bg-gray-800' : 'bg-white'
+        isDarkMode ? 'bg-slate-800' : 'bg-white'
       }`}>
         <div className="text-center mb-8">
           <h1 className={`text-3xl font-bold mb-2 ${
@@ -78,7 +79,7 @@ const LoginPage: React.FC = () => {
             로그인
           </h1>
           <p className={`text-sm ${
-            isDarkMode ? 'text-gray-400' : 'text-gray-600'
+            isDarkMode ? 'text-slate-400' : 'text-gray-600'
           }`}>
             AI Tutor LMS에 오신 것을 환영합니다
           </p>
@@ -94,7 +95,7 @@ const LoginPage: React.FC = () => {
         {/* 서버 상태 표시 */}
         {serverStatus && (
           <div className={`mb-4 flex items-center gap-2 text-sm ${
-            isDarkMode ? 'text-gray-400' : 'text-gray-600'
+            isDarkMode ? 'text-slate-400' : 'text-gray-600'
           }`}>
             <span>서버상태:</span>
             <div className={`w-3 h-3 rounded-full ${
@@ -118,7 +119,7 @@ const LoginPage: React.FC = () => {
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label className={`block text-sm font-medium mb-2 ${
-              isDarkMode ? 'text-gray-300' : 'text-gray-700'
+              isDarkMode ? 'text-slate-200' : 'text-gray-700'
             }`}>
               이메일
             </label>
@@ -129,7 +130,7 @@ const LoginPage: React.FC = () => {
               required
               className={`w-full px-4 py-2 rounded-lg border ${
                 isDarkMode
-                  ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                  ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-400'
                   : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
               } focus:outline-none focus:ring-2 focus:ring-blue-500`}
               placeholder="example@email.com"
@@ -138,7 +139,7 @@ const LoginPage: React.FC = () => {
 
           <div>
             <label className={`block text-sm font-medium mb-2 ${
-              isDarkMode ? 'text-gray-300' : 'text-gray-700'
+              isDarkMode ? 'text-slate-200' : 'text-gray-700'
             }`}>
               비밀번호
             </label>
@@ -149,7 +150,7 @@ const LoginPage: React.FC = () => {
               required
               className={`w-full px-4 py-2 rounded-lg border ${
                 isDarkMode
-                  ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
+                  ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-400'
                   : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
               } focus:outline-none focus:ring-2 focus:ring-blue-500`}
               placeholder="비밀번호를 입력하세요"
@@ -162,11 +163,11 @@ const LoginPage: React.FC = () => {
             className={`w-full py-3 rounded-lg font-medium transition-colors ${
               isLoading
                 ? isDarkMode
-                  ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                  ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 : isDarkMode
-                ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                : 'bg-blue-600 hover:bg-blue-700 text-white'
+                ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
             }`}
           >
             {isLoading ? '로그인 중...' : '로그인'}
@@ -180,11 +181,144 @@ const LoginPage: React.FC = () => {
           <Link
             to="/signup"
             className={`font-medium hover:underline ${
-              isDarkMode ? 'text-blue-400' : 'text-blue-600'
+              isDarkMode ? 'text-emerald-400' : 'text-emerald-600'
             }`}
           >
             회원가입
           </Link>
+        </div>
+      </div>
+
+      {/* 구현 기능 안내창 */}
+      <div className={`fixed bottom-4 right-4 z-50 transition-all duration-300 ${
+        isInfoOpen ? 'w-80' : 'w-12'
+      }`}>
+        <div className={`rounded-lg shadow-xl border transition-all ${
+          isDarkMode 
+            ? 'bg-slate-800 border-slate-600' 
+            : 'bg-white border-gray-200'
+        }`}>
+          {/* 헤더 */}
+          <button
+            type="button"
+            onClick={() => setIsInfoOpen(!isInfoOpen)}
+            className={`w-full flex items-center justify-between p-3 rounded-t-lg transition-colors cursor-pointer ${
+              isDarkMode
+                ? 'hover:bg-slate-700'
+                : 'hover:bg-gray-50'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <svg className="w-5 h-5 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {isInfoOpen && (
+                <span className={`text-sm font-semibold ${
+                  isDarkMode ? 'text-white' : 'text-gray-900'
+                }`}>
+                  구현된 기능
+                </span>
+              )}
+            </div>
+            <svg 
+              className={`w-5 h-5 transition-transform ${
+                isInfoOpen ? 'rotate-180' : ''
+              } ${isDarkMode ? 'text-slate-300' : 'text-gray-600'}`}
+              fill="none" 
+              stroke="currentColor" 
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {/* 내용 */}
+          {isInfoOpen && (
+            <div className={`p-4 max-h-96 overflow-y-auto scrollbar-thin ${
+              isDarkMode ? 'scrollbar-thumb-slate-600' : 'scrollbar-thumb-gray-300'
+            }`}>
+              <div className="space-y-4">
+                {/* 학생용 기능 */}
+                <div>
+                  <h3 className={`text-sm font-semibold mb-2 ${
+                    isDarkMode ? 'text-blue-400' : 'text-blue-600'
+                  }`}>
+                    👨‍🎓 학생
+                  </h3>
+                  <ul className={`text-xs space-y-1 ${
+                    isDarkMode ? 'text-slate-300' : 'text-gray-700'
+                  }`}>
+                    <li>• 로그인 / 회원가입</li>
+                    <li>• 강의실 (과목 목록 조회)</li>
+                    <li>• 강의 자료 보기 (PDF, 마크다운)</li>
+                    <li>• 프로필 사진 변경</li>
+                    <li>• 이메일/닉네임 수정</li>
+                    <li>• 비밀번호 변경</li>
+                    <li>• 다크 모드 전환</li>
+                  </ul>
+                </div>
+
+                {/* 선생님용 기능 */}
+                <div>
+                  <h3 className={`text-sm font-semibold mb-2 ${
+                    isDarkMode ? 'text-emerald-400' : 'text-emerald-600'
+                  }`}>
+                    👨‍🏫 선생님
+                  </h3>
+                  <ul className={`text-xs space-y-1 ${
+                    isDarkMode ? 'text-slate-300' : 'text-gray-700'
+                  }`}>
+                    <li>• 로그인 / 회원가입</li>
+                    <li>• 강의실 (과목 목록 조회)</li>
+                    <li>• 과목 생성/수정/삭제</li>
+                    <li>• 강의 생성/삭제</li>
+                    <li>• 강의 자료 업로드 (PDF, PPT, DOC 등)</li>
+                    <li>• AI 강의 콘텐츠 생성</li>
+                    <li>• 강의 자료 마크다운 표시</li>
+                    <li>• 프로필 사진 변경</li>
+                    <li>• 이메일/닉네임 수정</li>
+                    <li>• 비밀번호 변경</li>
+                    <li>• 다크 모드 전환</li>
+                  </ul>
+                </div>
+
+                {/* 공통 UI/UX */}
+                <div>
+                  <h3 className={`text-sm font-semibold mb-2 ${
+                    isDarkMode ? 'text-purple-400' : 'text-purple-600'
+                  }`}>
+                    🎨 공통 기능
+                  </h3>
+                  <ul className={`text-xs space-y-1 ${
+                    isDarkMode ? 'text-slate-300' : 'text-gray-700'
+                  }`}>
+                    <li>• 반응형 3단 레이아웃</li>
+                    <li>• 사이드바 리사이저 (드래그/더블클릭)</li>
+                    <li>• 다크 모드 지원</li>
+                    <li>• 서버 상태 실시간 확인</li>
+                  </ul>
+                </div>
+
+                {/* 미구현 기능 */}
+                <div>
+                  <h3 className={`text-sm font-semibold mb-2 ${
+                    isDarkMode ? 'text-slate-400' : 'text-gray-500'
+                  }`}>
+                    🚧 미구현
+                  </h3>
+                  <ul className={`text-xs space-y-1 ${
+                    isDarkMode ? 'text-slate-500' : 'text-gray-500'
+                  }`}>
+                    <li>• 대시보드</li>
+                    <li>• 과제</li>
+                    <li>• 시험생성</li>
+                    <li>• 보고서</li>
+                    <li>• 학생관리</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

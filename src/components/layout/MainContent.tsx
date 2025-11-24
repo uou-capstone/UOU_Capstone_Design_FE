@@ -11,10 +11,9 @@ type MenuItem =
   | "dashboard" 
   | "lectures" 
   | "assignments" 
-  | "progress" 
-  | "ai-tutor" 
-  | "smart-recommendation" 
-  | "auto-evaluation" 
+  | "exam-creation"
+  | "reports"
+  | "student-management"
   | "settings" 
   | "help";
 
@@ -145,7 +144,7 @@ const MainContent: React.FC<MainContentProps> = ({
       return (
         <div
           className={`h-full flex items-center justify-center ${
-            isDarkMode ? "text-gray-400" : "text-gray-500"
+            isDarkMode ? "text-slate-400" : "text-gray-500"
           }`}
         >
           <div className="text-center">
@@ -163,35 +162,45 @@ const MainContent: React.FC<MainContentProps> = ({
         <div className="h-full flex flex-col">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-semibold">내 강의실</h2>
-            {isTeacher && (
-              <button
-                onClick={() => setIsCourseModalOpen(true)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer ${
-                  isDarkMode
-                    ? "bg-blue-600 hover:bg-blue-700 text-white"
-                    : "bg-blue-500 hover:bg-blue-600 text-white"
-                }`}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                과목 생성
-              </button>
-            )}
           </div>
           <div
             className={`flex-1 flex items-center justify-center ${
-              isDarkMode ? "text-gray-400" : "text-gray-500"
+              isDarkMode ? "text-slate-400" : "text-gray-500"
             }`}
           >
-            <div className="text-center space-y-2">
-              <p className="text-lg font-medium">등록된 과목이 없습니다.</p>
-              {isTeacher ? (
-                <p className="text-sm">위의 '과목 생성' 버튼을 눌러 새 과목을 만들어보세요.</p>
-              ) : (
+            {isTeacher ? (
+              <button
+                type="button"
+                onClick={() => setIsCourseModalOpen(true)}
+                className={`text-center p-8 rounded-2xl border-2 border-dashed transition-all cursor-pointer ${
+                  isDarkMode
+                    ? "border-slate-600 hover:border-emerald-500 hover:bg-slate-800/50"
+                    : "border-gray-300 hover:border-emerald-500 hover:bg-gray-50"
+                } focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:ring-offset-2 ${
+                  isDarkMode ? "focus:ring-offset-slate-900" : "focus:ring-offset-white"
+                }`}
+              >
+                <svg 
+                  className={`w-16 h-16 mx-auto mb-4 ${isDarkMode ? "text-slate-400" : "text-gray-400"}`}
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                <p className={`text-xl font-semibold mb-2 ${isDarkMode ? "text-slate-200" : "text-gray-700"}`}>
+                  새 과목 만들기
+                </p>
+                <p className={`text-sm ${isDarkMode ? "text-slate-400" : "text-gray-500"}`}>
+                  클릭하여 새 과목을 생성하세요
+                </p>
+              </button>
+            ) : (
+              <div className="text-center space-y-2">
+                <p className="text-lg font-medium">등록된 과목이 없습니다.</p>
                 <p className="text-sm">담당 선생님이 과목을 생성하면 여기에 표시됩니다.</p>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -200,35 +209,45 @@ const MainContent: React.FC<MainContentProps> = ({
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-semibold">내 과목</h2>
+          <h2 className="text-2xl font-semibold">내 강의실</h2>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {isTeacher && (
             <button
+              type="button"
               onClick={() => setIsCourseModalOpen(true)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+              className={`text-left p-5 rounded-xl border-2 border-dashed transition-all flex flex-col h-40 items-center justify-center cursor-pointer ${
                 isDarkMode
-                  ? "bg-blue-600 hover:bg-blue-700 text-white"
-                  : "bg-blue-500 hover:bg-blue-600 text-white"
+                  ? "border-slate-600 hover:border-emerald-500 hover:bg-slate-800/50"
+                  : "border-gray-300 hover:border-emerald-500 hover:bg-gray-50"
+              } focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:ring-offset-2 ${
+                isDarkMode ? "focus:ring-offset-slate-900" : "focus:ring-offset-white"
               }`}
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg 
+                className={`w-8 h-8 mb-2 ${isDarkMode ? "text-slate-400" : "text-gray-400"}`}
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-              과목 생성
+              <span className={`text-sm font-medium ${isDarkMode ? "text-slate-300" : "text-gray-600"}`}>
+                새 과목 만들기
+              </span>
             </button>
           )}
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
           {courses.map((course) => (
             <button
               key={course.courseId}
               type="button"
               onClick={() => handleCourseSelect(course.courseId)}
-              className={`text-left p-4 rounded-xl border shadow-sm transition-all flex flex-col h-32 cursor-pointer ${
+              className={`text-left p-5 rounded-xl border shadow-sm transition-all flex flex-col h-40 cursor-pointer ${
                 isDarkMode
-                  ? "bg-gray-800 border-gray-700 hover:border-blue-500 hover:shadow-blue-500/30"
-                  : "bg-white border-gray-200 hover:border-blue-500/40 hover:shadow-blue-500/20"
-              } focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:ring-offset-2 ${
-                isDarkMode ? "focus:ring-offset-gray-900" : "focus:ring-offset-white"
+                  ? "bg-slate-800 border-slate-600 hover:border-emerald-500 hover:shadow-emerald-500/30"
+                  : "bg-white border-gray-200 hover:border-emerald-500/40 hover:shadow-emerald-500/20"
+              } focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:ring-offset-2 ${
+                isDarkMode ? "focus:ring-offset-slate-900" : "focus:ring-offset-white"
               }`}
             >
               <div className="flex flex-col h-full">
@@ -243,7 +262,7 @@ const MainContent: React.FC<MainContentProps> = ({
                       }}
                       className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors cursor-pointer ${
                         isDarkMode
-                          ? "text-gray-300 hover:text-white hover:bg-gray-700"
+                          ? "text-slate-200 hover:text-white hover:bg-slate-700"
                           : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
                       }`}
                       aria-haspopup="menu"
@@ -260,7 +279,7 @@ const MainContent: React.FC<MainContentProps> = ({
                           }
                         }}
                         className={`absolute right-0 mt-1 w-36 rounded-lg border shadow-lg z-20 ${
-                          isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+                          isDarkMode ? "bg-slate-700 border-slate-600" : "bg-white border-gray-200"
                         }`}
                         role="menu"
                         aria-label="과목 옵션 메뉴"
@@ -274,7 +293,7 @@ const MainContent: React.FC<MainContentProps> = ({
                           }}
                           className={`w-full text-left px-3 py-2 text-xs transition-colors rounded-t-lg cursor-pointer ${
                             isDarkMode
-                              ? "text-gray-200 hover:bg-gray-700"
+                              ? "text-slate-200 hover:bg-slate-700"
                               : "text-gray-700 hover:bg-gray-100"
                           }`}
                           role="menuitem"
@@ -304,7 +323,7 @@ const MainContent: React.FC<MainContentProps> = ({
                 {course.description && (
                   <p
                     className={`text-xs line-clamp-3 flex-1 ${
-                      isDarkMode ? "text-gray-400" : "text-gray-600"
+                      isDarkMode ? "text-slate-400" : "text-gray-600"
                     }`}
                   >
                     {course.description}
@@ -323,7 +342,7 @@ const MainContent: React.FC<MainContentProps> = ({
       return (
         <div
           className={`h-full flex items-center justify-center ${
-            isDarkMode ? "text-gray-400" : "text-gray-500"
+            isDarkMode ? "text-slate-400" : "text-gray-500"
           }`}
         >
           <div className="text-center">
@@ -345,10 +364,11 @@ const MainContent: React.FC<MainContentProps> = ({
             <p className="text-lg font-medium">과목 정보를 불러오지 못했습니다.</p>
             {courseDetailError && <p className="text-sm">{courseDetailError}</p>}
             <button
+              type="button"
               onClick={onBackToCourses}
               className={`mt-2 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg cursor-pointer ${
                 isDarkMode
-                  ? "bg-gray-800 hover:bg-gray-700 text-white"
+                  ? "bg-slate-800 hover:bg-slate-700 text-white"
                   : "bg-gray-200 hover:bg-gray-300 text-gray-800"
               }`}
             >
@@ -373,15 +393,15 @@ const MainContent: React.FC<MainContentProps> = ({
         {isOTSelected && (
           <div
             className={`p-4 rounded-xl border ${
-              isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+              isDarkMode ? "bg-slate-800 border-slate-600" : "bg-white border-gray-200"
             }`}
           >
             <div className="flex flex-col gap-3">
-              <div className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+              <div className={`text-sm ${isDarkMode ? "text-slate-400" : "text-gray-600"}`}>
                 담당: {courseDetail.teacherName}
               </div>
               {courseDetail.description && (
-                <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                <p className={`text-sm ${isDarkMode ? "text-slate-200" : "text-gray-700"}`}>
                   {courseDetail.description}
                 </p>
               )}
@@ -395,7 +415,7 @@ const MainContent: React.FC<MainContentProps> = ({
               <div
                 className={`p-6 rounded-xl shadow-sm border transition-colors overflow-y-auto max-h-full ${
                   isDarkMode
-                    ? "bg-gray-800 border-gray-700 text-gray-100"
+                    ? "bg-slate-700 border-slate-600 text-slate-100"
                     : "bg-white border-gray-200 text-gray-900"
                 }`}
                 style={{ maxHeight: "60vh" }}
@@ -425,7 +445,7 @@ const MainContent: React.FC<MainContentProps> = ({
                   <div
                     className={`h-full flex items-center justify-center rounded-xl border transition-colors ${
                       isDarkMode
-                        ? "border-gray-700 bg-gray-800 text-gray-200"
+                        ? "border-slate-600 bg-slate-700 text-slate-200"
                         : "border-gray-200 bg-white text-gray-700"
                     }`}
                   >
@@ -436,8 +456,8 @@ const MainContent: React.FC<MainContentProps> = ({
                         download={fileName}
                         className={`inline-block px-4 py-2 rounded-lg ${
                           isDarkMode
-                            ? "bg-blue-600 hover:bg-blue-700 text-white"
-                            : "bg-blue-500 hover:bg-blue-600 text-white"
+                            ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                            : "bg-emerald-600 hover:bg-emerald-700 text-white"
                         }`}
                       >
                         {fileName} 다운로드
@@ -452,7 +472,7 @@ const MainContent: React.FC<MainContentProps> = ({
           <div
             className={`flex-1 flex items-center justify-center rounded-xl border ${
               isDarkMode
-                ? "border-gray-800 bg-gray-900 text-gray-500"
+                ? "border-slate-700 bg-slate-900 text-slate-400"
                 : "border-gray-200 bg-white text-gray-500"
             }`}
           >
@@ -466,11 +486,25 @@ const MainContent: React.FC<MainContentProps> = ({
     );
   };
 
+  const getMenuName = (menu: MenuItem): string => {
+    const menuNames: Record<MenuItem, string> = {
+      dashboard: "대시보드",
+      lectures: "강의",
+      assignments: "과제",
+      "exam-creation": "시험생성",
+      reports: "보고서",
+      "student-management": "학생관리",
+      settings: "환경설정",
+      help: "도움말",
+    };
+    return menuNames[menu] || "이 기능";
+  };
+
   return (
     <>
       <div
         className={`flex-1 min-h-0 p-4 overflow-y-auto scrollbar-hide transition-colors ${
-          isDarkMode ? "bg-gray-900" : "bg-gray-50"
+          isDarkMode ? "bg-slate-900" : "bg-gray-50"
         }`}
       >
         {viewMode === "course-list" ? (
@@ -479,9 +513,12 @@ const MainContent: React.FC<MainContentProps> = ({
           ) : selectedMenu === "lectures" ? (
             renderCourseList()
           ) : (
-            <div className={`h-full flex items-center justify-center ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-              <div className="text-center">
-                <p className="text-lg">메뉴를 선택해주세요.</p>
+            <div className={`h-full flex items-center justify-center ${isDarkMode ? "text-slate-400" : "text-gray-500"}`}>
+              <div className="text-center space-y-2">
+                <p className="text-lg font-medium">미구현</p>
+                <p className="text-sm">
+                  {getMenuName(selectedMenu)}은(는) 아직 구현되지 않았습니다.
+                </p>
               </div>
             </div>
           )
@@ -498,7 +535,7 @@ const MainContent: React.FC<MainContentProps> = ({
         >
           <div
             className={`w-full max-w-md p-6 rounded-xl shadow-xl ${
-              isDarkMode ? "bg-gray-800" : "bg-white"
+              isDarkMode ? "bg-slate-700" : "bg-white"
             }`}
             onClick={(e) => e.stopPropagation()}
           >
@@ -515,7 +552,7 @@ const MainContent: React.FC<MainContentProps> = ({
                     isDarkMode
                       ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
-                  } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  } focus:outline-none focus:ring-2 focus:ring-emerald-500`}
                   autoFocus
                 />
               </div>
@@ -530,11 +567,12 @@ const MainContent: React.FC<MainContentProps> = ({
                     isDarkMode
                       ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
-                  } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  } focus:outline-none focus:ring-2 focus:ring-emerald-500`}
                 />
               </div>
               <div className="flex gap-2 pt-2">
                 <button
+                  type="button"
                   onClick={handleCreateCourse}
                   className={`flex-1 px-4 py-2 rounded-lg font-medium cursor-pointer ${
                     isDarkMode
@@ -545,6 +583,7 @@ const MainContent: React.FC<MainContentProps> = ({
                   생성
                 </button>
                 <button
+                  type="button"
                   onClick={() => {
                     setIsCourseModalOpen(false);
                     setCourseModalTitle("");

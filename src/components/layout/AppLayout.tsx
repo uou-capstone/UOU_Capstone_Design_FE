@@ -13,10 +13,9 @@ type MenuItem =
   | "dashboard" 
   | "lectures" 
   | "assignments" 
-  | "progress" 
-  | "ai-tutor" 
-  | "smart-recommendation" 
-  | "auto-evaluation" 
+  | "exam-creation"
+  | "reports"
+  | "student-management"
   | "settings" 
   | "help";
 
@@ -349,7 +348,7 @@ const AppLayout: React.FC = () => {
   return (
     <div
       className={`flex flex-col h-screen transition-colors ${
-        isDarkMode ? "bg-gray-900 text-white" : "bg-gray-50 text-gray-900"
+        isDarkMode ? "bg-slate-900 text-slate-100" : "bg-gray-50 text-gray-900"
       }`}
     >
       <TopNav currentCourseTitle={currentCourseTitle} onNavigateHome={handleBackToCourses} />
@@ -371,8 +370,8 @@ const AppLayout: React.FC = () => {
           onMouseDown={handleLeftMouseDown}
           onDoubleClick={handleLeftDoubleClick}
           className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
-            isDarkMode ? "bg-gray-800" : "bg-gray-200"
-          } ${isResizingLeft ? (isDarkMode ? "bg-gray-600" : "bg-gray-400") : ""}`}
+            isDarkMode ? "bg-slate-800" : "bg-gray-200"
+          } ${isResizingLeft ? (isDarkMode ? "bg-slate-700" : "bg-gray-400") : ""}`}
           style={{
             width: "2px",
             zIndex: 10,
@@ -414,8 +413,8 @@ const AppLayout: React.FC = () => {
           onMouseDown={handleRightMouseDown}
           onDoubleClick={handleRightDoubleClick}
           className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
-            isDarkMode ? "bg-gray-800" : "bg-gray-200"
-          } ${isResizingRight ? (isDarkMode ? "bg-gray-600" : "bg-gray-400") : ""}`}
+            isDarkMode ? "bg-slate-800" : "bg-gray-200"
+          } ${isResizingRight ? (isDarkMode ? "bg-slate-700" : "bg-gray-400") : ""}`}
           style={{
             width: "2px",
             zIndex: 10,
