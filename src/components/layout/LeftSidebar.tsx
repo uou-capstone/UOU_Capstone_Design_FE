@@ -99,7 +99,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
             <button
               type="button"
               onClick={() => onSelectLecture?.(lecture.lectureId)}
-              className={`flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer w-full ${
+              className={`flex flex-col gap-1 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer w-full ${
                 isSelected
                   ? "bg-emerald-600 text-white"
                   : isDarkMode
@@ -107,19 +107,8 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   : "text-gray-700 hover:bg-gray-100"
               }`}
             >
-              <span className="text-sm font-medium truncate text-left flex-1 min-w-0">{lecture.title}</span>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span
-                  className={`text-xs ${
-                    isSelected
-                      ? "text-white"
-                      : isDarkMode
-                      ? "text-slate-400"
-                      : "text-gray-500"
-                  }`}
-                >
-                  {lecture.weekNumber}주차
-                </span>
+              <div className="flex items-center justify-between gap-2 w-full">
+                <span className="text-sm font-medium truncate text-left flex-1 min-w-0">{lecture.title}</span>
                 {isTeacher && onDeleteLecture && (
                   <button
                     type="button"
@@ -129,7 +118,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                         onDeleteLecture(lecture.lectureId);
                       }
                     }}
-                    className={`p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer ${
+                    className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer flex-shrink-0 ${
                       isSelected
                         ? isDarkMode
                           ? "hover:bg-red-600/30 text-red-200 hover:text-red-100"
@@ -141,11 +130,22 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     title="강의 삭제"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
                     </svg>
                   </button>
                 )}
               </div>
+              <span
+                className={`text-xs text-left ${
+                  isSelected
+                    ? "text-white/80"
+                    : isDarkMode
+                    ? "text-slate-400"
+                    : "text-gray-500"
+                }`}
+              >
+                {lecture.weekNumber}주차
+              </span>
             </button>
           </div>
         </div>
@@ -244,59 +244,63 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  <span>시험생성</span>
+                  <span>{isTeacher ? "시험생성" : "시험"}</span>
                 </button>
               </div>
             </div>
 
-            {/* 구분선 */}
-            <div className={`border-t ${isDarkMode ? "border-slate-600" : "border-gray-200"}`}></div>
+            {/* 구분선 - 선생님일 때만 표시 */}
+            {isTeacher && (
+              <>
+                <div className={`border-t ${isDarkMode ? "border-slate-600" : "border-gray-200"}`}></div>
 
-            {/* 관리 섹션 */}
-            <div>
-              <h3 className={`text-xs font-semibold mb-3 ${
-                isDarkMode ? "text-slate-400" : "text-gray-500"
-              }`}>
-                관리
-              </h3>
-              <div className="flex flex-col gap-1">
-                <button
-                  type="button"
-                  onClick={() => handleMenuSelect("reports")}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
-                    selectedMenu === "reports"
-                      ? "bg-emerald-600 text-white"
-                      : isDarkMode
-                      ? "text-slate-200 hover:bg-slate-800"
-                      : "text-gray-700 hover:bg-gray-100"
-                  }`}
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                  <span>보고서</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleMenuSelect("student-management")}
-                  className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
-                    selectedMenu === "student-management"
-                      ? "bg-emerald-600 text-white"
-                      : isDarkMode
-                      ? "text-slate-200 hover:bg-slate-800"
-                      : "text-gray-700 hover:bg-gray-100"
-                  }`}
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                  </svg>
-                  <span>학생관리</span>
-                </button>
-              </div>
-            </div>
+                {/* 관리 섹션 - 선생님만 표시 */}
+                <div>
+                  <h3 className={`text-xs font-semibold mb-3 ${
+                    isDarkMode ? "text-slate-400" : "text-gray-500"
+                  }`}>
+                    관리
+                  </h3>
+                  <div className="flex flex-col gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleMenuSelect("reports")}
+                      className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
+                        selectedMenu === "reports"
+                          ? "bg-emerald-600 text-white"
+                          : isDarkMode
+                          ? "text-slate-200 hover:bg-slate-800"
+                          : "text-gray-700 hover:bg-gray-100"
+                      }`}
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <span>보고서</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMenuSelect("student-management")}
+                      className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer ${
+                        selectedMenu === "student-management"
+                          ? "bg-emerald-600 text-white"
+                          : isDarkMode
+                          ? "text-slate-200 hover:bg-slate-800"
+                          : "text-gray-700 hover:bg-gray-100"
+                      }`}
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                      </svg>
+                      <span>학생관리</span>
+                    </button>
+                  </div>
+                </div>
 
-            {/* 구분선 */}
-            <div className={`border-t ${isDarkMode ? "border-slate-600" : "border-gray-200"}`}></div>
+                {/* 구분선 */}
+                <div className={`border-t ${isDarkMode ? "border-slate-600" : "border-gray-200"}`}></div>
+              </>
+            )}
 
             {/* 설정 섹션 */}
             <div>
