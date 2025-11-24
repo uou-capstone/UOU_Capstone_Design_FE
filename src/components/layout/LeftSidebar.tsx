@@ -79,66 +79,75 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
       );
     }
 
-    return courseDetail.lectures.map((lecture) => {
+    // 강의 목록을 정렬: OT(0주차)가 가장 위, 그 다음 1주차, 2주차 순서
+    const sortedLectures = [...courseDetail.lectures].sort((a, b) => {
+      // 0주차(OT)는 항상 가장 위
+      if (a.weekNumber === 0) return -1;
+      if (b.weekNumber === 0) return 1;
+      // 나머지는 주차 순서대로
+      return a.weekNumber - b.weekNumber;
+    });
+
+    return sortedLectures.map((lecture) => {
       const isSelected = selectedLectureId === lecture.lectureId;
       return (
         <div
           key={lecture.lectureId}
           className="relative group"
         >
-          <button
-            type="button"
-            onClick={() => onSelectLecture?.(lecture.lectureId)}
-            className={`w-full text-left px-3 py-2 rounded-lg transition-colors cursor-pointer ${
-              isSelected
-                ? isDarkMode
-                  ? "bg-emerald-600/25 text-emerald-100"
-                  : "bg-emerald-100 text-emerald-800"
-                : isDarkMode
-                ? "hover:bg-slate-800 text-slate-200"
-                : "hover:bg-gray-100 text-gray-700"
-            }`}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex flex-col flex-1 min-w-0">
-                <span className="text-sm font-medium truncate">{lecture.title}</span>
+          <div className="relative group">
+            <button
+              type="button"
+              onClick={() => onSelectLecture?.(lecture.lectureId)}
+              className={`flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-sm transition-colors cursor-pointer w-full ${
+                isSelected
+                  ? "bg-emerald-600 text-white"
+                  : isDarkMode
+                  ? "text-slate-200 hover:bg-slate-800"
+                  : "text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              <span className="text-sm font-medium truncate text-left flex-1 min-w-0">{lecture.title}</span>
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <span
                   className={`text-xs ${
                     isSelected
-                      ? isDarkMode
-                        ? "text-emerald-200"
-                        : "text-emerald-600"
+                      ? "text-white"
                       : isDarkMode
-                      ? "text-gray-400"
+                      ? "text-slate-400"
                       : "text-gray-500"
                   }`}
                 >
                   {lecture.weekNumber}주차
                 </span>
+                {isTeacher && onDeleteLecture && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (window.confirm(`"${lecture.title}" (${lecture.weekNumber}주차)를 삭제하시겠습니까?`)) {
+                        onDeleteLecture(lecture.lectureId);
+                      }
+                    }}
+                    className={`p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer ${
+                      isSelected
+                        ? isDarkMode
+                          ? "hover:bg-red-600/30 text-red-200 hover:text-red-100"
+                          : "hover:bg-red-500/20 text-red-600 hover:text-red-700"
+                        : isDarkMode
+                        ? "hover:bg-red-600/20 text-red-400 hover:text-red-300"
+                        : "hover:bg-red-100 text-red-600 hover:text-red-700"
+                    }`}
+                    title="강의 삭제"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                )}
               </div>
-              {isTeacher && onDeleteLecture && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (window.confirm(`"${lecture.title}" (${lecture.weekNumber}주차)를 삭제하시겠습니까?`)) {
-                      onDeleteLecture(lecture.lectureId);
-                    }
-                  }}
-                  className={`ml-2 p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
-                    isDarkMode
-                      ? "hover:bg-red-600/20 text-red-400 hover:text-red-300"
-                      : "hover:bg-red-100 text-red-600 hover:text-red-700"
-                  }`}
-                  title="강의 삭제"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              )}
-            </div>
-          </button>
+            </button>
+          </div>
         </div>
       );
     });
