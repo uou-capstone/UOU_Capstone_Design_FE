@@ -1,7 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
-import TopNav from "./TopNav.tsx";
 import LeftSidebar from "./LeftSidebar.tsx";
 import RightSidebar from "./RightSidebar.tsx";
 import MainContent from "./MainContent.tsx";
@@ -19,8 +18,10 @@ type MenuItem =
   | "settings" 
   | "help";
 
-const DEFAULT_LEFT_SIDEBAR_WIDTH = 224;
+const DEFAULT_LEFT_SIDEBAR_WIDTH = 220;
 const DEFAULT_RIGHT_SIDEBAR_WIDTH = 420;
+
+const COLLAPSED_LEFT_WIDTH = 56;
 
 const AppLayout: React.FC = () => {
   const { isDarkMode } = useTheme();
@@ -51,24 +52,15 @@ const AppLayout: React.FC = () => {
   const [lectureFileUrl, setLectureFileUrl] = useState<string>("");
   const [lectureFileName, setLectureFileName] = useState<string>("");
 
-  const [leftSidebarWidth, setLeftSidebarWidth] = useState<number>(DEFAULT_LEFT_SIDEBAR_WIDTH);
   const [rightSidebarWidth, setRightSidebarWidth] = useState<number>(DEFAULT_RIGHT_SIDEBAR_WIDTH);
-  const [isResizingLeft, setIsResizingLeft] = useState<boolean>(false);
   const [isResizingRight, setIsResizingRight] = useState<boolean>(false);
-  const leftResizeRef = useRef<HTMLDivElement>(null);
   const rightResizeRef = useRef<HTMLDivElement>(null);
+  const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState(false);
   
   // 메뉴 상태 관리 (메인 페이지일 때만 사용)
   const [selectedMenu, setSelectedMenu] = useState<MenuItem>("dashboard");
 
   const viewMode: ViewMode = selectedCourseId ? "course-detail" : "course-list";
-  const currentCourseTitle =
-    viewMode === "course-detail"
-      ? courseDetail?.title ??
-        (currentCourseId
-          ? courses.find((courseItem) => courseItem.courseId === currentCourseId)?.title ?? null
-          : null)
-      : null;
 
   const resetLectureOutputs = useCallback(() => {
     setLectureMarkdown("");
@@ -86,11 +78,11 @@ const AppLayout: React.FC = () => {
           setCourseDetail(detail);
         } else {
           setCourseDetail(null);
-          setCourseDetailError("과목 정보를 불러오지 못했습니다.");
+          setCourseDetailError("강의실 정보를 불러오지 못했습니다.");
         }
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "과목 정보를 불러오지 못했습니다.";
+          error instanceof Error ? error.message : "강의실 정보를 불러오지 못했습니다.";
         setCourseDetailError(message);
         setCourseDetail(null);
       } finally {
@@ -180,19 +172,19 @@ const AppLayout: React.FC = () => {
       const initialTitle = course.title ?? "";
       const initialDescription = course.description ?? "";
 
-      const titleInput = window.prompt("새 과목 제목을 입력해주세요.", initialTitle);
+      const titleInput = window.prompt("새 강의실 제목을 입력해주세요.", initialTitle);
       if (titleInput === null) {
         return;
       }
 
       const trimmedTitle = titleInput.trim();
       if (!trimmedTitle) {
-        window.alert("과목 제목은 비워둘 수 없습니다.");
+        window.alert("강의실 제목은 비워둘 수 없습니다.");
         return;
       }
 
       const descriptionInput = window.prompt(
-        "새 과목 설명을 입력해주세요.",
+        "새 강의실 설명을 입력해주세요.",
         initialDescription ?? ""
       );
 
@@ -207,7 +199,7 @@ const AppLayout: React.FC = () => {
       });
 
       if (!result.success) {
-        window.alert(result.error ?? "과목 수정에 실패했습니다.");
+        window.alert(result.error ?? "강의실 수정에 실패했습니다.");
         return;
       }
 
@@ -215,7 +207,7 @@ const AppLayout: React.FC = () => {
         await loadCourseDetail(course.courseId);
       }
 
-      window.alert("과목이 성공적으로 수정되었습니다.");
+      window.alert("강의실이 성공적으로 수정되었습니다.");
     },
     [currentCourseId, loadCourseDetail, updateCourse]
   );
@@ -223,7 +215,7 @@ const AppLayout: React.FC = () => {
   const handleCourseDelete = useCallback(
     async (course: Course) => {
       const confirmed = window.confirm(
-        `정말로 '${course.title}' 과목을 삭제하시겠습니까?\n삭제 후에는 되돌릴 수 없습니다.`
+        `정말로 '${course.title}' 강의실을 삭제하시겠습니까?\n삭제 후에는 되돌릴 수 없습니다.`
       );
 
       if (!confirmed) {
@@ -233,7 +225,7 @@ const AppLayout: React.FC = () => {
       const result = await deleteCourse(course.courseId);
 
       if (!result.success) {
-        window.alert(result.error ?? "과목 삭제에 실패했습니다.");
+        window.alert(result.error ?? "강의실 삭제에 실패했습니다.");
         return;
       }
 
@@ -246,7 +238,7 @@ const AppLayout: React.FC = () => {
         navigate("/");
       }
 
-      window.alert("과목이 삭제되었습니다.");
+      window.alert("강의실이 삭제되었습니다.");
     },
     [
       currentCourseId,
@@ -257,30 +249,10 @@ const AppLayout: React.FC = () => {
     ]
   );
 
-  const handleLeftMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizingLeft(true);
-  }, []);
-
   const handleRightMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     setIsResizingRight(true);
   }, []);
-
-  const handleLeftMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (!isResizingLeft) return;
-
-      const newWidth = e.clientX;
-      const minWidth = 150;
-      const maxWidth = window.innerWidth * 0.4;
-
-      if (newWidth >= minWidth && newWidth <= maxWidth) {
-        setLeftSidebarWidth(newWidth);
-      }
-    },
-    [isResizingLeft]
-  );
 
   const handleRightMouseMove = useCallback(
     (e: MouseEvent) => {
@@ -297,37 +269,13 @@ const AppLayout: React.FC = () => {
     [isResizingRight]
   );
 
-  const handleLeftMouseUp = useCallback(() => {
-    setIsResizingLeft(false);
-  }, []);
-
   const handleRightMouseUp = useCallback(() => {
     setIsResizingRight(false);
-  }, []);
-
-  const handleLeftDoubleClick = useCallback(() => {
-    setLeftSidebarWidth(DEFAULT_LEFT_SIDEBAR_WIDTH);
   }, []);
 
   const handleRightDoubleClick = useCallback(() => {
     setRightSidebarWidth(DEFAULT_RIGHT_SIDEBAR_WIDTH);
   }, []);
-
-  useEffect(() => {
-    if (isResizingLeft) {
-      document.addEventListener("mousemove", handleLeftMouseMove);
-      document.addEventListener("mouseup", handleLeftMouseUp);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-
-      return () => {
-        document.removeEventListener("mousemove", handleLeftMouseMove);
-        document.removeEventListener("mouseup", handleLeftMouseUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      };
-    }
-  }, [isResizingLeft, handleLeftMouseMove, handleLeftMouseUp]);
 
   useEffect(() => {
     if (isResizingRight) {
@@ -345,49 +293,54 @@ const AppLayout: React.FC = () => {
     }
   }, [isResizingRight, handleRightMouseMove, handleRightMouseUp]);
 
+  // 화면 크기에 따라 좌측 사이드바 자동 접기 (반응형)
+  useEffect(() => {
+    const handleResize = () => {
+      // 화면 폭이 1024px 미만일 때 좌측 사이드바 자동 접기
+      if (window.innerWidth < 1024 && !isLeftSidebarCollapsed) {
+        setIsLeftSidebarCollapsed(true);
+      }
+    };
+
+    // 초기 체크
+    handleResize();
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [isLeftSidebarCollapsed]);
+
+  const effectiveLeftSidebarWidth = isLeftSidebarCollapsed
+    ? COLLAPSED_LEFT_WIDTH
+    : DEFAULT_LEFT_SIDEBAR_WIDTH;
+
+  const toggleLeftSidebar = () => {
+    setIsLeftSidebarCollapsed((prev) => !prev);
+  };
+
   return (
     <div
-      className={`flex flex-col h-screen transition-colors ${
-        isDarkMode ? "bg-slate-900 text-slate-100" : "bg-gray-50 text-gray-900"
+      className={`h-screen w-full flex overflow-hidden transition-colors ${
+        isDarkMode ? "bg-zinc-900 text-gray-100" : "bg-white text-gray-900"
       }`}
     >
-      <TopNav currentCourseTitle={currentCourseTitle} onNavigateHome={handleBackToCourses} />
-      <div className="flex flex-1 overflow-hidden min-h-0">
-        {/* 좌측 사이드바 (항상 표시) */}
-        <LeftSidebar
-          width={leftSidebarWidth}
-          viewMode={viewMode}
-          courseDetail={courseDetail}
-          selectedLectureId={currentLectureId}
-          onSelectLecture={handleLectureSelect}
-          onDeleteLecture={handleLectureDelete}
-          isCourseDetailLoading={isCourseDetailLoading}
-          selectedMenu={selectedMenu}
-          onMenuSelect={setSelectedMenu}
-        />
-        <div
-          ref={leftResizeRef}
-          onMouseDown={handleLeftMouseDown}
-          onDoubleClick={handleLeftDoubleClick}
-          className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
-            isDarkMode ? "bg-slate-800" : "bg-gray-200"
-          } ${isResizingLeft ? (isDarkMode ? "bg-slate-700" : "bg-gray-400") : ""}`}
-          style={{
-            width: "2px",
-            zIndex: 10,
-            marginLeft: "-1px",
-            marginRight: "-1px",
-          }}
-        >
-          <div
-            className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 transition-opacity ${
-              isResizingLeft ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-            }`}
-            style={{ cursor: "col-resize" }}
-          />
-        </div>
+      {/* 좌측 사이드바 (항상 표시) */}
+      <LeftSidebar
+        width={effectiveLeftSidebarWidth}
+        expandedWidth={DEFAULT_LEFT_SIDEBAR_WIDTH}
+        viewMode={viewMode}
+        courseDetail={courseDetail}
+        selectedLectureId={currentLectureId}
+        onSelectLecture={handleLectureSelect}
+        onDeleteLecture={handleLectureDelete}
+        isCourseDetailLoading={isCourseDetailLoading}
+        selectedMenu={selectedMenu}
+        onMenuSelect={setSelectedMenu}
+        isCollapsed={isLeftSidebarCollapsed}
+        onToggleCollapse={toggleLeftSidebar}
+      />
 
-         <MainContent
+      <div className="flex flex-1 min-w-0 min-h-0 overflow-hidden">
+        <MainContent
           viewMode={viewMode}
           courses={courses}
           isCoursesLoading={isCoursesLoading}
@@ -406,46 +359,43 @@ const AppLayout: React.FC = () => {
           onCourseCreated={handleCourseCreated}
           selectedMenu={selectedMenu}
         />
+      </div>
 
-        {/* 우측 사이드바 (항상 표시) */}
+      {/* 우측 사이드바 구분선 및 리사이즈 핸들러 */}
+      <div
+        ref={rightResizeRef}
+        onMouseDown={handleRightMouseDown}
+        onDoubleClick={handleRightDoubleClick}
+        className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
+          isDarkMode ? "bg-[#1a1a1a] border-l border-white/10 hover:bg-gray-800" : "bg-white border-l border-gray-200 hover:bg-gray-200"
+        } ${isResizingRight ? (isDarkMode ? "bg-gray-800" : "bg-gray-200") : ""}`}
+        style={{
+          width: "1px",
+          zIndex: 10,
+        }}
+      >
         <div
-          ref={rightResizeRef}
-          onMouseDown={handleRightMouseDown}
-          onDoubleClick={handleRightDoubleClick}
-          className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
-            isDarkMode ? "bg-slate-800" : "bg-gray-200"
-          } ${isResizingRight ? (isDarkMode ? "bg-slate-700" : "bg-gray-400") : ""}`}
-          style={{
-            width: "2px",
-            zIndex: 10,
-            marginLeft: "-1px",
-            marginRight: "-1px",
-          }}
-        >
-          <div
-            className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 transition-opacity ${
-              isResizingRight ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-            }`}
-            style={{ cursor: "col-resize" }}
-          />
-        </div>
-
-        <RightSidebar
-          lectureMarkdown={lectureMarkdown}
-          onLectureDataChange={(markdown, fileUrl, fileName) => {
-            setLectureMarkdown(markdown);
-            setLectureFileUrl(fileUrl);
-            setLectureFileName(fileName);
-          }}
-          width={rightSidebarWidth}
-          courseId={currentCourseId ?? undefined}
-          lectureId={currentLectureId ?? undefined}
-          viewMode={viewMode}
-          courseDetail={courseDetail}
-          onCourseCreated={handleCourseCreated}
-          onLectureCreated={handleLectureCreated}
+          className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 transition-opacity ${
+            isResizingRight ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          }`}
+          style={{ cursor: "col-resize" }}
         />
       </div>
+
+      <RightSidebar
+        onLectureDataChange={(markdown, fileUrl, fileName) => {
+          setLectureMarkdown(markdown);
+          setLectureFileUrl(fileUrl);
+          setLectureFileName(fileName);
+        }}
+        width={rightSidebarWidth}
+        courseId={currentCourseId ?? undefined}
+        lectureId={currentLectureId ?? undefined}
+        viewMode={viewMode}
+        courseDetail={courseDetail}
+        onCourseCreated={handleCourseCreated}
+        onLectureCreated={handleLectureCreated}
+      />
     </div>
   );
 };

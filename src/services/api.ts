@@ -496,9 +496,9 @@ export const authApi = {
   },
 };
 
-// 과목 API
+// 강의실 API
 export const courseApi = {
-  // 과목 생성 (선생님 전용)
+  // 강의실 생성 (선생님 전용)
   createCourse: async (courseData: {
     title: string;
     description: string;
@@ -509,17 +509,17 @@ export const courseApi = {
     });
   },
 
-  // 과목 전체 조회
+  // 강의실 전체 조회
   getAllCourses: async (): Promise<Course[]> => {
     return apiRequest<Course[]>('/api/courses');
   },
 
-  // 과목 상세 조회
+  // 강의실 상세 조회
   getCourseDetail: async (courseId: number): Promise<CourseDetail> => {
     return apiRequest<CourseDetail>(`/api/courses/${courseId}`);
   },
 
-  // 과목 수정 (선생님)
+  // 강의실 수정 (선생님)
   updateCourse: async (courseId: number, courseData: {
     title: string;
     description: string;
@@ -530,7 +530,7 @@ export const courseApi = {
     });
   },
 
-  // 과목 삭제 (선생님)
+  // 강의실 삭제 (선생님)
   deleteCourse: async (courseId: number): Promise<void> => {
     return apiRequest<void>(`/api/courses/${courseId}`, {
       method: 'DELETE',
@@ -619,7 +619,7 @@ export const learningActivityApi = {
 
 // 평가 및 제출 API
 export const assessmentApi = {
-  // 과목별 평가 목록 조회
+  // 강의실별 평가 목록 조회
   getAssessmentsForCourse: async (courseId: number): Promise<AssessmentSimpleDto[]> => {
     return apiRequest<AssessmentSimpleDto[]>(`/api/assessments/courses/${courseId}`);
   },

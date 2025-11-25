@@ -83,7 +83,7 @@ const TopNav: React.FC<TopNavProps> = ({ currentCourseTitle, onNavigateHome }) =
                   ? "border-gray-700 text-gray-200 hover:bg-gray-700"
                   : "border-gray-200 text-gray-700 hover:bg-gray-100"
               }`}
-              title="과목 목록으로"
+              title="강의실 목록으로"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />

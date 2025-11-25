@@ -124,14 +124,14 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     const formDescription = overrides?.description ?? courseModalDescription;
 
     if (!formTitle.trim()) {
-      throw new Error('과목 제목을 입력해주세요.');
+      throw new Error('강의실 제목을 입력해주세요.');
     }
 
     setIsCreatingCourse(true);
     
     const createMessage: ChatMessage = {
       id: Date.now(),
-      text: '과목을 생성하는 중...',
+      text: '강의실을 생성하는 중...',
       isUser: false,
       isLoading: true,
     };
@@ -148,7 +148,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       // 성공 메시지 추가
       const successMessage: ChatMessage = {
         id: Date.now() + 1,
-        text: `과목 생성 완료!\n제목: ${course.title}`,
+        text: `강의실 생성 완료!\n제목: ${course.title}`,
         isUser: false,
         isLoading: false,
       };
@@ -181,13 +181,13 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         };
         setMessages((prev) => [...prev, otMessage]);
         
-        // OT 강의 생성 후 과목 정보 전달 (강의 목록 포함)
+        // OT 강의 생성 후 강의실 정보 전달 (강의 목록 포함)
         onCourseCreated({
           ...course,
           lectures: [otLecture],
         });
       } catch (otError) {
-        // OT 생성 실패해도 과목은 생성되었으므로 계속 진행
+        // OT 생성 실패해도 강의실은 생성되었으므로 계속 진행
         console.error("OT 강의 자동 생성 실패:", otError);
       onCourseCreated(course);
       }
@@ -202,7 +202,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       const errorMsg = error instanceof Error ? error.message : '알 수 없는 오류';
       const errorMessage: ChatMessage = {
         id: Date.now() + 1,
-        text: `과목 생성 실패: ${errorMsg}`,
+        text: `강의실 생성 실패: ${errorMsg}`,
         isUser: false,
         isLoading: false,
       };
@@ -476,7 +476,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
     const targetCourseId = currentCourseId || courseId || null;
     if (!targetCourseId) {
-      alert('과목을 먼저 생성해주세요. + 버튼에서 "과목 생성"을 선택할 수 있습니다.');
+      alert('강의실을 먼저 생성해주세요. + 버튼에서 "강의실 생성"을 선택할 수 있습니다.');
       return;
     }
 
@@ -609,7 +609,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     setIsActionMenuOpen(false);
 
     if (!targetCourseId) {
-      alert('과목을 먼저 생성하거나 선택해주세요.');
+      alert('강의실을 먼저 생성하거나 선택해주세요.');
       return;
     }
 
@@ -625,7 +625,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
   const handleLectureModalSubmit = async () => {
     if (!targetCourseId) {
-      alert('과목을 먼저 선택해주세요.');
+      alert('강의실을 먼저 선택해주세요.');
       setIsLectureModalOpen(false);
       return;
     }
@@ -799,7 +799,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
   const handleCourseModalSubmit = async () => {
     if (!courseModalTitle.trim()) {
-      alert("과목 제목을 입력해주세요.");
+      alert("강의실 제목을 입력해주세요.");
       return;
     }
 
@@ -948,7 +948,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     <>
       <aside
       className={`flex flex-col border-l transition-colors relative flex-shrink-0 ${
-        isDarkMode ? "bg-slate-900 border-slate-700" : "bg-white border-gray-100"
+        isDarkMode ? "bg-[#1a1a1a] border-[#1a1a1a]" : "bg-white border-gray-200"
       }`}
       style={{ width: `${width}px` }}
       onDragEnter={handleDragEnter}
@@ -959,10 +959,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       {/* 드래그 앤 드롭 영역 */}
       {isDragging && (
         <div className={`absolute inset-0 z-50 flex items-center justify-center ${
-          isDarkMode ? "bg-slate-900/90" : "bg-white/90"
+          isDarkMode ? "bg-[#1a1a1a]/90" : "bg-white/90"
         }`}>
           <div className={`p-8 rounded-lg border-2 border-dashed ${
-            isDarkMode ? "border-emerald-500 bg-slate-800" : "border-emerald-500 bg-emerald-50"
+            isDarkMode ? "border-gray-600 bg-gray-800" : "border-emerald-500 bg-emerald-50"
           }`}>
             <p className={`text-lg font-medium ${
               isDarkMode ? "text-white" : "text-gray-900"
@@ -977,12 +977,12 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       <div
         id="chat-messages"
         className={`flex-1 overflow-y-auto scrollbar-hide p-4 space-y-3 ${
-          isDarkMode ? "bg-slate-900" : "bg-gray-50"
+          isDarkMode ? "bg-[#1a1a1a]" : "bg-white"
         }`}
       >
         {messages.length === 0 ? (
           <div className={`text-center text-sm mt-8 ${
-            isDarkMode ? "text-slate-400" : "text-gray-400"
+            isDarkMode ? "text-gray-400" : "text-gray-400"
           }`}>
             메시지가 없습니다.
             <br />
@@ -999,9 +999,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               <div
                 className={`${message.markdown ? "w-full" : "max-w-[80%]"} px-3 py-2 rounded-lg text-sm ${
                   message.isUser
-                    ? "bg-emerald-600 text-white"
+                    ? isDarkMode ? "bg-gray-700 text-white" : "bg-emerald-600 text-white"
                     : isDarkMode
-                    ? "bg-slate-800 text-slate-200"
+                    ? "bg-gray-800 text-gray-200"
                     : "bg-gray-200 text-gray-900"
                 }`}
               >
@@ -1012,13 +1012,13 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                         isDarkMode ? 'border-gray-500' : 'border-gray-400'
                       }`}></div>
                       <div className={`absolute inset-0 animate-ping rounded-full h-4 w-4 border opacity-20 ${
-                        isDarkMode ? 'border-emerald-400' : 'border-emerald-500'
+                        isDarkMode ? 'border-gray-500' : 'border-emerald-500'
                       }`}></div>
                     </div>
                     {message.text && (
                       <div className="flex flex-col gap-1">
                         <span className={`text-xs font-medium animate-pulse ${
-                          isDarkMode ? 'text-slate-200' : 'text-gray-700'
+                          isDarkMode ? 'text-gray-200' : 'text-gray-700'
                         }`}>{message.text}</span>
                         <div className="flex gap-1">
                           <div className={`h-1 w-1 rounded-full animate-bounce ${
@@ -1064,15 +1064,16 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       </div>
 
       {/* 채팅 입력창 */}
-      <div className={`p-3 border-t ${
-        isDarkMode ? "border-slate-700 bg-slate-900" : "border-gray-200 bg-gray-50"
-      }`}>
+      <div className={`border-t ${
+        isDarkMode ? "border-zinc-800 bg-zinc-900" : "border-gray-200 bg-white"
+      }`}
+      style={{ padding: '6px 12px', height: '55px' }}>
         {/* 통합된 입력 컨테이너 */}
-        <div className={`flex items-center gap-2 rounded-lg border ${
+        <div className={`flex items-center gap-2 rounded-lg border h-full ${
           isDarkMode
-            ? "bg-slate-700 border-slate-600"
-            : "bg-gray-50 border-gray-300"
-        } focus-within:ring-2 focus-within:ring-blue-500`}>
+            ? "bg-zinc-800 border-zinc-700"
+            : "bg-white border-gray-300"
+        }`}>
           {/* 파일 업로드 버튼 (+ 버튼) */}
           <input
             ref={fileInputRef}
@@ -1092,9 +1093,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               type="button"
               className={`p-2.5 flex items-center justify-center rounded transition-all cursor-pointer ${
                 isDarkMode
-                  ? "text-slate-400 hover:text-white hover:bg-slate-700"
+                  ? "text-gray-400 hover:text-white hover:bg-zinc-800"
                   : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-              } ${isActionMenuOpen ? (isDarkMode ? "bg-slate-700 text-white" : "bg-gray-200 text-gray-800") : ""}`}
+              } ${isActionMenuOpen ? (isDarkMode ? "bg-zinc-800 text-white" : "bg-gray-200 text-gray-800") : ""}`}
               title="작업 선택"
             >
               <svg
@@ -1116,7 +1117,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               <div
                 className={`absolute bottom-full left-0 mb-2 w-48 rounded-xl shadow-lg overflow-hidden border ${
                   isDarkMode
-                    ? "bg-slate-700 border-slate-600 text-slate-200"
+                    ? "bg-zinc-900 border-zinc-800 text-gray-200"
                     : "bg-white border-gray-200 text-gray-800"
                 }`}
               >
@@ -1132,19 +1133,19 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                           : "cursor-pointer"
                       } ${
                         isDarkMode
-                          ? "hover:bg-slate-700"
+                          ? "hover:bg-zinc-800"
                           : "hover:bg-gray-100"
                       }`}
                     >
                       <span>📎</span>
                       <span>파일 업로드</span>
                     </button>
-                    <div className={isDarkMode ? "h-px bg-slate-600" : "h-px bg-gray-200"} />
+                    <div className={isDarkMode ? "h-px bg-zinc-800" : "h-px bg-gray-200"} />
                     <button
                       type="button"
                       onClick={handleSelectLectureCreation}
                       className={`w-full px-4 py-2 text-sm flex items-center gap-2 transition-colors cursor-pointer ${
-                        isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"
+                        isDarkMode ? "hover:bg-zinc-800" : "hover:bg-gray-100"
                       }`}
                     >
                       <span>🎓</span>
@@ -1156,11 +1157,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     type="button"
                     onClick={handleSelectCourseCreation}
                     className={`w-full px-4 py-2 text-sm flex items-center gap-2 transition-colors cursor-pointer ${
-                      isDarkMode ? "hover:bg-gray-700" : "hover:bg-gray-100"
+                      isDarkMode ? "hover:bg-zinc-800" : "hover:bg-gray-100"
                     }`}
                   >
                     <span>📘</span>
-                    <span>과목 생성</span>
+                    <span>강의실 생성</span>
                   </button>
                 )}
               </div>
@@ -1193,7 +1194,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 : "text-gray-900 placeholder-gray-400"
             }`}
             rows={1}
-            style={{ minHeight: "40px", maxHeight: "120px" }}
+            style={{ maxHeight: "120px" }}
           />
 
           {/* 중지 버튼 (스트리밍 또는 업로드 중일 때 표시) */}
@@ -1231,18 +1232,18 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           <div
             className={`w-full max-w-md rounded-xl shadow-xl border ${
               isDarkMode
-                ? "bg-slate-700 border-slate-600 text-slate-100"
+                ? "bg-gray-700 border-gray-700 text-gray-100"
                 : "bg-white border-gray-200 text-gray-900"
             }`}
           >
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700/50">
-              <h2 className="text-sm font-semibold">과목 생성</h2>
+              <h2 className="text-sm font-semibold">강의실 생성</h2>
               <button
                 type="button"
                 onClick={closeCourseModal}
                 className={`p-1.5 rounded cursor-pointer ${
                   isDarkMode
-                    ? "hover:bg-slate-700 text-slate-300"
+                    ? "hover:bg-gray-700 text-gray-300"
                     : "hover:bg-gray-100 text-gray-500"
                 }`}
                 aria-label="닫기"
@@ -1256,34 +1257,34 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 <label
                   className="block text-xs font-medium mb-1"
                 >
-                  과목 제목
+                  강의실 제목
                 </label>
                 <input
                   type="text"
                   value={courseModalTitle}
                   onChange={(e) => setCourseModalTitle(e.target.value)}
-                  placeholder="과목 제목을 입력하세요"
+                  placeholder="강의실 제목을 입력하세요"
                   className={`w-full px-3 py-2 text-sm rounded border ${
                     isDarkMode
-                      ? "bg-slate-700 border-slate-600 text-white placeholder-slate-400"
+                      ? "bg-gray-700 border-gray-700 text-white placeholder-gray-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 focus:ring-emerald-500`}
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-gray-500' : 'focus:ring-emerald-500'}`}
                 />
               </div>
               <div>
                 <label className="block text-xs font-medium mb-1">
-                  과목 설명 (선택)
+                  강의실 설명 (선택)
                 </label>
                 <textarea
                   value={courseModalDescription}
                   onChange={(e) => setCourseModalDescription(e.target.value)}
-                  placeholder="과목 설명을 입력하세요"
+                  placeholder="강의실 설명을 입력하세요"
                   rows={3}
                   className={`w-full px-3 py-2 text-sm rounded border resize-none ${
                     isDarkMode
-                      ? "bg-slate-700 border-slate-600 text-white placeholder-slate-400"
+                      ? "bg-gray-700 border-gray-700 text-white placeholder-gray-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 focus:ring-emerald-500`}
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-gray-500' : 'focus:ring-emerald-500'}`}
                 />
               </div>
             </div>
@@ -1294,7 +1295,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 onClick={closeCourseModal}
                 className={`px-4 py-2 text-sm rounded cursor-pointer ${
                   isDarkMode
-                    ? "bg-slate-800 hover:bg-slate-700 text-slate-200"
+                    ? "bg-gray-800 hover:bg-gray-700 text-gray-200"
                     : "bg-gray-100 hover:bg-gray-200 text-gray-700"
                 }`}
               >
@@ -1307,8 +1308,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 className={`px-4 py-2 text-sm rounded font-medium transition-colors ${
                   isCreatingCourse || !courseModalTitle.trim()
                     ? isDarkMode
-                      ? "bg-emerald-900/40 text-emerald-300/60 cursor-not-allowed"
+                      ? "bg-gray-700/40 text-gray-400 cursor-not-allowed"
                       : "bg-emerald-200 text-emerald-500 cursor-not-allowed"
+                    : isDarkMode
+                    ? "bg-gray-700 hover:bg-gray-600 text-white cursor-pointer"
                     : "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
                 }`}
               >
@@ -1327,7 +1330,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           <div
             className={`w-full max-w-md rounded-xl shadow-xl border ${
               isDarkMode
-                ? "bg-slate-700 border-slate-600 text-slate-100"
+                ? "bg-gray-700 border-gray-700 text-gray-100"
                 : "bg-white border-gray-200 text-gray-900"
             }`}
           >
@@ -1338,7 +1341,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 onClick={closeLectureModal}
                 className={`p-1.5 rounded cursor-pointer ${
                   isDarkMode
-                    ? "hover:bg-slate-700 text-slate-300"
+                    ? "hover:bg-gray-700 text-gray-300"
                     : "hover:bg-gray-100 text-gray-500"
                 }`}
                 aria-label="닫기"
@@ -1357,9 +1360,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   placeholder="강의 제목을 입력하세요"
                   className={`w-full px-3 py-2 text-sm rounded border ${
                     isDarkMode
-                      ? "bg-slate-700 border-slate-600 text-white placeholder-slate-400"
+                      ? "bg-gray-700 border-gray-700 text-white placeholder-gray-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 focus:ring-emerald-500`}
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-gray-500' : 'focus:ring-emerald-500'}`}
                 />
               </div>
               <div>
@@ -1372,9 +1375,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   placeholder="주차 번호를 입력하세요"
                   className={`w-full px-3 py-2 text-sm rounded border ${
                     isDarkMode
-                      ? "bg-slate-700 border-slate-600 text-white placeholder-slate-400"
+                      ? "bg-gray-700 border-gray-700 text-white placeholder-gray-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 focus:ring-emerald-500`}
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-gray-500' : 'focus:ring-emerald-500'}`}
                 />
               </div>
             </div>
@@ -1385,7 +1388,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 onClick={closeLectureModal}
                 className={`px-4 py-2 text-sm rounded cursor-pointer ${
                   isDarkMode
-                    ? "bg-slate-800 hover:bg-slate-700 text-slate-200"
+                    ? "bg-gray-800 hover:bg-gray-700 text-gray-200"
                     : "bg-gray-100 hover:bg-gray-200 text-gray-700"
                 }`}
               >
@@ -1398,8 +1401,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 className={`px-4 py-2 text-sm rounded font-medium transition-colors ${
                   isCreatingLecture || !lectureModalTitle.trim() || !lectureModalWeek
                     ? isDarkMode
-                      ? "bg-emerald-900/40 text-emerald-300/60 cursor-not-allowed"
+                      ? "bg-gray-700/40 text-gray-400 cursor-not-allowed"
                       : "bg-emerald-200 text-emerald-500 cursor-not-allowed"
+                    : isDarkMode
+                    ? "bg-gray-700 hover:bg-gray-600 text-white cursor-pointer"
                     : "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
                 }`}
               >

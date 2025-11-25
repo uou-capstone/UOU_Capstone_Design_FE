@@ -169,10 +169,10 @@ const SignupPage: React.FC = () => {
 
   return (
     <div className={`min-h-screen flex items-center justify-center transition-colors ${
-      isDarkMode ? 'bg-slate-900' : 'bg-gray-50'
+      isDarkMode ? 'bg-gray-900' : 'bg-gray-50'
     }`}>
       <div className={`w-full max-w-md p-8 rounded-lg shadow-lg ${
-        isDarkMode ? 'bg-slate-800' : 'bg-white'
+        isDarkMode ? 'bg-gray-800' : 'bg-white'
       }`}>
         <div className="text-center mb-8">
           <h1 className={`text-3xl font-bold mb-2 ${
@@ -181,7 +181,7 @@ const SignupPage: React.FC = () => {
             회원가입
           </h1>
           <p className={`text-sm ${
-            isDarkMode ? 'text-slate-400' : 'text-gray-600'
+            isDarkMode ? 'text-gray-400' : 'text-gray-600'
           }`}>
             AI Tutor LMS 계정을 만들어보세요
           </p>
@@ -198,7 +198,7 @@ const SignupPage: React.FC = () => {
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label className={`block text-sm font-medium mb-2 ${
-              isDarkMode ? 'text-slate-200' : 'text-gray-700'
+              isDarkMode ? 'text-gray-200' : 'text-gray-700'
             }`}>
               이름
             </label>
@@ -211,10 +211,10 @@ const SignupPage: React.FC = () => {
               className={`w-full px-4 py-2 rounded-lg border ${
                 errors.fullName
                   ? isDarkMode
-                    ? 'bg-slate-700 border-red-500 text-white placeholder-slate-400'
+                    ? 'bg-zinc-800 border-red-500 text-white placeholder-gray-400'
                     : 'bg-white border-red-500 text-gray-900 placeholder-gray-400'
                   : isDarkMode
-                  ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-400'
+                  ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-400'
                   : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
               } focus:outline-none focus:ring-2 focus:ring-blue-500`}
               placeholder="홍길동"
@@ -232,7 +232,7 @@ const SignupPage: React.FC = () => {
 
           <div>
             <label className={`block text-sm font-medium mb-2 ${
-              isDarkMode ? 'text-slate-200' : 'text-gray-700'
+              isDarkMode ? 'text-gray-200' : 'text-gray-700'
             }`}>
               이메일
             </label>
@@ -245,10 +245,10 @@ const SignupPage: React.FC = () => {
               className={`w-full px-4 py-2 rounded-lg border ${
                 errors.email
                   ? isDarkMode
-                    ? 'bg-slate-700 border-red-500 text-white placeholder-slate-400'
+                    ? 'bg-zinc-800 border-red-500 text-white placeholder-gray-400'
                     : 'bg-white border-red-500 text-gray-900 placeholder-gray-400'
                   : isDarkMode
-                  ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-400'
+                  ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-400'
                   : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
               } focus:outline-none focus:ring-2 focus:ring-blue-500`}
               placeholder="example@email.com"
@@ -266,7 +266,7 @@ const SignupPage: React.FC = () => {
 
           <div>
             <label className={`block text-sm font-medium mb-2 ${
-              isDarkMode ? 'text-slate-200' : 'text-gray-700'
+              isDarkMode ? 'text-gray-200' : 'text-gray-700'
             }`}>
               역할
             </label>
@@ -276,7 +276,7 @@ const SignupPage: React.FC = () => {
               onChange={handleChange}
               className={`w-full px-4 py-2 rounded-lg border ${
                 isDarkMode
-                  ? 'bg-slate-700 border-slate-600 text-white'
+                  ? 'bg-gray-700 border-gray-600 text-white'
                   : 'bg-white border-gray-300 text-gray-900'
               } focus:outline-none focus:ring-2 focus:ring-blue-500`}
             >
@@ -287,7 +287,7 @@ const SignupPage: React.FC = () => {
 
           <div>
             <label className={`block text-sm font-medium mb-2 ${
-              isDarkMode ? 'text-slate-200' : 'text-gray-700'
+              isDarkMode ? 'text-gray-200' : 'text-gray-700'
             }`}>
               비밀번호
             </label>
@@ -300,10 +300,10 @@ const SignupPage: React.FC = () => {
               className={`w-full px-4 py-2 rounded-lg border ${
                 errors.password
                   ? isDarkMode
-                    ? 'bg-slate-700 border-red-500 text-white placeholder-slate-400'
+                    ? 'bg-zinc-800 border-red-500 text-white placeholder-gray-400'
                     : 'bg-white border-red-500 text-gray-900 placeholder-gray-400'
                   : isDarkMode
-                  ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-400'
+                  ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-400'
                   : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
               } focus:outline-none focus:ring-2 focus:ring-blue-500`}
               placeholder="영문, 숫자, 특수문자 포함 8자 이상"
@@ -328,7 +328,7 @@ const SignupPage: React.FC = () => {
 
           <div>
             <label className={`block text-sm font-medium mb-2 ${
-              isDarkMode ? 'text-slate-200' : 'text-gray-700'
+              isDarkMode ? 'text-gray-200' : 'text-gray-700'
             }`}>
               비밀번호 확인
             </label>
@@ -341,10 +341,10 @@ const SignupPage: React.FC = () => {
               className={`w-full px-4 py-2 rounded-lg border ${
                 errors.confirmPassword
                   ? isDarkMode
-                    ? 'bg-slate-700 border-red-500 text-white placeholder-slate-400'
+                    ? 'bg-zinc-800 border-red-500 text-white placeholder-gray-400'
                     : 'bg-white border-red-500 text-gray-900 placeholder-gray-400'
                   : isDarkMode
-                  ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-400'
+                  ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-400'
                   : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
               } focus:outline-none focus:ring-2 focus:ring-blue-500`}
               placeholder="비밀번호를 다시 입력하세요"
@@ -373,7 +373,7 @@ const SignupPage: React.FC = () => {
             className={`w-full py-3 rounded-lg font-medium transition-colors ${
               isLoading
                 ? isDarkMode
-                  ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                  ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
                   : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 : isDarkMode
                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
@@ -385,7 +385,7 @@ const SignupPage: React.FC = () => {
         </form>
 
         <div className={`mt-6 text-center text-sm ${
-          isDarkMode ? 'text-slate-400' : 'text-gray-600'
+          isDarkMode ? 'text-gray-400' : 'text-gray-600'
         }`}>
           이미 계정이 있으신가요?{' '}
           <Link

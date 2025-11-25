@@ -6,7 +6,7 @@ export const useCourses = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 모든 과목 조회
+  // 모든 강의실 조회
   const fetchCourses = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -25,7 +25,7 @@ export const useCourses = () => {
     }
   }, []);
 
-  // 과목 상세 조회
+  // 강의실 상세 조회
   const getCourseDetail = useCallback(async (courseId: number): Promise<CourseDetail | null> => {
     try {
       return await courseApi.getCourseDetail(courseId);
@@ -35,7 +35,7 @@ export const useCourses = () => {
     }
   }, []);
 
-  // 과목 생성 (선생님 전용)
+  // 강의실 생성 (선생님 전용)
   const createCourse = useCallback(async (courseData: {
     title: string;
     description: string;
@@ -45,13 +45,13 @@ export const useCourses = () => {
       setCourses(prev => [...prev, newCourse]);
       return { success: true };
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '과목 생성에 실패했습니다.';
+      const errorMessage = err instanceof Error ? err.message : '강의실 생성에 실패했습니다.';
       console.error('Failed to create course:', err);
       return { success: false, error: errorMessage };
     }
   }, []);
 
-  // 과목 수정 (선생님 전용)
+  // 강의실 수정 (선생님 전용)
   const updateCourse = useCallback(async (courseId: number, courseData: {
     title: string;
     description: string;
@@ -63,20 +63,20 @@ export const useCourses = () => {
       ));
       return { success: true };
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '과목 수정에 실패했습니다.';
+      const errorMessage = err instanceof Error ? err.message : '강의실 수정에 실패했습니다.';
       console.error('Failed to update course:', err);
       return { success: false, error: errorMessage };
     }
   }, []);
 
-  // 과목 삭제 (선생님 전용)
+  // 강의실 삭제 (선생님 전용)
   const deleteCourse = useCallback(async (courseId: number): Promise<{ success: boolean; error?: string }> => {
     try {
       await courseApi.deleteCourse(courseId);
       setCourses(prev => prev.filter(course => course.courseId !== courseId));
       return { success: true };
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '과목 삭제에 실패했습니다.';
+      const errorMessage = err instanceof Error ? err.message : '강의실 삭제에 실패했습니다.';
       console.error('Failed to delete course:', err);
       return { success: false, error: errorMessage };
     }
