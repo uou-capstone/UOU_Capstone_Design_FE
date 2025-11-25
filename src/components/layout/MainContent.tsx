@@ -244,10 +244,10 @@ const MainContent: React.FC<MainContentProps> = ({
               onClick={() => handleCourseSelect(course.courseId)}
               className={`text-left p-5 rounded-xl border shadow-sm transition-all flex flex-col h-40 cursor-pointer ${
                 isDarkMode
-                  ? "bg-gray-800 border-gray-700 hover:border-gray-500 hover:shadow-gray-500/30"
+                  ? "bg-zinc-900 border-zinc-700 hover:border-zinc-500 hover:shadow-zinc-500/30"
                   : "bg-white border-gray-200 hover:border-emerald-500/40 hover:shadow-emerald-500/20"
-              } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-gray-500/60' : 'focus:ring-emerald-500/60'} focus:ring-offset-2 ${
-                isDarkMode ? "focus:ring-offset-gray-900" : "focus:ring-offset-white"
+              } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-zinc-500/60' : 'focus:ring-emerald-500/60'} focus:ring-offset-2 ${
+                isDarkMode ? "focus:ring-offset-zinc-900" : "focus:ring-offset-white"
               }`}
             >
               <div className="flex flex-col h-full">
@@ -262,7 +262,7 @@ const MainContent: React.FC<MainContentProps> = ({
                       }}
                       className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors cursor-pointer ${
                         isDarkMode
-                          ? "text-gray-200 hover:text-white hover:bg-gray-700"
+                          ? "text-gray-200 hover:text-white hover:bg-zinc-700"
                           : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
                       }`}
                       aria-haspopup="menu"
@@ -279,7 +279,7 @@ const MainContent: React.FC<MainContentProps> = ({
                           }
                         }}
                         className={`absolute right-0 mt-1 w-36 rounded-lg border shadow-lg z-20 ${
-                          isDarkMode ? "bg-gray-700 border-gray-700" : "bg-white border-gray-200"
+                          isDarkMode ? "bg-zinc-800 border-zinc-700" : "bg-white border-gray-200"
                         }`}
                         role="menu"
                         aria-label="강의실 옵션 메뉴"
@@ -293,7 +293,7 @@ const MainContent: React.FC<MainContentProps> = ({
                           }}
                           className={`w-full text-left px-3 py-2 text-xs transition-colors rounded-t-lg cursor-pointer ${
                             isDarkMode
-                              ? "text-gray-200 hover:bg-gray-700"
+                              ? "text-gray-200 hover:bg-zinc-700"
                               : "text-gray-700 hover:bg-gray-100"
                           }`}
                           role="menuitem"
@@ -389,8 +389,8 @@ const MainContent: React.FC<MainContentProps> = ({
 
     return (
       <div className="flex flex-col gap-4 h-full">
-        {/* 뒤로가기 버튼 */}
-        <div className="flex items-center gap-3">
+        {/* 뒤로가기 버튼 및 초대 링크 복사 버튼 */}
+        <div className="flex items-center justify-between gap-3">
           <button
             type="button"
             onClick={onBackToCourses}
@@ -405,6 +405,43 @@ const MainContent: React.FC<MainContentProps> = ({
             </svg>
             <span className="text-sm font-medium">강의실 목록으로</span>
           </button>
+          {isTeacher && courseDetail?.invitationCode && (
+            <button
+              type="button"
+              onClick={async () => {
+                const invitationUrl = `${window.location.origin}/join?code=${courseDetail.invitationCode}`;
+                try {
+                  await navigator.clipboard.writeText(invitationUrl);
+                  window.alert('초대 링크가 클립보드에 복사되었습니다!');
+                } catch (err) {
+                  // 클립보드 복사 실패 시 대체 방법
+                  const textArea = document.createElement('textarea');
+                  textArea.value = invitationUrl;
+                  textArea.style.position = 'fixed';
+                  textArea.style.opacity = '0';
+                  document.body.appendChild(textArea);
+                  textArea.select();
+                  try {
+                    document.execCommand('copy');
+                    window.alert('초대 링크가 클립보드에 복사되었습니다!');
+                  } catch (e) {
+                    window.alert(`초대 링크: ${invitationUrl}`);
+                  }
+                  document.body.removeChild(textArea);
+                }
+              }}
+              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg transition-colors cursor-pointer ${
+                isDarkMode
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  : "bg-emerald-600 hover:bg-emerald-700 text-white"
+              }`}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+              <span className="text-sm font-medium">초대 링크 복사</span>
+            </button>
+          )}
         </div>
         
         {/* OT(0주차)를 선택했을 때만 담당과 강의 설명 표시 */}
@@ -568,74 +605,117 @@ const MainContent: React.FC<MainContentProps> = ({
       {/* 강의실 생성 모달 */}
       {isCourseModalOpen && (
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
           onClick={() => setIsCourseModalOpen(false)}
         >
           <div
-            className={`w-full max-w-md p-6 rounded-xl shadow-xl ${
-              isDarkMode ? "bg-gray-700" : "bg-white"
+            className={`w-full max-w-md rounded-xl shadow-xl border ${
+              isDarkMode
+                ? "bg-zinc-900 border-zinc-700 text-gray-100"
+                : "bg-white border-gray-200 text-gray-900"
             }`}
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-xl font-semibold mb-4">새 강의실 생성</h3>
-            <div className="space-y-4">
+            <div className={`flex items-center justify-between px-5 py-4 border-b ${
+              isDarkMode ? "border-zinc-700/50" : "border-gray-200"
+            }`}>
+              <h2 className={`text-lg font-semibold ${isDarkMode ? "text-gray-100" : "text-gray-900"}`}>
+                새 강의실 생성
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCourseModalOpen(false);
+                  setCourseModalTitle("");
+                  setCourseModalDescription("");
+                }}
+                className={`p-1.5 rounded cursor-pointer ${
+                  isDarkMode
+                    ? "hover:bg-zinc-800 text-gray-300"
+                    : "hover:bg-gray-100 text-gray-500"
+                }`}
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-1">강의실 제목 *</label>
+                <label className={`block text-sm font-medium mb-1 ${
+                  isDarkMode ? "text-gray-200" : "text-gray-700"
+                }`}>
+                  강의실 제목 *
+                </label>
                 <input
                   type="text"
                   value={courseModalTitle}
                   onChange={(e) => setCourseModalTitle(e.target.value)}
                   placeholder="예: AI 튜터링 A반"
-                  className={`w-full px-3 py-2 rounded-lg border ${
+                  className={`w-full px-3 py-2 text-sm rounded border ${
                     isDarkMode
-                      ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
-                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
-                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-gray-500' : 'focus:ring-emerald-500'}`}
+                      ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
+                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-zinc-500' : 'focus:ring-emerald-500'}`}
                   autoFocus
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium mb-1">강의실 설명</label>
+                <label className={`block text-sm font-medium mb-1 ${
+                  isDarkMode ? "text-gray-200" : "text-gray-700"
+                }`}>
+                  강의실 설명 (선택)
+                </label>
                 <textarea
                   value={courseModalDescription}
                   onChange={(e) => setCourseModalDescription(e.target.value)}
                   placeholder="강의실에 대한 설명을 입력하세요"
                   rows={3}
-                  className={`w-full px-3 py-2 rounded-lg border ${
+                  className={`w-full px-3 py-2 text-sm rounded border resize-none ${
                     isDarkMode
-                      ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
-                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
-                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-gray-500' : 'focus:ring-emerald-500'}`}
+                      ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
+                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-zinc-500' : 'focus:ring-emerald-500'}`}
                 />
               </div>
-              <div className="flex gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={handleCreateCourse}
-                  className={`flex-1 px-4 py-2 rounded-lg font-medium cursor-pointer ${
-                    isDarkMode
-                      ? "bg-gray-700 hover:bg-gray-600 text-white"
-                      : "bg-blue-500 hover:bg-blue-600 text-white"
-                  }`}
-                >
-                  생성
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCourseModalOpen(false);
-                    setCourseModalTitle("");
-                    setCourseModalDescription("");
-                  }}
-                  className={`flex-1 px-4 py-2 rounded-lg font-medium cursor-pointer ${
-                    isDarkMode
-                      ? "bg-gray-700 hover:bg-gray-600 text-white"
-                      : "bg-gray-200 hover:bg-gray-300 text-gray-700"
-                  }`}
-                >
-                  취소
-                </button>
-              </div>
+            </div>
+
+            <div className={`px-5 py-4 border-t flex justify-end gap-2 ${
+              isDarkMode ? "border-zinc-700/50" : "border-gray-200"
+            }`}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCourseModalOpen(false);
+                  setCourseModalTitle("");
+                  setCourseModalDescription("");
+                }}
+                className={`px-4 py-2 text-sm rounded cursor-pointer ${
+                  isDarkMode
+                    ? "bg-zinc-800 hover:bg-zinc-700 text-gray-200"
+                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                }`}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateCourse}
+                disabled={!courseModalTitle.trim()}
+                className={`px-4 py-2 text-sm rounded font-medium transition-colors ${
+                  !courseModalTitle.trim()
+                    ? isDarkMode
+                      ? "bg-zinc-800/40 text-gray-400 cursor-not-allowed"
+                      : "bg-emerald-200 text-emerald-500 cursor-not-allowed"
+                    : isDarkMode
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                    : "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                }`}
+              >
+                생성하기
+              </button>
             </div>
           </div>
         </div>

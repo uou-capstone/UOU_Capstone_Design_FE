@@ -103,8 +103,8 @@ const AppLayout: React.FC = () => {
       setCurrentCourseId(null);
       setCurrentLectureId(null);
       resetLectureOutputs();
-      // 메인 페이지로 돌아올 때 대시보드로 리셋
-      setSelectedMenu("dashboard");
+      // 메인 페이지로 돌아올 때 대시보드로 리셋 (단, 메뉴가 이미 lectures로 설정되어 있으면 유지)
+      setSelectedMenu((prev) => (prev === "lectures" ? "lectures" : "dashboard"));
       return;
     }
 
@@ -119,6 +119,7 @@ const AppLayout: React.FC = () => {
   };
 
   const handleBackToCourses = () => {
+    setSelectedMenu("lectures");
     navigate("/");
   };
 
@@ -293,12 +294,19 @@ const AppLayout: React.FC = () => {
     }
   }, [isResizingRight, handleRightMouseMove, handleRightMouseUp]);
 
-  // 화면 크기에 따라 좌측 사이드바 자동 접기 (반응형)
+  // 화면 크기에 따라 좌측 사이드바 자동 접기/펼치기 (반응형)
   useEffect(() => {
     const handleResize = () => {
       // 화면 폭이 1024px 미만일 때 좌측 사이드바 자동 접기
-      if (window.innerWidth < 1024 && !isLeftSidebarCollapsed) {
-        setIsLeftSidebarCollapsed(true);
+      if (window.innerWidth < 1024) {
+        if (!isLeftSidebarCollapsed) {
+          setIsLeftSidebarCollapsed(true);
+        }
+      } else {
+        // 화면 폭이 1024px 이상일 때 좌측 사이드바 자동 펼치기
+        if (isLeftSidebarCollapsed) {
+          setIsLeftSidebarCollapsed(false);
+        }
       }
     };
 

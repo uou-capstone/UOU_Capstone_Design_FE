@@ -1232,18 +1232,22 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           <div
             className={`w-full max-w-md rounded-xl shadow-xl border ${
               isDarkMode
-                ? "bg-gray-700 border-gray-700 text-gray-100"
+                ? "bg-zinc-900 border-zinc-700 text-gray-100"
                 : "bg-white border-gray-200 text-gray-900"
             }`}
           >
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-700/50">
-              <h2 className="text-sm font-semibold">강의실 생성</h2>
+            <div className={`flex items-center justify-between px-5 py-4 border-b ${
+              isDarkMode ? "border-zinc-700/50" : "border-gray-200"
+            }`}>
+              <h2 className={`text-lg font-semibold ${
+                isDarkMode ? "text-gray-100" : "text-gray-900"
+              }`}>강의실 생성</h2>
               <button
                 type="button"
                 onClick={closeCourseModal}
                 className={`p-1.5 rounded cursor-pointer ${
                   isDarkMode
-                    ? "hover:bg-gray-700 text-gray-300"
+                    ? "hover:bg-zinc-800 text-gray-300"
                     : "hover:bg-gray-100 text-gray-500"
                 }`}
                 aria-label="닫기"
@@ -1255,9 +1259,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             <div className="px-5 py-4 space-y-4">
               <div>
                 <label
-                  className="block text-xs font-medium mb-1"
+                  className={`block text-sm font-medium mb-1 ${
+                    isDarkMode ? "text-gray-200" : "text-gray-700"
+                  }`}
                 >
-                  강의실 제목
+                  강의실 제목 *
                 </label>
                 <input
                   type="text"
@@ -1266,13 +1272,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   placeholder="강의실 제목을 입력하세요"
                   className={`w-full px-3 py-2 text-sm rounded border ${
                     isDarkMode
-                      ? "bg-gray-700 border-gray-700 text-white placeholder-gray-400"
+                      ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-gray-500' : 'focus:ring-emerald-500'}`}
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-zinc-500' : 'focus:ring-emerald-500'}`}
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium mb-1">
+                <label className={`block text-sm font-medium mb-1 ${
+                  isDarkMode ? "text-gray-200" : "text-gray-700"
+                }`}>
                   강의실 설명 (선택)
                 </label>
                 <textarea
@@ -1282,20 +1290,22 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   rows={3}
                   className={`w-full px-3 py-2 text-sm rounded border resize-none ${
                     isDarkMode
-                      ? "bg-gray-700 border-gray-700 text-white placeholder-gray-400"
+                      ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-gray-500' : 'focus:ring-emerald-500'}`}
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-zinc-500' : 'focus:ring-emerald-500'}`}
                 />
               </div>
             </div>
 
-            <div className="px-5 py-4 border-t border-gray-700/50 flex justify-end gap-2">
+            <div className={`px-5 py-4 border-t flex justify-end gap-2 ${
+              isDarkMode ? "border-zinc-700/50" : "border-gray-200"
+            }`}>
               <button
                 type="button"
                 onClick={closeCourseModal}
                 className={`px-4 py-2 text-sm rounded cursor-pointer ${
                   isDarkMode
-                    ? "bg-gray-800 hover:bg-gray-700 text-gray-200"
+                    ? "bg-zinc-800 hover:bg-zinc-700 text-gray-200"
                     : "bg-gray-100 hover:bg-gray-200 text-gray-700"
                 }`}
               >
@@ -1308,10 +1318,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 className={`px-4 py-2 text-sm rounded font-medium transition-colors ${
                   isCreatingCourse || !courseModalTitle.trim()
                     ? isDarkMode
-                      ? "bg-gray-700/40 text-gray-400 cursor-not-allowed"
+                      ? "bg-zinc-800/40 text-gray-400 cursor-not-allowed"
                       : "bg-emerald-200 text-emerald-500 cursor-not-allowed"
                     : isDarkMode
-                    ? "bg-gray-700 hover:bg-gray-600 text-white cursor-pointer"
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
                     : "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
                 }`}
               >
@@ -1330,7 +1340,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           <div
             className={`w-full max-w-md rounded-xl shadow-xl border ${
               isDarkMode
-                ? "bg-gray-700 border-gray-700 text-gray-100"
+                ? "bg-zinc-900 border-zinc-700 text-gray-100"
                 : "bg-white border-gray-200 text-gray-900"
             }`}
           >
@@ -1341,7 +1351,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 onClick={closeLectureModal}
                 className={`p-1.5 rounded cursor-pointer ${
                   isDarkMode
-                    ? "hover:bg-gray-700 text-gray-300"
+                    ? "hover:bg-zinc-800 text-gray-300"
                     : "hover:bg-gray-100 text-gray-500"
                 }`}
                 aria-label="닫기"
@@ -1360,9 +1370,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   placeholder="강의 제목을 입력하세요"
                   className={`w-full px-3 py-2 text-sm rounded border ${
                     isDarkMode
-                      ? "bg-gray-700 border-gray-700 text-white placeholder-gray-400"
+                      ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-gray-500' : 'focus:ring-emerald-500'}`}
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-zinc-500' : 'focus:ring-emerald-500'}`}
                 />
               </div>
               <div>
@@ -1375,20 +1385,22 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   placeholder="주차 번호를 입력하세요"
                   className={`w-full px-3 py-2 text-sm rounded border ${
                     isDarkMode
-                      ? "bg-gray-700 border-gray-700 text-white placeholder-gray-400"
+                      ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-gray-500' : 'focus:ring-emerald-500'}`}
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-zinc-500' : 'focus:ring-emerald-500'}`}
                 />
               </div>
             </div>
 
-            <div className="px-5 py-4 border-t border-gray-700/50 flex justify-end gap-2">
+            <div className={`px-5 py-4 border-t flex justify-end gap-2 ${
+              isDarkMode ? "border-zinc-700/50" : "border-gray-200"
+            }`}>
               <button
                 type="button"
                 onClick={closeLectureModal}
                 className={`px-4 py-2 text-sm rounded cursor-pointer ${
                   isDarkMode
-                    ? "bg-gray-800 hover:bg-gray-700 text-gray-200"
+                    ? "bg-zinc-800 hover:bg-zinc-700 text-gray-200"
                     : "bg-gray-100 hover:bg-gray-200 text-gray-700"
                 }`}
               >
@@ -1401,10 +1413,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 className={`px-4 py-2 text-sm rounded font-medium transition-colors ${
                   isCreatingLecture || !lectureModalTitle.trim() || !lectureModalWeek
                     ? isDarkMode
-                      ? "bg-gray-700/40 text-gray-400 cursor-not-allowed"
+                      ? "bg-zinc-800/40 text-gray-400 cursor-not-allowed"
                       : "bg-emerald-200 text-emerald-500 cursor-not-allowed"
                     : isDarkMode
-                    ? "bg-gray-700 hover:bg-gray-600 text-white cursor-pointer"
+                    ? "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
                     : "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
                 }`}
               >

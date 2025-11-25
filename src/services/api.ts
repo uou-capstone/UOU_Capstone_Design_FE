@@ -31,6 +31,7 @@ export interface Course {
 
 export interface CourseDetail extends Course {
   lectures?: Lecture[];
+  invitationCode?: string;
 }
 
 export interface Lecture {
@@ -492,7 +493,7 @@ export const authApi = {
 
   // 내 정보 조회
   getMe: async (): Promise<User> => {
-    return apiRequest<User>('/api/auth/me');
+    return apiRequest<User>('/api/users/me');
   },
 };
 
@@ -540,6 +541,13 @@ export const courseApi = {
   // 수강 신청 (학생)
   enrollCourse: async (courseId: number): Promise<string> => {
     return apiRequest<string>(`/api/courses/${courseId}/enroll`, {
+      method: 'POST',
+    });
+  },
+
+  // 초대 코드로 수강 신청 (학생)
+  joinCourse: async (code: string): Promise<CourseDetail> => {
+    return apiRequest<CourseDetail>(`/api/courses/join?code=${code}`, {
       method: 'POST',
     });
   },
