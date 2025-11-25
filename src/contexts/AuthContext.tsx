@@ -45,11 +45,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return;
       }
       
-      try {
-        const userData = await authApi.getMe();
-        setUser(userData);
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+      // getMe 호출 시도 (최대 3번 재시도)
+      let userData: User | null = null;
+      let lastError: any = null;
+      
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          userData = await authApi.getMe();
+          if (userData) {
+            setUser(userData);
+            setIsLoading(false);
+            return;
+          }
+        } catch (error) {
+          lastError = error;
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.warn(`초기 로드 getMe 호출 실패 (시도 ${attempt + 1}/3):`, errorMessage);
+          
+          // 마지막 시도가 아니면 잠시 대기 후 재시도
+          if (attempt < 2) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        }
+      }
+      
+      // 모든 시도 실패 시
+      if (lastError) {
+        const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
+        console.error('초기 로드 getMe 호출이 모든 재시도 후에도 실패했습니다:', errorMessage);
         
         // 백엔드에 /api/auth/me가 구현되어 있지 않거나 CORS 문제인 경우
         // 토큰은 유지하고 사용자 정보만 null로 설정
@@ -62,7 +85,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             errorMessage.includes('CORS')) {
           // 백엔드에 엔드포인트가 없거나 CORS 문제인 경우 토큰 유지
           setUser(null);
-        } else if (errorMessage.includes('인증이 필요합니다')) {
+        } else if (errorMessage.includes('인증이 필요합니다') || 
+                   errorMessage.includes('401') ||
+                   errorMessage.includes('Unauthorized')) {
           // 명시적인 인증 오류인 경우에만 토큰 제거
           removeAuthToken();
           setUser(null);
@@ -82,16 +107,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const response = await authApi.login({ email, password });
       if (response.accessToken) {
         try {
-          const userData = await authApi.getMe();
-          setUser(userData);
+          // getMe 호출 시도 (최대 2번 재시도)
+          let userData: User | null = null;
+          let lastError: any = null;
+          
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              userData = await authApi.getMe();
+              if (userData) {
+                setUser(userData);
+                return;
+              }
+            } catch (getMeError) {
+              lastError = getMeError;
+              console.warn(`getMe 호출 실패 (시도 ${attempt + 1}/3):`, getMeError);
+              
+              // 마지막 시도가 아니면 잠시 대기 후 재시도
+              if (attempt < 2) {
+                await new Promise(resolve => setTimeout(resolve, 500));
+              }
+            }
+          }
+          
+          // 모든 시도 실패 시 에러 로깅
+          console.error('getMe 호출이 모든 재시도 후에도 실패했습니다:', lastError);
+          const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
+          console.error('에러 상세:', {
+            message: errorMessage,
+            stack: lastError instanceof Error ? lastError.stack : undefined,
+          });
+          
+          // getMe 실패해도 로그인은 성공한 것으로 간주 (토큰이 있으므로)
+          // 하지만 사용자 정보는 null로 설정
+          setUser(null);
         } catch (getMeError) {
-          // 백엔드에 /api/auth/me가 구현되어 있지 않거나 CORS 문제인 경우
-          // 로그인은 성공했으므로 토큰은 유지하고 사용자 정보만 null로 설정
-          // 하지만 로그인은 성공한 것으로 간주 (토큰이 있으면 인증된 상태)
-          // getMe 실패는 로그인 실패로 간주하지 않음
-          console.warn('getMe 호출 실패, 하지만 로그인은 성공:', getMeError);
-          // 토큰이 있으면 로그인 성공으로 간주하되, 사용자 정보는 나중에 가져올 수 있도록 함
-          // 임시로 더미 사용자 정보 설정 (실제로는 getMe가 성공해야 함)
+          // 예상치 못한 에러
+          console.error('getMe 호출 중 예상치 못한 에러:', getMeError);
           setUser(null);
         }
       }
