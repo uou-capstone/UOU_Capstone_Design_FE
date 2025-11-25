@@ -6,6 +6,7 @@ import AppLayout from './components/layout/AppLayout.tsx';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import JoinPage from './pages/JoinPage';
 import TruckLoader from './components/common/TruckLoader';
 
 // 보호된 라우트 컴포넌트
@@ -33,6 +34,7 @@ const AppRoutes: React.FC = () => {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/join" element={<JoinPage />} />
       <Route
         path="/"
         element={

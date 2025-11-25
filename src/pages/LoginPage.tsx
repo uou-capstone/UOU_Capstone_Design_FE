@@ -35,10 +35,10 @@ const LoginPage: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // 회원가입 완료 후 전달된 메시지와 이메일 처리
+  // 회원가입 완료 후 전달된 메시지와 이메일 처리, 또는 리다이렉트 메시지
   useEffect(() => {
     if (location.state) {
-      const state = location.state as { message?: string; email?: string };
+      const state = location.state as { message?: string; email?: string; redirectTo?: string };
       if (state.message) {
         setSuccessMessage(state.message);
       }
@@ -57,7 +57,13 @@ const LoginPage: React.FC = () => {
 
     try {
       await login(email, password);
-      navigate('/');
+      // 로그인 후 리다이렉트 처리
+      const state = location.state as { redirectTo?: string } | null;
+      if (state?.redirectTo) {
+        navigate(state.redirectTo, { replace: true });
+      } else {
+        navigate('/');
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : '로그인에 실패했습니다.');
     } finally {
@@ -330,6 +336,7 @@ const LoginPage: React.FC = () => {
                   }`}>
                     <li>• 로그인 / 회원가입</li>
                     <li>• 강의실 목록 조회</li>
+                    <li>• 초대 링크로 수강 신청</li>
                     <li>• 강의 자료 보기 (PDF, 마크다운)</li>
                     <li>• 프로필 사진 변경</li>
                     <li>• 이메일/닉네임 수정</li>
@@ -351,6 +358,7 @@ const LoginPage: React.FC = () => {
                     <li>• 로그인 / 회원가입</li>
                     <li>• 강의실 목록 조회</li>
                     <li>• 강의실 생성/수정/삭제</li>
+                    <li>• 초대 링크 복사 및 공유</li>
                     <li>• 강의 생성/삭제</li>
                     <li>• 강의 자료 업로드 (PDF, PPT, DOC 등)</li>
                     <li>• AI 강의 콘텐츠 생성</li>
@@ -374,10 +382,11 @@ const LoginPage: React.FC = () => {
                   }`}>
                     <li>• 반응형 3단 레이아웃</li>
                     <li>• 사이드바 리사이저 (드래그/더블클릭)</li>
+                    <li>• 사이드바 자동 접기/펼치기 (화면 크기 반응형)</li>
                     <li>• 다크 모드 지원</li>
                     <li>• 서버 상태 실시간 확인</li>
                     <li>• 소셜 로그인 (카카오, 구글) UI</li>
-                    <li>• 트럭 애니메이션 로더</li>
+                    <li>• 로딩 애니메이션 (공 튀기기)</li>
                   </ul>
                 </div>
 
