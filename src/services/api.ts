@@ -431,7 +431,8 @@ export const checkServerStatus = async (): Promise<{ online: boolean; message?: 
       
       clearTimeout(timeoutId);
       
-      // 200-299 또는 404 (엔드포인트가 없어도 서버는 응답함)면 서버는 온라인
+      // 200-299, 401 (인증 필요하지만 서버는 응답함), 404 (엔드포인트가 없어도 서버는 응답함)면 서버는 온라인
+      // 401은 서버가 정상 작동 중이지만 인증이 필요한 경우이므로 서버는 온라인으로 간주
       if (response.status < 500) {
         return { online: true };
       } else {

@@ -596,7 +596,11 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 ref={profileButtonRef}
                 type="button"
                 onClick={toggleProfileDropdown}
-                className={`w-full ${commonStyles.buttonBase} relative group/button ${buttonDefaultTextClass} ${buttonDefaultHoverClass} justify-start px-3 py-2 min-w-[44px] min-h-[36px]`}
+                className={`w-full ${commonStyles.buttonBase} relative group/button ${
+                  isProfileDropdownOpen
+                    ? selectedButtonClass
+                    : `${buttonDefaultTextClass} ${buttonDefaultHoverClass}`
+                } justify-start px-3 py-2 min-w-[44px] min-h-[36px]`}
                 style={{ overflow: "visible" }}
               >
                 <div
@@ -633,10 +637,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     onMouseDown={(e) => e.stopPropagation()}
                     style={{
                       position: "fixed",
-                      top: `${dropdownPosition.top - 10}px`, // 버튼 바로 위 (10px 간격)
+                      top: `${dropdownPosition.top}px`,
                       left: `${dropdownLeft}px`,
                       width: `${dropdownWidth}px`,
-                      transform: "translateY(-100%)", // 드롭다운을 위로 이동
+                      transform: "translateY(calc(-100% - 10px))", // 드롭다운을 위로 이동 (10px margin)
                       zIndex: 9999,
                     }}
                   >
