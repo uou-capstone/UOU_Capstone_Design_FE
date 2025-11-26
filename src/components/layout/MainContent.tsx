@@ -162,6 +162,22 @@ const MainContent: React.FC<MainContentProps> = ({
         <div className="h-full flex flex-col">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-semibold">내 강의실</h2>
+            {isTeacher && (
+              <button
+                type="button"
+                onClick={() => setIsCourseModalOpen(true)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                  isDarkMode
+                    ? "bg-blue-600 hover:bg-blue-700 text-white"
+                    : "bg-blue-500 hover:bg-blue-600 text-white"
+                }`}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                새 강의실 만들기
+              </button>
+            )}
           </div>
           <div
             className={`flex-1 flex items-center justify-center ${
@@ -176,14 +192,14 @@ const MainContent: React.FC<MainContentProps> = ({
                   isDarkMode
                     ? "border-gray-700 hover:border-gray-500 hover:bg-gray-800/50"
                     : "border-gray-300 hover:border-emerald-500 hover:bg-gray-50"
-                } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-gray-500/60' : 'focus:ring-emerald-500/60'} focus:ring-offset-2 ${
+                } focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:ring-offset-2 ${
                   isDarkMode ? "focus:ring-offset-gray-900" : "focus:ring-offset-white"
                 }`}
               >
-                <svg 
+                <svg
                   className={`w-16 h-16 mx-auto mb-4 ${isDarkMode ? "text-gray-400" : "text-gray-400"}`}
-                  fill="none" 
-                  stroke="currentColor" 
+                  fill="none"
+                  stroke="currentColor"
                   viewBox="0 0 24 24"
                 >
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -192,7 +208,7 @@ const MainContent: React.FC<MainContentProps> = ({
                   새 강의실 만들기
                 </p>
                 <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                  클릭하여 새 강의실을 생성하세요
+                  버튼을 눌러 강의실 생성을 시작해보세요.
                 </p>
               </button>
             ) : (
@@ -224,10 +240,10 @@ const MainContent: React.FC<MainContentProps> = ({
                 isDarkMode ? "focus:ring-offset-gray-900" : "focus:ring-offset-white"
               }`}
             >
-              <svg 
+              <svg
                 className={`w-8 h-8 mb-2 ${isDarkMode ? "text-gray-400" : "text-gray-400"}`}
-                fill="none" 
-                stroke="currentColor" 
+                fill="none"
+                stroke="currentColor"
                 viewBox="0 0 24 24"
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -246,8 +262,8 @@ const MainContent: React.FC<MainContentProps> = ({
                 isDarkMode
                   ? "bg-zinc-900 border-zinc-700 hover:border-zinc-500 hover:shadow-zinc-500/30"
                   : "bg-white border-gray-200 hover:border-emerald-500/40 hover:shadow-emerald-500/20"
-              } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-zinc-500/60' : 'focus:ring-emerald-500/60'} focus:ring-offset-2 ${
-                isDarkMode ? "focus:ring-offset-zinc-900" : "focus:ring-offset-white"
+              } focus:outline-none focus:ring-2 ${
+                isDarkMode ? "focus:ring-zinc-500/60 focus:ring-offset-zinc-900" : "focus:ring-emerald-500/60 focus:ring-offset-white"
               }`}
             >
               <div className="flex flex-col h-full">
@@ -337,6 +353,31 @@ const MainContent: React.FC<MainContentProps> = ({
     );
   };
 
+  const handleCopyInvitationLink = React.useCallback(async () => {
+    if (!courseDetail?.invitationCode) {
+      return;
+    }
+    const invitationUrl = `${window.location.origin}/join?code=${courseDetail.invitationCode}`;
+    try {
+      await navigator.clipboard.writeText(invitationUrl);
+      window.alert("초대 링크가 클립보드에 복사되었습니다!");
+    } catch (err) {
+      const textArea = document.createElement("textarea");
+      textArea.value = invitationUrl;
+      textArea.style.position = "fixed";
+      textArea.style.opacity = "0";
+      document.body.appendChild(textArea);
+      textArea.select();
+      try {
+        document.execCommand("copy");
+        window.alert("초대 링크가 클립보드에 복사되었습니다!");
+      } catch (e) {
+        window.alert(`초대 링크: ${invitationUrl}`);
+      }
+      document.body.removeChild(textArea);
+    }
+  }, [courseDetail?.invitationCode]);
+
   const renderCourseDetail = () => {
     if (isCourseDetailLoading) {
       return (
@@ -389,61 +430,6 @@ const MainContent: React.FC<MainContentProps> = ({
 
     return (
       <div className="flex flex-col gap-4 h-full">
-        {/* 뒤로가기 버튼 및 초대 링크 복사 버튼 */}
-        <div className="flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={onBackToCourses}
-            className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
-              isDarkMode
-                ? "text-gray-300 hover:bg-gray-800"
-                : "text-gray-700 hover:bg-gray-100"
-            }`}
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            <span className="text-sm font-medium">강의실 목록으로</span>
-          </button>
-          {isTeacher && courseDetail?.invitationCode && (
-            <button
-              type="button"
-              onClick={async () => {
-                const invitationUrl = `${window.location.origin}/join?code=${courseDetail.invitationCode}`;
-                try {
-                  await navigator.clipboard.writeText(invitationUrl);
-                  window.alert('초대 링크가 클립보드에 복사되었습니다!');
-                } catch (err) {
-                  // 클립보드 복사 실패 시 대체 방법
-                  const textArea = document.createElement('textarea');
-                  textArea.value = invitationUrl;
-                  textArea.style.position = 'fixed';
-                  textArea.style.opacity = '0';
-                  document.body.appendChild(textArea);
-                  textArea.select();
-                  try {
-                    document.execCommand('copy');
-                    window.alert('초대 링크가 클립보드에 복사되었습니다!');
-                  } catch (e) {
-                    window.alert(`초대 링크: ${invitationUrl}`);
-                  }
-                  document.body.removeChild(textArea);
-                }
-              }}
-              className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg transition-colors cursor-pointer ${
-                isDarkMode
-                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                  : "bg-emerald-600 hover:bg-emerald-700 text-white"
-              }`}
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
-              <span className="text-sm font-medium">초대 링크 복사</span>
-            </button>
-          )}
-        </div>
-        
         {/* OT(0주차)를 선택했을 때만 담당과 강의 설명 표시 */}
         {isOTSelected && (
           <div
@@ -545,13 +531,13 @@ const MainContent: React.FC<MainContentProps> = ({
           </div>
         ) : (
           <div
-            className={`flex-1 flex items-center justify-center rounded-xl border ${
+            className={`flex-1 flex items-start justify-center rounded-xl border ${
               isDarkMode
                 ? "border-gray-800 bg-gray-900 text-gray-400"
                 : "border-gray-200 bg-white text-gray-500"
             }`}
           >
-            <div className="text-center space-y-2">
+            <div className="w-full max-w-3xl text-center space-y-2 py-10">
               <p className="text-lg font-medium">좌측 사이드바에서 강의를 선택해주세요.</p>
               <p className="text-sm">선택한 강의의 자료와 업로드 파일이 이 영역에 표시됩니다.</p>
             </div>
@@ -575,13 +561,58 @@ const MainContent: React.FC<MainContentProps> = ({
     return menuNames[menu] || "이 기능";
   };
 
-  return (
-    <>
+  const renderCourseDetailHeader = () => {
+    if (viewMode !== "course-detail" || !courseDetail) {
+      return null;
+    }
+
+    const showInviteButton = isTeacher && courseDetail.invitationCode;
+
+    return (
       <div
-        className={`flex-1 min-h-0 p-4 overflow-y-auto scrollbar-hide transition-colors ${
+        className={`h-[50px] px-4 flex items-center justify-between ${
           isDarkMode ? "bg-[#1a1a1a]" : "bg-white"
         }`}
       >
+        <button
+          type="button"
+          onClick={onBackToCourses}
+          className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
+            isDarkMode
+              ? "text-gray-200 hover:bg-gray-800"
+              : "text-gray-700 hover:bg-gray-100"
+          }`}
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          <span className="text-sm font-medium">강의실 목록으로</span>
+        </button>
+        {showInviteButton && (
+          <button
+            type="button"
+            onClick={handleCopyInvitationLink}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+            <span className="text-sm font-medium">초대 링크 복사</span>
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <div className="flex-1 flex flex-col min-h-0">
+        {renderCourseDetailHeader()}
+        <div
+          className={`flex-1 min-h-0 pt-2 px-4 overflow-y-auto scrollbar-hide transition-colors ${
+            isDarkMode ? "bg-[#1a1a1a]" : "bg-white"
+          }`}
+        >
         {viewMode === "course-list" ? (
           selectedMenu === "settings" ? (
             <SettingsPage />
@@ -600,6 +631,7 @@ const MainContent: React.FC<MainContentProps> = ({
         ) : (
           renderCourseDetail()
         )}
+        </div>
       </div>
 
       {/* 강의실 생성 모달 */}
