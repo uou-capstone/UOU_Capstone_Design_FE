@@ -34,12 +34,15 @@ interface LeftSidebarProps {
   selectedLectureId?: number | null;
   onSelectLecture?: (lectureId: number) => void;
   onDeleteLecture?: (lectureId: number) => void;
+  onEditLecture?: (lecture: CourseLecture) => void;
   isCourseDetailLoading?: boolean;
   selectedMenu?: MenuItem;
   onMenuSelect?: (menu: MenuItem) => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
 }
+
+type CourseLecture = NonNullable<NonNullable<CourseDetail["lectures"]>[number]>;
 
 // 아이콘 컴포넌트
 const SidebarToggleIcon: React.FC<{ className?: string }> = ({ className }) => (
@@ -105,7 +108,23 @@ const LectureIcon: React.FC<{ className?: string }> = ({ className }) => (
       strokeLinecap="round"
       strokeLinejoin="round"
       strokeWidth={2}
-      d="M4 6h16M4 10h16M4 14h10M4 18h6"
+      d="M5 7h14M5 12h14M5 17h10"
+    />
+  </svg>
+);
+
+const EditIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M15.232 5.232l3.536 3.536M4 13v7h7l8.485-8.485a1.5 1.5 0 000-2.121l-4.879-4.879a1.5 1.5 0 00-2.121 0L4 13z"
     />
   </svg>
 );
@@ -121,7 +140,7 @@ const DeleteIcon: React.FC<{ className?: string }> = ({ className }) => (
       strokeLinecap="round"
       strokeLinejoin="round"
       strokeWidth={2}
-      d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"
+      d="M18 6L6 18M6 6l12 12"
     />
   </svg>
 );
@@ -135,6 +154,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
   selectedLectureId,
   onSelectLecture,
   onDeleteLecture,
+  onEditLecture,
   isCourseDetailLoading = false,
   selectedMenu: externalSelectedMenu,
   onMenuSelect,
@@ -145,6 +165,16 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
   const { isDarkMode, setThemeMode } = useTheme();
   const navigate = useNavigate();
   const isTeacher = user?.role === "TEACHER";
+  const roleLabel =
+    user?.role === "TEACHER"
+      ? "선생님"
+      : user?.role === "STUDENT"
+      ? "학생"
+      : user?.role === "ADMIN"
+      ? "관리자"
+      : user?.role
+      ? user.role
+      : null;
   const [internalSelectedMenu, setInternalSelectedMenu] =
     useState<MenuItem>("dashboard");
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
@@ -364,11 +394,11 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
       <button
         type="button"
         onClick={() => handleMenuSelect(menu)}
-        className={`mx-[6px] ${commonStyles.buttonBase} relative group/button ${
+        className={`mx-[8px] ${commonStyles.buttonBase} relative group/button min-h-[36px] ${
           isSelected
             ? selectedButtonClass
             : `${buttonDefaultTextClass} ${buttonDefaultHoverClass}`
-        } justify-start px-3 py-2 min-w-[44px] min-h-[36px]`}
+        } justify-start px-3 py-2`}
       >
         <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
           <MenuItemIcon type={menu} className="w-[20px] h-[20px]" />
@@ -380,6 +410,78 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
         </div>
         {isCollapsed && <span className="sr-only">{label}</span>}
       </button>
+    );
+  };
+
+  const LectureButton: React.FC<{ lecture: CourseLecture }> = ({
+    lecture,
+  }) => {
+    const isSelected = selectedLectureId === lecture.lectureId;
+
+    return (
+      <div key={lecture.lectureId} className="relative group/button mx-[6px]">
+        <button
+          type="button"
+          onClick={() => onSelectLecture?.(lecture.lectureId)}
+          className={`${commonStyles.buttonBase} w-full min-h-[36px] justify-start px-3 py-2 ${
+            isSelected ? selectedButtonClass : `${buttonDefaultTextClass} ${buttonDefaultHoverClass}`
+          }`}
+        >
+          <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
+            <LectureIcon className="w-[20px] h-[20px]" />
+          </div>
+          <div className={`ml-3 min-w-0 flex items-center gap-2`}>
+            <span className="text-sm font-semibold truncate">{lecture.title}</span>
+            <span
+              className={`text-xs font-semibold whitespace-nowrap transition-opacity duration-200 ${
+                isCollapsed ? "opacity-0" : "opacity-100"
+              } ${isSelected ? "text-white/80" : textMutedClass}`}
+            >
+              {lecture.weekNumber}주차
+            </span>
+          </div>
+        </button>
+        {isTeacher && !isCollapsed && (onEditLecture || onDeleteLecture) && (
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/button:opacity-100 transition-opacity">
+            {onEditLecture && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditLecture(lecture);
+                }}
+                className={`p-1 rounded cursor-pointer ${
+                  isSelected
+                    ? "hover:bg-emerald-500/30 text-white"
+                    : "hover:bg-emerald-500/10 text-emerald-400 hover:text-emerald-300"
+                }`}
+                title="강의 수정"
+              >
+                <EditIcon className="w-4 h-4" />
+              </button>
+            )}
+            {onDeleteLecture && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (window.confirm(`"${lecture.title}" (${lecture.weekNumber}주차)를 삭제하시겠습니까?`)) {
+                    onDeleteLecture(lecture.lectureId);
+                  }
+                }}
+                className={`p-1 rounded cursor-pointer ${
+                  isSelected
+                    ? "hover:bg-red-600/30 text-red-100"
+                    : "hover:bg-red-600/10 text-red-500 hover:text-red-400"
+                }`}
+                title="강의 삭제"
+              >
+                <DeleteIcon className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     );
   };
 
@@ -401,69 +503,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
       );
     }
 
-    return sortedLectures.map((lecture) => {
-      const isSelected = selectedLectureId === lecture.lectureId;
-      return (
-        <div key={lecture.lectureId} className="relative group w-full mx-[6px]">
-          <button
-            type="button"
-            onClick={() => onSelectLecture?.(lecture.lectureId)}
-            className={`w-full ${commonStyles.buttonBase} justify-start px-3 py-2 min-w-[44px] min-h-[36px] ${
-              isSelected
-                ? selectedButtonClass
-                : `${buttonDefaultTextClass} ${buttonDefaultHoverClass}`
-            }`}
-          >
-            <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
-              <LectureIcon className="w-[20px] h-[20px]" />
-            </div>
-            <span className={`overflow-hidden whitespace-nowrap flex-1 min-w-0 ml-3 transition-opacity duration-300 ${
-              isCollapsed ? "opacity-0 w-0 ml-0" : "opacity-100"
-            }`}>
-              <span className="text-sm font-medium truncate">
-                {lecture.title}
-              </span>
-              <span
-                className={`text-xs font-semibold ml-2 ${
-                  isSelected ? "text-white/80" : textMutedClass
-                }`}
-              >
-                {lecture.weekNumber}주차
-              </span>
-            </span>
-            {isCollapsed && (
-              <>
-                <span className="sr-only">{lecture.title}</span>
-                <span className="sr-only">{lecture.weekNumber}주차</span>
-              </>
-            )}
-          </button>
-          {!isCollapsed && isTeacher && onDeleteLecture && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                if (
-                  window.confirm(
-                    `"${lecture.title}" (${lecture.weekNumber}주차)를 삭제하시겠습니까?`
-                  )
-                ) {
-                  onDeleteLecture(lecture.lectureId);
-                }
-              }}
-              className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer ${
-                isSelected
-                  ? "hover:bg-red-600/30 text-red-200 hover:text-red-100"
-                  : "hover:bg-red-600/20 text-red-400 hover:text-red-300"
-              }`}
-              title="강의 삭제"
-            >
-              <DeleteIcon className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      );
-    });
+    return sortedLectures.map((lecture) => <LectureButton key={lecture.lectureId} lecture={lecture} />);
   };
 
   // 메뉴 섹션 묶음 렌더링
@@ -556,8 +596,8 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
         {/* 메인 컨텐츠 */}
     <div id="sidebar-content" className="flex-1 overflow-y-auto scrollbar-hide">
           {viewMode === "course-detail" ? (
-            <div className="flex flex-col gap-1 py-4">
-              {renderLectureList()}
+            <div className="flex flex-col gap-2 py-2">
+              <div className="flex flex-col gap-1">{renderLectureList()}</div>
             </div>
           ) : (
             <div className="flex flex-col gap-2 py-2">
@@ -608,12 +648,27 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 >
                   {user?.fullName?.charAt(0)?.toUpperCase() ?? "?"}
                 </div>
-                <div className={`ml-3 flex items-center min-w-0 overflow-hidden whitespace-nowrap flex-1 transition-opacity duration-300 ${
-                  isCollapsed ? "opacity-0 w-0 ml-0" : "opacity-100"
-                }`}>
-                  <span className="text-sm font-medium truncate">
+                <div
+                  className={`ml-3 flex items-center min-w-0 gap-2 overflow-hidden whitespace-nowrap flex-1 transition-opacity duration-300 ${
+                    isCollapsed ? "opacity-0 w-0 ml-0" : "opacity-100"
+                  }`}
+                >
+                  <span
+                    className={`text-sm font-semibold truncate ${
+                      isDarkMode ? "text-emerald-200" : "text-emerald-600"
+                    }`}
+                  >
                     {user?.fullName ?? "Guest"}
                   </span>
+                  {roleLabel && (
+                    <span
+                      className={`text-xs font-medium flex-shrink-0 ${
+                        isDarkMode ? "text-gray-300" : "text-gray-600"
+                      }`}
+                    >
+                      {roleLabel}
+                    </span>
+                  )}
                 </div>
                 {isCollapsed && (
                   <span className="sr-only">

@@ -18,6 +18,8 @@ type MenuItem =
   | "settings" 
   | "help";
 
+type CourseLecture = NonNullable<NonNullable<CourseDetail["lectures"]>[number]>;
+
 const DEFAULT_LEFT_SIDEBAR_WIDTH = 220;
 const DEFAULT_RIGHT_SIDEBAR_WIDTH = 420;
 
@@ -56,6 +58,7 @@ const AppLayout: React.FC = () => {
   const [isResizingRight, setIsResizingRight] = useState<boolean>(false);
   const rightResizeRef = useRef<HTMLDivElement>(null);
   const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState(false);
+  const [isAutoCollapsed, setIsAutoCollapsed] = useState(false);
   
   // 메뉴 상태 관리 (메인 페이지일 때만 사용)
   const [selectedMenu, setSelectedMenu] = useState<MenuItem>("dashboard");
@@ -167,6 +170,74 @@ const AppLayout: React.FC = () => {
     setCurrentLectureId(lectureId);
     resetLectureOutputs();
   };
+
+  const handleLectureEdit = useCallback(
+    async (lecture: CourseLecture) => {
+      if (!selectedCourseId) return;
+
+      const initialTitle = lecture.title ?? "";
+      const titleInput = window.prompt("새 강의 제목을 입력해주세요.", initialTitle);
+      if (titleInput === null) {
+        return;
+      }
+      const trimmedTitle = titleInput.trim();
+      if (!trimmedTitle) {
+        window.alert("강의 제목은 비워둘 수 없습니다.");
+        return;
+      }
+
+      const weekInput = window.prompt(
+        "새 주차 번호를 입력해주세요. (0 이상의 숫자)",
+        lecture.weekNumber.toString()
+      );
+      if (weekInput === null) {
+        return;
+      }
+      const parsedWeek = Number(weekInput);
+      if (!Number.isFinite(parsedWeek) || parsedWeek < 0) {
+        window.alert("주차 번호는 0 이상의 숫자여야 합니다.");
+        return;
+      }
+
+      const descriptionInput = window.prompt(
+        "새 강의 설명을 입력해주세요.",
+        lecture.description ?? ""
+      );
+      if (descriptionInput === null) {
+        return;
+      }
+      const trimmedDescription = descriptionInput.trim();
+      if (!trimmedDescription) {
+        window.alert("강의 설명은 비워둘 수 없습니다.");
+        return;
+      }
+
+      if (courseDetail?.lectures) {
+        const duplicate = courseDetail.lectures.find(
+          (item) => item.weekNumber === parsedWeek && item.lectureId !== lecture.lectureId
+        );
+        if (duplicate) {
+          window.alert(`${parsedWeek}주차는 이미 존재합니다.`);
+          return;
+        }
+      }
+
+      try {
+        const { lectureApi } = await import("../../services/api");
+        await lectureApi.updateLecture(lecture.lectureId, {
+          title: trimmedTitle,
+          weekNumber: parsedWeek,
+          description: trimmedDescription,
+        });
+        await loadCourseDetail(selectedCourseId);
+        window.alert("강의 정보가 수정되었습니다.");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "강의 정보 수정에 실패했습니다.";
+        window.alert(message);
+      }
+    },
+    [selectedCourseId, courseDetail?.lectures, loadCourseDetail]
+  );
 
   const handleCourseEdit = useCallback(
     async (course: Course) => {
@@ -297,33 +368,30 @@ const AppLayout: React.FC = () => {
   // 화면 크기에 따라 좌측 사이드바 자동 접기/펼치기 (반응형)
   useEffect(() => {
     const handleResize = () => {
-      // 화면 폭이 1024px 미만일 때 좌측 사이드바 자동 접기
-      if (window.innerWidth < 1024) {
-        if (!isLeftSidebarCollapsed) {
-          setIsLeftSidebarCollapsed(true);
-        }
-      } else {
-        // 화면 폭이 1024px 이상일 때 좌측 사이드바 자동 펼치기
-        if (isLeftSidebarCollapsed) {
-          setIsLeftSidebarCollapsed(false);
-        }
+      const shouldAutoCollapse = window.innerWidth < 1024;
+      if (shouldAutoCollapse && !isAutoCollapsed) {
+        setIsAutoCollapsed(true);
+        setIsLeftSidebarCollapsed(true);
+      } else if (!shouldAutoCollapse && isAutoCollapsed) {
+        setIsAutoCollapsed(false);
+        setIsLeftSidebarCollapsed(false);
       }
     };
 
-    // 초기 체크
     handleResize();
-
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
-  }, [isLeftSidebarCollapsed]);
+  }, [isAutoCollapsed]);
 
   const effectiveLeftSidebarWidth = isLeftSidebarCollapsed
     ? COLLAPSED_LEFT_WIDTH
     : DEFAULT_LEFT_SIDEBAR_WIDTH;
 
   const toggleLeftSidebar = () => {
+    setIsAutoCollapsed(false);
     setIsLeftSidebarCollapsed((prev) => !prev);
   };
+
 
   return (
     <div
@@ -340,6 +408,7 @@ const AppLayout: React.FC = () => {
         selectedLectureId={currentLectureId}
         onSelectLecture={handleLectureSelect}
         onDeleteLecture={handleLectureDelete}
+        onEditLecture={handleLectureEdit}
         isCourseDetailLoading={isCourseDetailLoading}
         selectedMenu={selectedMenu}
         onMenuSelect={setSelectedMenu}
