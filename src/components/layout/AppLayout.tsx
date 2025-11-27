@@ -130,7 +130,6 @@ const AppLayout: React.FC = () => {
     fetchCourses();
     resetLectureOutputs();
     setCurrentLectureId(null);
-    navigate(`/courses/${course.courseId}`);
   };
 
   const handleLectureCreated = async (lecture: LectureResponseDto) => {

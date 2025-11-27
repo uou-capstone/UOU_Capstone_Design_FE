@@ -160,25 +160,6 @@ const MainContent: React.FC<MainContentProps> = ({
     if (!courses.length) {
       return (
         <div className="h-full flex flex-col">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-semibold">내 강의실</h2>
-            {isTeacher && (
-              <button
-                type="button"
-                onClick={() => setIsCourseModalOpen(true)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-                  isDarkMode
-                    ? "bg-blue-600 hover:bg-blue-700 text-white"
-                    : "bg-blue-500 hover:bg-blue-600 text-white"
-                }`}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                새 강의실 만들기
-              </button>
-            )}
-          </div>
           <div
             className={`flex-1 flex items-center justify-center ${
               isDarkMode ? "text-gray-400" : "text-gray-500"
@@ -224,41 +205,13 @@ const MainContent: React.FC<MainContentProps> = ({
 
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-2xl font-semibold">내 강의실</h2>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-          {isTeacher && (
-            <button
-              type="button"
-              onClick={() => setIsCourseModalOpen(true)}
-              className={`text-left p-5 rounded-xl border-2 border-dashed transition-all flex flex-col h-40 items-center justify-center cursor-pointer ${
-                isDarkMode
-                  ? "border-gray-700 hover:border-emerald-500 hover:bg-gray-800/50"
-                  : "border-gray-300 hover:border-emerald-500 hover:bg-gray-50"
-              } focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:ring-offset-2 ${
-                isDarkMode ? "focus:ring-offset-gray-900" : "focus:ring-offset-white"
-              }`}
-            >
-              <svg
-                className={`w-8 h-8 mb-2 ${isDarkMode ? "text-gray-400" : "text-gray-400"}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              <span className={`text-sm font-medium ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
-                새 강의실 만들기
-              </span>
-            </button>
-          )}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 gap-4">
           {courses.map((course) => (
             <button
               key={course.courseId}
               type="button"
               onClick={() => handleCourseSelect(course.courseId)}
-              className={`text-left p-5 rounded-xl border shadow-sm transition-all flex flex-col h-40 cursor-pointer ${
+              className={`text-left p-5 rounded-xl border shadow-sm transition-all flex flex-col h-32 cursor-pointer ${
                 isDarkMode
                   ? "bg-zinc-900 border-zinc-700 hover:border-zinc-500 hover:shadow-zinc-500/30"
                   : "bg-white border-gray-200 hover:border-emerald-500/40 hover:shadow-emerald-500/20"
@@ -561,6 +514,36 @@ const MainContent: React.FC<MainContentProps> = ({
     return menuNames[menu] || "이 기능";
   };
 
+  const renderCourseListHeader = () => {
+    if (viewMode !== "course-list" || selectedMenu !== "lectures") {
+      return null;
+    }
+
+    return (
+      <div
+        className={`h-[50px] px-4 flex items-center justify-between ${
+          isDarkMode ? "bg-zinc-800" : "bg-white"
+        }`}
+      >
+        <h2 className={`text-xl font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+          내 강의실
+        </h2>
+        {isTeacher && (
+          <button
+            type="button"
+            onClick={() => setIsCourseModalOpen(true)}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer"
+          >
+            <svg className="w-[20px] h-[20px] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            <span className="text-sm font-medium">새 강의실 만들기</span>
+          </button>
+        )}
+      </div>
+    );
+  };
+
   const renderCourseDetailHeader = () => {
     if (viewMode !== "course-detail" || !courseDetail) {
       return null;
@@ -571,7 +554,7 @@ const MainContent: React.FC<MainContentProps> = ({
     return (
       <div
         className={`h-[50px] px-4 flex items-center justify-between ${
-          isDarkMode ? "bg-[#1a1a1a]" : "bg-white"
+          isDarkMode ? "bg-zinc-800" : "bg-white"
         }`}
       >
         <button
@@ -583,7 +566,7 @@ const MainContent: React.FC<MainContentProps> = ({
               : "text-gray-700 hover:bg-gray-100"
           }`}
         >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="w-[20px] h-[20px] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
           <span className="text-sm font-medium">강의실 목록으로</span>
@@ -592,9 +575,9 @@ const MainContent: React.FC<MainContentProps> = ({
           <button
             type="button"
             onClick={handleCopyInvitationLink}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer"
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors cursor-pointer"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg className="w-[20px] h-[20px] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
             </svg>
             <span className="text-sm font-medium">초대 링크 복사</span>
@@ -607,10 +590,11 @@ const MainContent: React.FC<MainContentProps> = ({
   return (
     <>
       <div className="flex-1 flex flex-col min-h-0">
+        {renderCourseListHeader()}
         {renderCourseDetailHeader()}
         <div
           className={`flex-1 min-h-0 pt-2 px-4 overflow-y-auto scrollbar-hide transition-colors ${
-            isDarkMode ? "bg-[#1a1a1a]" : "bg-white"
+            isDarkMode ? "bg-zinc-800" : "bg-white"
           }`}
         >
         {viewMode === "course-list" ? (
