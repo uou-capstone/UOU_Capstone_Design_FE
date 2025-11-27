@@ -79,19 +79,22 @@ const SettingsPage: React.FC = () => {
   };
 
   return (
-    <div className="h-full overflow-y-auto p-6">
-      <div className="max-w-6xl mx-auto">
-        <h1 className={`text-2xl font-bold mb-6 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-          설정
-        </h1>
+    <div className="space-y-6 pb-8">
+      <header>
+        <h1 className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>설정</h1>
+      </header>
 
-        <div className="grid grid-cols-2 gap-4">
-          {/* 프로필 정보 */}
-          <div className={`p-4 rounded-lg border ${isDarkMode ? "bg-slate-800 border-slate-600" : "bg-white border-gray-200"}`}>
-            <h2 className={`text-base font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-              프로필 정보
-            </h2>
-            <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* 프로필 정보 */}
+        <section
+          className={`p-5 rounded-xl border shadow-sm ${
+            isDarkMode ? "bg-zinc-900 border-zinc-700" : "bg-white border-gray-200"
+          }`}
+        >
+          <h2 className={`text-base font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+            프로필 정보
+          </h2>
+          <div className="space-y-4">
               {/* 프로필 사진 */}
               <div className="flex flex-col items-center gap-3">
                 <button
@@ -111,8 +114,8 @@ const SettingsPage: React.FC = () => {
                   ) : (
                     <div
                       className={`w-16 h-16 rounded-full flex items-center justify-center text-white font-semibold text-lg ${
-                        isDarkMode ? "bg-gray-600 hover:bg-gray-700" : "bg-gray-500 hover:bg-gray-600"
-                      }`}
+                        isDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-500 hover:bg-gray-600"
+                      } transition-colors`}
                     >
                       {user?.fullName?.charAt(0).toUpperCase() || "?"}
                     </div>
@@ -132,7 +135,7 @@ const SettingsPage: React.FC = () => {
 
               {/* 이메일 */}
               <div>
-                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? "text-slate-300" : "text-gray-700"}`}>
+                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
                   이메일
                 </label>
                 <input
@@ -141,16 +144,16 @@ const SettingsPage: React.FC = () => {
                   onChange={(e) => setEmail(e.target.value)}
                   className={`w-full px-4 py-2 rounded-lg border text-sm ${
                     isDarkMode
-                      ? "bg-slate-700 border-slate-600 text-white placeholder-slate-400"
+                      ? "bg-zinc-800 border-zinc-700 text-white placeholder-gray-500"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
-                  } focus:outline-none focus:ring-2 focus:ring-emerald-500`}
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-emerald-500"}`}
                   placeholder="이메일 주소"
                 />
               </div>
 
               {/* 닉네임 */}
               <div>
-                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? "text-slate-300" : "text-gray-700"}`}>
+                <label className={`block text-sm font-medium mb-2 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
                   닉네임
                 </label>
                 <input
@@ -159,17 +162,21 @@ const SettingsPage: React.FC = () => {
                   onChange={(e) => setNickname(e.target.value)}
                   className={`w-full px-4 py-2 rounded-lg border text-sm ${
                     isDarkMode
-                      ? "bg-slate-700 border-slate-600 text-white placeholder-slate-400"
+                      ? "bg-zinc-800 border-zinc-700 text-white placeholder-gray-500"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
-                  } focus:outline-none focus:ring-2 focus:ring-emerald-500`}
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-emerald-500"}`}
                   placeholder="닉네임"
                 />
               </div>
             </div>
-          </div>
+        </section>
 
-          {/* 비밀번호 변경 */}
-          <div className={`p-4 rounded-lg border ${isDarkMode ? "bg-slate-800 border-slate-600" : "bg-white border-gray-200"}`}>
+        {/* 비밀번호 변경 */}
+        <section
+          className={`p-5 rounded-xl border shadow-sm ${
+            isDarkMode ? "bg-zinc-900 border-zinc-700" : "bg-white border-gray-200"
+          }`}
+        >
           <h2 className={`text-base font-semibold mb-3 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
             비밀번호 변경
           </h2>
@@ -180,9 +187,9 @@ const SettingsPage: React.FC = () => {
               onChange={(e) => setCurrentPassword(e.target.value)}
               className={`w-full px-4 py-2 rounded-lg border ${
                 isDarkMode
-                  ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
+                  ? "bg-zinc-800 border-zinc-700 text-white placeholder-gray-500"
                   : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
-              } focus:outline-none focus:ring-2 focus:ring-emerald-500`}
+              } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-emerald-500"}`}
               placeholder="현재 비밀번호"
             />
             <input
@@ -191,9 +198,9 @@ const SettingsPage: React.FC = () => {
               onChange={(e) => setNewPassword(e.target.value)}
               className={`w-full px-4 py-2 rounded-lg border ${
                 isDarkMode
-                  ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
+                  ? "bg-zinc-800 border-zinc-700 text-white placeholder-gray-500"
                   : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
-              } focus:outline-none focus:ring-2 focus:ring-emerald-500`}
+              } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-emerald-500"}`}
               placeholder="새 비밀번호"
             />
             <input
@@ -202,50 +209,49 @@ const SettingsPage: React.FC = () => {
               onChange={(e) => setConfirmPassword(e.target.value)}
               className={`w-full px-4 py-2 rounded-lg border ${
                 isDarkMode
-                  ? "bg-gray-700 border-gray-600 text-white placeholder-gray-400"
+                  ? "bg-zinc-800 border-zinc-700 text-white placeholder-gray-500"
                   : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
-              } focus:outline-none focus:ring-2 focus:ring-emerald-500`}
+              } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-emerald-500"}`}
               placeholder="새 비밀번호 확인"
             />
             <button
               type="button"
               onClick={handleChangePassword}
               disabled={isSaving || !currentPassword || !newPassword || !confirmPassword}
-              className={`px-4 py-2 rounded-lg font-medium transition-colors cursor-pointer ${
+              className={`w-full px-4 py-2 rounded-lg font-medium transition-colors ${
                 isSaving || !currentPassword || !newPassword || !confirmPassword
                   ? isDarkMode
-                    ? "bg-slate-700 text-slate-400 cursor-not-allowed"
+                    ? "bg-zinc-800 text-gray-500 cursor-not-allowed"
                     : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                  : isDarkMode
-                  ? "bg-emerald-600 hover:bg-emerald-700 text-white"
                   : "bg-emerald-600 hover:bg-emerald-700 text-white"
               }`}
             >
               {isSaving ? "변경 중..." : "비밀번호 변경"}
             </button>
           </div>
-          </div>
-        </div>
+        </section>
+      </div>
 
-        {/* 저장 버튼 */}
-        <div className="flex justify-end gap-4 mt-4">
-          <button
-            type="button"
-            onClick={handleSaveProfile}
-            disabled={isSaving}
-            className={`px-6 py-2 rounded-lg font-medium transition-colors cursor-pointer ${
-              isSaving
-                ? isDarkMode
-                  ? "bg-gray-700 text-gray-400 cursor-not-allowed"
-                  : "bg-gray-200 text-gray-400 cursor-not-allowed"
-                : isDarkMode
-                ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                : "bg-emerald-600 hover:bg-emerald-700 text-white"
-            }`}
-          >
-            {isSaving ? "저장 중..." : "저장"}
-          </button>
-        </div>
+      {/* 저장 버튼 */}
+      <div
+        className={`flex justify-end gap-4 p-4 rounded-xl border shadow-sm ${
+          isDarkMode ? "bg-zinc-900 border-zinc-700" : "bg-white border-gray-200"
+        }`}
+      >
+        <button
+          type="button"
+          onClick={handleSaveProfile}
+          disabled={isSaving}
+          className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+            isSaving
+              ? isDarkMode
+                ? "bg-zinc-800 text-gray-500 cursor-not-allowed"
+                : "bg-gray-200 text-gray-400 cursor-not-allowed"
+              : "bg-emerald-600 hover:bg-emerald-700 text-white"
+          }`}
+        >
+          {isSaving ? "저장 중..." : "저장"}
+        </button>
       </div>
     </div>
   );

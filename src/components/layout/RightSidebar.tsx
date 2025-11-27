@@ -51,7 +51,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [isCreatingCourse, setIsCreatingCourse] = useState(false);
   const [isCreatingLecture, setIsCreatingLecture] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isFetchingNext, setIsFetchingNext] = useState(false);
@@ -64,9 +63,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const [, setUploadedFileName] = useState<string>("");
   const [hasUploadedMaterial, setHasUploadedMaterial] = useState<boolean>(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
-  const [isCourseModalOpen, setIsCourseModalOpen] = useState(false);
-  const [courseModalTitle, setCourseModalTitle] = useState("");
-  const [courseModalDescription, setCourseModalDescription] = useState("");
   const [isLectureModalOpen, setIsLectureModalOpen] = useState(false);
   const [lectureModalTitle, setLectureModalTitle] = useState("");
   const [lectureModalWeek, setLectureModalWeek] = useState<string>("");
@@ -80,7 +76,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const allowedFileTypes = ['.pdf', '.ppt', '.pptx', '.doc', '.docx'];
   
   // 사용할 courseId 결정 (prop 또는 입력값 또는 생성된 값)
-  const targetCourseId = currentCourseId || courseId || null;
+  const targetCourseId = currentCourseId ?? courseId ?? courseDetail?.courseId ?? null;
 
   // 로컬 스토리지 키 생성
   const getUploadStorageKey = (lectureId: number) => `lecture_upload_${lectureId}`;
@@ -115,121 +111,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   };
 
   // 레거시 generate-content 제거에 따라 상세 폴링/마크다운 조합 로직 삭제
-
-  // Course 생성 함수
-  const createCourse = async (
-    overrides?: { title?: string; description?: string }
-  ): Promise<number> => {
-    const formTitle = overrides?.title ?? courseModalTitle;
-    const formDescription = overrides?.description ?? courseModalDescription;
-
-    if (!formTitle.trim()) {
-      throw new Error('강의실 제목을 입력해주세요.');
-    }
-
-    setIsCreatingCourse(true);
-    
-    const createMessage: ChatMessage = {
-      id: Date.now(),
-      text: '강의실을 생성하는 중...',
-      isUser: false,
-      isLoading: true,
-    };
-    setMessages((prev) => [...prev, createMessage]);
-
-    try {
-      const course = await courseApi.createCourse({
-        title: formTitle.trim(),
-        description: formDescription.trim() || '',
-      });
-      
-      setCurrentCourseId(course.courseId);
-      
-      // 성공 메시지 추가
-      const successMessage: ChatMessage = {
-        id: Date.now() + 1,
-        text: `강의실 생성 완료!\n제목: ${course.title}`,
-        isUser: false,
-        isLoading: false,
-      };
-      setMessages((prev) => 
-        prev.map((msg) => 
-          msg.id === createMessage.id 
-            ? successMessage 
-            : msg
-        )
-      );
-      
-      // 입력 필드 초기화
-      setCourseModalTitle("");
-      setCourseModalDescription("");
-      setIsCourseModalOpen(false);
-
-      // 자동으로 OT 강의 생성
-      try {
-        const otLecture = await lectureApi.createLecture(course.courseId, {
-          title: "OT",
-          weekNumber: 0,
-          description: "오리엔테이션",
-        });
-        
-        const otMessage: ChatMessage = {
-          id: Date.now() + 2,
-          text: `OT 강의가 자동으로 생성되었습니다. (0주차)`,
-          isUser: false,
-          isLoading: false,
-        };
-        setMessages((prev) => [...prev, otMessage]);
-        
-        // OT 강의 생성 후 강의실 정보 전달 (강의 목록 포함)
-        onCourseCreated({
-          ...course,
-          lectures: [otLecture],
-        });
-      } catch (otError) {
-        // OT 생성 실패해도 강의실은 생성되었으므로 계속 진행
-        console.error("OT 강의 자동 생성 실패:", otError);
-      onCourseCreated(course);
-      }
-      
-      setCurrentLectureId(null);
-      setHasUploadedMaterial(false);
-      setUploadedFileDisplayUrl("");
-      setUploadedFileName("");
-
-      return course.courseId;
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : '알 수 없는 오류';
-      const errorMessage: ChatMessage = {
-        id: Date.now() + 1,
-        text: `강의실 생성 실패: ${errorMsg}`,
-        isUser: false,
-        isLoading: false,
-      };
-      setMessages((prev) => 
-        prev.map((msg) => 
-          msg.id === createMessage.id 
-            ? errorMessage 
-            : msg
-        )
-      );
-      
-      // CORS 에러인 경우 추가 안내
-      if (errorMsg.includes('CORS')) {
-        const corsMessage: ChatMessage = {
-          id: Date.now() + 2,
-          text: '💡 이 문제는 백엔드 설정 문제입니다. 백엔드 개발자에게 문의해주세요.',
-          isUser: false,
-          isLoading: false,
-        };
-        setMessages((prev) => [...prev, corsMessage]);
-      }
-      
-      throw error;
-    } finally {
-      setIsCreatingCourse(false);
-    }
-  };
 
   const createLectureForCourse = async (
     courseIdForLecture: number,
@@ -474,9 +355,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       return;
     }
 
-    const targetCourseId = currentCourseId || courseId || null;
+    const targetCourseId = currentCourseId ?? courseId ?? courseDetail?.courseId ?? null;
     if (!targetCourseId) {
-      alert('강의실을 먼저 생성해주세요. + 버튼에서 "강의실 생성"을 선택할 수 있습니다.');
+      alert('강의실을 먼저 생성해주세요.');
       return;
     }
 
@@ -593,17 +474,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     }
   };
 
-  const handleSelectCourseCreation = () => {
-    setIsActionMenuOpen(false);
-    setCourseModalTitle("");
-    setCourseModalDescription("");
-    setIsCourseModalOpen(true);
-  };
-
-  const closeCourseModal = () => {
-    if (isCreatingCourse) return;
-    setIsCourseModalOpen(false);
-  };
 
   const handleSelectLectureCreation = () => {
     setIsActionMenuOpen(false);
@@ -797,25 +667,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     }
   };
 
-  const handleCourseModalSubmit = async () => {
-    if (!courseModalTitle.trim()) {
-      alert("강의실 제목을 입력해주세요.");
-      return;
-    }
-
-    if (isCreatingCourse) {
-      return;
-    }
-
-    try {
-      await createCourse({
-        title: courseModalTitle,
-        description: courseModalDescription,
-      });
-    } catch (error) {
-      // createCourse에서 이미 처리함
-    }
-  };
 
   // 입력창 초기화 및 높이 리셋
   const resetInputText = () => {
@@ -948,7 +799,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     <>
       <aside
       className={`flex flex-col border-l transition-colors relative flex-shrink-0 ${
-        isDarkMode ? "bg-[#1a1a1a] border-[#1a1a1a]" : "bg-white border-gray-200"
+        isDarkMode ? "bg-zinc-800 border-zinc-800" : "bg-white border-gray-200"
       }`}
       style={{ width: `${width}px` }}
       onDragEnter={handleDragEnter}
@@ -959,7 +810,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       {/* 드래그 앤 드롭 영역 */}
       {isDragging && (
         <div className={`absolute inset-0 z-50 flex items-center justify-center ${
-          isDarkMode ? "bg-[#1a1a1a]/90" : "bg-white/90"
+          isDarkMode ? "bg-zinc-800/90" : "bg-white/90"
         }`}>
           <div className={`p-8 rounded-lg border-2 border-dashed ${
             isDarkMode ? "border-gray-600 bg-gray-800" : "border-emerald-500 bg-emerald-50"
@@ -976,9 +827,13 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       {/* 채팅 메시지 영역 */}
       <div
         id="chat-messages"
-        className={`flex-1 overflow-y-auto scrollbar-hide p-4 space-y-3 ${
-          isDarkMode ? "bg-[#1a1a1a]" : "bg-white"
+        className={`flex-1 overflow-y-auto p-4 space-y-3 ${
+          isDarkMode ? "bg-zinc-800" : "bg-white"
         }`}
+        style={{
+          scrollbarWidth: 'thin',
+          scrollbarColor: isDarkMode ? '#4a5568 #1a1a1a' : '#cbd5e0 #ffffff',
+        }}
       >
         {messages.length === 0 ? (
           <div className={`text-center text-sm mt-8 ${
@@ -1064,10 +919,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       </div>
 
       {/* 채팅 입력창 */}
-      <div className={`border-t ${
-        isDarkMode ? "border-zinc-800 bg-zinc-900" : "border-gray-200 bg-white"
+      <div className={`${
+        isDarkMode ? "bg-zinc-800" : "bg-white"
       }`}
-      style={{ padding: '6px 12px', height: '55px' }}>
+      style={{ padding: '6px 6px', height: '55px' }}>
         {/* 통합된 입력 컨테이너 */}
         <div className={`flex items-center gap-2 rounded-lg border h-full ${
           isDarkMode
@@ -1113,7 +968,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               </svg>
             </button>
 
-            {isActionMenuOpen && (
+            {isActionMenuOpen && viewMode === "course-detail" && (
               <div
                 className={`absolute bottom-full left-0 mb-2 w-48 rounded-xl shadow-lg overflow-hidden border ${
                   isDarkMode
@@ -1121,49 +976,34 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     : "bg-white border-gray-200 text-gray-800"
                 }`}
               >
-                {viewMode === "course-detail" ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={handleSelectFileUpload}
-                      disabled={isUploading}
-                      className={`w-full px-4 py-2 text-sm flex items-center gap-2 transition-colors ${
-                        isUploading
-                          ? "cursor-not-allowed opacity-60"
-                          : "cursor-pointer"
-                      } ${
-                        isDarkMode
-                          ? "hover:bg-zinc-800"
-                          : "hover:bg-gray-100"
-                      }`}
-                    >
-                      <span>📎</span>
-                      <span>파일 업로드</span>
-                    </button>
-                    <div className={isDarkMode ? "h-px bg-zinc-800" : "h-px bg-gray-200"} />
-                    <button
-                      type="button"
-                      onClick={handleSelectLectureCreation}
-                      className={`w-full px-4 py-2 text-sm flex items-center gap-2 transition-colors cursor-pointer ${
-                        isDarkMode ? "hover:bg-zinc-800" : "hover:bg-gray-100"
-                      }`}
-                    >
-                      <span>🎓</span>
-                      <span>강의 생성</span>
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleSelectCourseCreation}
-                    className={`w-full px-4 py-2 text-sm flex items-center gap-2 transition-colors cursor-pointer ${
-                      isDarkMode ? "hover:bg-zinc-800" : "hover:bg-gray-100"
-                    }`}
-                  >
-                    <span>📘</span>
-                    <span>강의실 생성</span>
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={handleSelectFileUpload}
+                  disabled={isUploading}
+                  className={`w-full px-4 py-2 text-sm flex items-center gap-2 transition-colors ${
+                    isUploading
+                      ? "cursor-not-allowed opacity-60"
+                      : "cursor-pointer"
+                  } ${
+                    isDarkMode
+                      ? "hover:bg-zinc-800"
+                      : "hover:bg-gray-100"
+                  }`}
+                >
+                  <span>📎</span>
+                  <span>파일 업로드</span>
+                </button>
+                <div className={isDarkMode ? "h-px bg-zinc-800" : "h-px bg-gray-200"} />
+                <button
+                  type="button"
+                  onClick={handleSelectLectureCreation}
+                  className={`w-full px-4 py-2 text-sm flex items-center gap-2 transition-colors cursor-pointer ${
+                    isDarkMode ? "hover:bg-zinc-800" : "hover:bg-gray-100"
+                  }`}
+                >
+                  <span>🎓</span>
+                  <span>강의 생성</span>
+                </button>
               </div>
             )}
           </div>
@@ -1223,114 +1063,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         </div>
       </div>
     </aside>
-      {isCourseModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-          role="dialog"
-          aria-modal="true"
-        >
-          <div
-            className={`w-full max-w-md rounded-xl shadow-xl border ${
-              isDarkMode
-                ? "bg-zinc-900 border-zinc-700 text-gray-100"
-                : "bg-white border-gray-200 text-gray-900"
-            }`}
-          >
-            <div className={`flex items-center justify-between px-5 py-4 border-b ${
-              isDarkMode ? "border-zinc-700/50" : "border-gray-200"
-            }`}>
-              <h2 className={`text-lg font-semibold ${
-                isDarkMode ? "text-gray-100" : "text-gray-900"
-              }`}>강의실 생성</h2>
-              <button
-                type="button"
-                onClick={closeCourseModal}
-                className={`p-1.5 rounded cursor-pointer ${
-                  isDarkMode
-                    ? "hover:bg-zinc-800 text-gray-300"
-                    : "hover:bg-gray-100 text-gray-500"
-                }`}
-                aria-label="닫기"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="px-5 py-4 space-y-4">
-              <div>
-                <label
-                  className={`block text-sm font-medium mb-1 ${
-                    isDarkMode ? "text-gray-200" : "text-gray-700"
-                  }`}
-                >
-                  강의실 제목 *
-                </label>
-                <input
-                  type="text"
-                  value={courseModalTitle}
-                  onChange={(e) => setCourseModalTitle(e.target.value)}
-                  placeholder="강의실 제목을 입력하세요"
-                  className={`w-full px-3 py-2 text-sm rounded border ${
-                    isDarkMode
-                      ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
-                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-zinc-500' : 'focus:ring-emerald-500'}`}
-                />
-              </div>
-              <div>
-                <label className={`block text-sm font-medium mb-1 ${
-                  isDarkMode ? "text-gray-200" : "text-gray-700"
-                }`}>
-                  강의실 설명 (선택)
-                </label>
-                <textarea
-                  value={courseModalDescription}
-                  onChange={(e) => setCourseModalDescription(e.target.value)}
-                  placeholder="강의실 설명을 입력하세요"
-                  rows={3}
-                  className={`w-full px-3 py-2 text-sm rounded border resize-none ${
-                    isDarkMode
-                      ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
-                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 ${isDarkMode ? 'focus:ring-zinc-500' : 'focus:ring-emerald-500'}`}
-                />
-              </div>
-            </div>
-
-            <div className={`px-5 py-4 border-t flex justify-end gap-2 ${
-              isDarkMode ? "border-zinc-700/50" : "border-gray-200"
-            }`}>
-              <button
-                type="button"
-                onClick={closeCourseModal}
-                className={`px-4 py-2 text-sm rounded cursor-pointer ${
-                  isDarkMode
-                    ? "bg-zinc-800 hover:bg-zinc-700 text-gray-200"
-                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                }`}
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={handleCourseModalSubmit}
-                disabled={isCreatingCourse || !courseModalTitle.trim()}
-                className={`px-4 py-2 text-sm rounded font-medium transition-colors ${
-                  isCreatingCourse || !courseModalTitle.trim()
-                    ? isDarkMode
-                      ? "bg-zinc-800/40 text-gray-400 cursor-not-allowed"
-                      : "bg-emerald-200 text-emerald-500 cursor-not-allowed"
-                    : isDarkMode
-                    ? "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
-                    : "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
-                }`}
-              >
-                {isCreatingCourse ? "생성 중..." : "생성하기"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {isLectureModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"

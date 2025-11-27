@@ -201,19 +201,19 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
   };
 
   // 다크/라이트 테마별 클래스 정의
-  const sidebarBgClass = isDarkMode ? "bg-black" : "bg-gray-50";
-  const sidebarTextClass = isDarkMode ? "text-white" : "text-gray-900";
-  const buttonDefaultTextClass = isDarkMode ? "text-gray-300" : "text-gray-700";
+  const sidebarBgClass = isDarkMode ? "bg-zinc-900" : "bg-gray-50";
+  const sidebarTextClass = isDarkMode ? "text-white" : "text-[#0D0D0D]";
+  const buttonDefaultTextClass = isDarkMode ? "text-white" : "text-[#0D0D0D]";
   const buttonDefaultHoverClass = isDarkMode
     ? "hover:bg-gray-800"
     : "hover:bg-gray-200";
   const selectedButtonClass = "bg-emerald-600 text-white";
-  const textSecondaryClass = isDarkMode ? "text-gray-300" : "text-gray-700";
-  const textMutedClass = isDarkMode ? "text-gray-400" : "text-gray-500";
+  const textSecondaryClass = isDarkMode ? "text-white" : "text-gray-700";
+  const textMutedClass = isDarkMode ? "text-white" : "text-gray-500";
   const dividerClass = isDarkMode ? "border-white/10" : "border-gray-200";
   const profileAvatarBgClass = isDarkMode ? "bg-white/10" : "bg-gray-200";
   const profileAvatarTextClass = isDarkMode ? "text-white" : "text-gray-700";
-  const dropdownBgClass = isDarkMode ? "bg-black" : "bg-white";
+  const dropdownBgClass = isDarkMode ? "bg-zinc-900" : "bg-white";
   const dropdownBorderClass = isDarkMode
     ? "border-white/10"
     : "border-gray-200";
@@ -359,9 +359,15 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
   // 메뉴 버튼 컴포넌트
   // 프로필 드롭다운 가로 길이 계산
   const dropdownWidth = useMemo(() => {
+    // 프로필 버튼의 실제 너비를 사용 (mx-[6px] 좌우 각 6px씩 마진)
+    const { buttonWidth } = dropdownPosition;
+    if (buttonWidth && buttonWidth > 0) {
+      return buttonWidth;
+    }
+    // 폴백: 사이드바 너비에서 좌우 마진(각 6px) 제외
     const targetSidebarWidth = isCollapsed ? expandedWidth : width;
-    return Math.max(targetSidebarWidth - 16, 0);
-  }, [expandedWidth, isCollapsed, width]);
+    return Math.max(targetSidebarWidth - 12, 0);
+  }, [expandedWidth, isCollapsed, width, dropdownPosition]);
 
   // 드롭다운 좌측 위치 계산
   const dropdownLeft = useMemo(() => {
@@ -394,7 +400,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
       <button
         type="button"
         onClick={() => handleMenuSelect(menu)}
-        className={`mx-[8px] ${commonStyles.buttonBase} relative group/button min-h-[36px] ${
+        className={`mx-[6px] ${commonStyles.buttonBase} relative group/button min-h-[36px] ${
           isSelected
             ? selectedButtonClass
             : `${buttonDefaultTextClass} ${buttonDefaultHoverClass}`
@@ -417,31 +423,34 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     lecture,
   }) => {
     const isSelected = selectedLectureId === lecture.lectureId;
+    const hasActions = isTeacher && !isCollapsed && (onEditLecture || onDeleteLecture);
 
     return (
       <div key={lecture.lectureId} className="relative group/button mx-[6px]">
         <button
           type="button"
           onClick={() => onSelectLecture?.(lecture.lectureId)}
-          className={`${commonStyles.buttonBase} w-full min-h-[36px] justify-start px-3 py-2 ${
+          className={`${commonStyles.buttonBase} w-full min-h-[36px] justify-between px-3 py-2 ${
             isSelected ? selectedButtonClass : `${buttonDefaultTextClass} ${buttonDefaultHoverClass}`
           }`}
         >
-          <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
-            <LectureIcon className="w-[20px] h-[20px]" />
+          <div className="flex items-center min-w-0 flex-1">
+            <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
+              <LectureIcon className="w-[20px] h-[20px]" />
+            </div>
+            <span className="ml-3 text-sm font-semibold truncate">{lecture.title}</span>
           </div>
-          <div className={`ml-3 min-w-0 flex items-center gap-2`}>
-            <span className="text-sm font-semibold truncate">{lecture.title}</span>
+          <div className="flex items-center gap-2 shrink-0">
             <span
               className={`text-xs font-semibold whitespace-nowrap transition-opacity duration-200 ${
                 isCollapsed ? "opacity-0" : "opacity-100"
-              } ${isSelected ? "text-white/80" : textMutedClass}`}
+              } ${isSelected ? "text-white" : textMutedClass} ${hasActions ? (onEditLecture && onDeleteLecture ? "mr-14" : "mr-10") : ""}`}
             >
               {lecture.weekNumber}주차
             </span>
           </div>
         </button>
-        {isTeacher && !isCollapsed && (onEditLecture || onDeleteLecture) && (
+        {hasActions && (
           <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-0.5 opacity-0 group-hover/button:opacity-100 transition-opacity">
             {onEditLecture && (
               <button
@@ -527,7 +536,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
       <div className="h-full flex flex-col">
         {/* 상단 헤더 */}
         <div id="sidebar-header">
-          <div className={isCollapsed ? "touch:px-1.5 px-0" : "touch:px-1.5 px-2"}>
+          <div className={isCollapsed ? "touch:px-1.5 px-0" : "touch:px-1.5"}>
             <div className="h-[50px] flex items-center justify-between" style={{ overflow: "visible" }}>
               {isCollapsed ? (
                 <div 
@@ -571,21 +580,25 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     aria-label="홈"
                     type="button"
                     onClick={handleHomeClick}
-                    className={`flex items-center justify-center h-9 w-9 rounded-lg transition-colors cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass}`}
+                    className={`ml-[6px] ${commonStyles.buttonBase} justify-start px-3 py-2 min-w-[44px] min-h-[36px] rounded-lg cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass}`}
                   >
-                    <MenuItemIcon
-                      type="dashboard"
-                      className="w-[20px] h-[20px] flex-shrink-0"
-                    />
+                    <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
+                      <MenuItemIcon
+                        type="dashboard"
+                        className="w-[20px] h-[20px]"
+                      />
+                    </div>
                     <span className="sr-only">홈</span>
                   </button>
                   <button
                     aria-label="사이드바 접기"
                     type="button"
                     onClick={onToggleCollapse}
-                    className={`flex items-center justify-center h-9 w-9 rounded-lg relative group/button cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass}`}
+                    className={`mr-[6px] ${commonStyles.buttonBase} justify-start px-3 py-2 min-w-[44px] min-h-[36px] rounded-lg relative group/button cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass}`}
                   >
-                    <SidebarToggleIcon className="w-[20px] h-[20px] flex-shrink-0" />
+                    <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
+                      <SidebarToggleIcon className="w-[20px] h-[20px]" />
+                    </div>
                   </button>
                 </>
               )}
@@ -655,15 +668,15 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 >
                   <span
                     className={`text-sm font-semibold truncate ${
-                      isDarkMode ? "text-emerald-200" : "text-emerald-600"
+                      isDarkMode ? "text-white" : "text-[#0D0D0D]"
                     }`}
                   >
                     {user?.fullName ?? "Guest"}
                   </span>
                   {roleLabel && (
                     <span
-                      className={`text-xs font-medium flex-shrink-0 ${
-                        isDarkMode ? "text-gray-300" : "text-gray-600"
+                      className={`text-sm font-medium flex-shrink-0 ${
+                        isDarkMode ? "text-white" : "text-gray-600"
                       }`}
                     >
                       {roleLabel}
