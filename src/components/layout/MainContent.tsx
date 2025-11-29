@@ -21,7 +21,6 @@ interface MainContentProps {
   viewMode: ViewMode;
   courses: Course[];
   isCoursesLoading: boolean;
-  coursesError: string | null;
   onSelectCourse: (courseId: number) => void;
   onBackToCourses: () => void;
   courseDetail: CourseDetail | null;
@@ -41,7 +40,6 @@ const MainContent: React.FC<MainContentProps> = ({
   viewMode,
   courses,
   isCoursesLoading,
-  coursesError,
   onSelectCourse,
   onBackToCourses,
   courseDetail,
@@ -207,15 +205,22 @@ const MainContent: React.FC<MainContentProps> = ({
       <div className="space-y-6">
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 gap-4">
           {courses.map((course) => (
-            <button
+            <div
               key={course.courseId}
-              type="button"
+              role="button"
+              tabIndex={0}
               onClick={() => handleCourseSelect(course.courseId)}
-              className={`text-left p-5 rounded-xl border shadow-sm transition-all flex flex-col h-32 cursor-pointer ${
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  handleCourseSelect(course.courseId);
+                }
+              }}
+              className={`text-left p-5 rounded-xl border shadow-sm transition-all flex flex-col h-32 cursor-pointer focus:outline-none ${
                 isDarkMode
                   ? "bg-zinc-900 border-zinc-700 hover:border-zinc-500 hover:shadow-zinc-500/30"
                   : "bg-white border-gray-200 hover:border-emerald-500/40 hover:shadow-emerald-500/20"
-              } focus:outline-none focus:ring-2 ${
+              } focus:ring-2 ${
                 isDarkMode ? "focus:ring-zinc-500/60 focus:ring-offset-zinc-900" : "focus:ring-emerald-500/60 focus:ring-offset-white"
               }`}
             >
@@ -299,7 +304,7 @@ const MainContent: React.FC<MainContentProps> = ({
                   </p>
                 )}
               </div>
-            </button>
+            </div>
           ))}
         </div>
       </div>
@@ -382,17 +387,17 @@ const MainContent: React.FC<MainContentProps> = ({
     const isOTSelected = selectedLecture?.weekNumber === 0;
 
     return (
-      <div className="flex flex-col gap-4 h-full">
-        {/* OT(0주차)를 선택했을 때만 담당과 강의 설명 표시 */}
+      <div className="flex flex-col gap-1.5 h-full">
+        {/* OT(0주차)를 선택했을 때만 강의실 이름과 과목 설명 표시 */}
         {isOTSelected && (
           <div
-            className={`p-4 rounded-xl border ${
-              isDarkMode ? "bg-gray-800 border-gray-700" : "bg-white border-gray-200"
+            className={`px-3 py-2 rounded-xl border ${
+              isDarkMode ? "bg-zinc-800 border-zinc-700" : "bg-white border-gray-200"
             }`}
           >
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-2">
               <div className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                담당: {courseDetail.teacherName}
+                강의실 이름: {courseDetail.title}
               </div>
               {courseDetail.description && (
                 <p className={`text-sm ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>
@@ -452,14 +457,19 @@ const MainContent: React.FC<MainContentProps> = ({
                 {fileName?.toLowerCase().endsWith(".pdf") ? (
                   <iframe
                     src={fileUrl}
-                    className="w-full h-[60vh] border-0 rounded-lg shadow-sm"
+                    className={`w-full h-[60vh] rounded-xl border transition-colors ${
+                      isDarkMode
+                        ? "border-gray-800 bg-gray-900 text-gray-200"
+                        : "border-gray-200 bg-white text-gray-700"
+                    }`}
+                    style={{ borderWidth: 1 }}
                     title={fileName}
                   />
                 ) : (
                   <div
                     className={`h-full flex items-center justify-center rounded-xl border transition-colors ${
                       isDarkMode
-                        ? "border-gray-700 bg-gray-700 text-gray-200"
+                        ? "border-gray-800 bg-gray-900 text-gray-200"
                         : "border-gray-200 bg-white text-gray-700"
                     }`}
                   >
@@ -470,7 +480,7 @@ const MainContent: React.FC<MainContentProps> = ({
                         download={fileName}
                         className={`inline-block px-4 py-2 rounded-lg ${
                           isDarkMode
-                            ? "bg-gray-700 hover:bg-gray-600 text-white"
+                            ? "bg-gray-800 hover:bg-gray-700 text-white"
                             : "bg-emerald-600 hover:bg-emerald-700 text-white"
                         }`}
                       >
@@ -484,13 +494,13 @@ const MainContent: React.FC<MainContentProps> = ({
           </div>
         ) : (
           <div
-            className={`flex-1 flex items-start justify-center rounded-xl border ${
+            className={`flex-1 flex items-center justify-center rounded-xl border ${
               isDarkMode
-                ? "border-gray-800 bg-gray-900 text-gray-400"
+                ? "border-zinc-700 bg-zinc-800 text-gray-400"
                 : "border-gray-200 bg-white text-gray-500"
             }`}
           >
-            <div className="w-full max-w-3xl text-center space-y-2 py-10">
+            <div className="w-full max-w-3xl text-center space-y-2">
               <p className="text-lg font-medium">좌측 사이드바에서 강의를 선택해주세요.</p>
               <p className="text-sm">선택한 강의의 자료와 업로드 파일이 이 영역에 표시됩니다.</p>
             </div>
@@ -553,7 +563,7 @@ const MainContent: React.FC<MainContentProps> = ({
 
     return (
       <div
-        className={`h-[50px] px-4 flex items-center justify-between ${
+        className={`h-[50px] px-1.5 flex items-center justify-between ${
           isDarkMode ? "bg-zinc-800" : "bg-white"
         }`}
       >
@@ -593,7 +603,7 @@ const MainContent: React.FC<MainContentProps> = ({
         {renderCourseListHeader()}
         {renderCourseDetailHeader()}
         <div
-          className={`flex-1 min-h-0 pt-2 px-4 overflow-y-auto scrollbar-hide transition-colors ${
+          className={`flex-1 min-h-0 pt-2 p-1.5 overflow-y-auto scrollbar-hide transition-colors ${
             isDarkMode ? "bg-zinc-800" : "bg-white"
           }`}
         >
