@@ -29,14 +29,16 @@ const AppLayout: React.FC = () => {
   const { isDarkMode } = useTheme();
   const navigate = useNavigate();
   const { courseId: courseIdParam } = useParams<{ courseId?: string }>();
-  const parsedCourseId = courseIdParam ? Number(courseIdParam) : null;
-  const selectedCourseId =
-    parsedCourseId !== null && !Number.isNaN(parsedCourseId) ? parsedCourseId : null;
+  const selectedCourseId = courseIdParam
+    ? (() => {
+        const parsed = Number(courseIdParam);
+        return Number.isFinite(parsed) ? parsed : null;
+      })()
+    : null;
 
   const {
     courses,
     isLoading: isCoursesLoading,
-    error: coursesError,
     fetchCourses,
     getCourseDetail,
     updateCourse,
@@ -126,7 +128,7 @@ const AppLayout: React.FC = () => {
     navigate("/");
   };
 
-  const handleCourseCreated = (course: CourseDetail) => {
+  const handleCourseCreated = (_course: CourseDetail) => {
     fetchCourses();
     resetLectureOutputs();
     setCurrentLectureId(null);
@@ -311,13 +313,7 @@ const AppLayout: React.FC = () => {
 
       window.alert("강의실이 삭제되었습니다.");
     },
-    [
-      currentCourseId,
-      deleteCourse,
-      navigate,
-      resetLectureOutputs,
-      setCourseDetailError,
-    ]
+    [currentCourseId, deleteCourse, navigate, resetLectureOutputs]
   );
 
   const handleRightMouseDown = useCallback((e: React.MouseEvent) => {
@@ -391,7 +387,6 @@ const AppLayout: React.FC = () => {
     setIsLeftSidebarCollapsed((prev) => !prev);
   };
 
-
   return (
     <div
       className={`h-screen w-full flex overflow-hidden transition-colors ${
@@ -408,6 +403,7 @@ const AppLayout: React.FC = () => {
         onSelectLecture={handleLectureSelect}
         onDeleteLecture={handleLectureDelete}
         onEditLecture={handleLectureEdit}
+        onLectureCreated={handleLectureCreated}
         isCourseDetailLoading={isCourseDetailLoading}
         selectedMenu={selectedMenu}
         onMenuSelect={setSelectedMenu}
@@ -420,7 +416,6 @@ const AppLayout: React.FC = () => {
           viewMode={viewMode}
           courses={courses}
           isCoursesLoading={isCoursesLoading}
-          coursesError={coursesError}
           onSelectCourse={handleSelectCourse}
           onBackToCourses={handleBackToCourses}
           courseDetail={courseDetail}
@@ -465,12 +460,10 @@ const AppLayout: React.FC = () => {
           setLectureFileName(fileName);
         }}
         width={rightSidebarWidth}
-        courseId={currentCourseId ?? undefined}
+        courseId={selectedCourseId ?? currentCourseId ?? undefined}
         lectureId={currentLectureId ?? undefined}
         viewMode={viewMode}
         courseDetail={courseDetail}
-        onCourseCreated={handleCourseCreated}
-        onLectureCreated={handleLectureCreated}
       />
     </div>
   );
