@@ -9,7 +9,7 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useTheme } from "../../contexts/ThemeContext";
-import type { CourseDetail } from "../../services/api";
+import { lectureApi, type CourseDetail, type LectureResponseDto } from "../../services/api";
 
 // 전체 레이아웃에서 사용하는 뷰 모드 타입
 type ViewMode = "course-list" | "course-detail";
@@ -35,6 +35,7 @@ interface LeftSidebarProps {
   onSelectLecture?: (lectureId: number) => void;
   onDeleteLecture?: (lectureId: number) => void;
   onEditLecture?: (lecture: CourseLecture) => void;
+  onLectureCreated?: (lecture: LectureResponseDto) => void;
   isCourseDetailLoading?: boolean;
   selectedMenu?: MenuItem;
   onMenuSelect?: (menu: MenuItem) => void;
@@ -155,6 +156,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
   onSelectLecture,
   onDeleteLecture,
   onEditLecture,
+  onLectureCreated,
   isCourseDetailLoading = false,
   selectedMenu: externalSelectedMenu,
   onMenuSelect,
@@ -189,6 +191,11 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     sidebarLeft: 0,
     sidebarWidth: 0,
   });
+  const [isLectureModalOpen, setIsLectureModalOpen] = useState(false);
+  const [lectureModalTitle, setLectureModalTitle] = useState("");
+  const [lectureModalWeek, setLectureModalWeek] = useState("");
+  const [lectureModalDescription, setLectureModalDescription] = useState("");
+  const [isCreatingLecture, setIsCreatingLecture] = useState(false);
 
   const selectedMenu = externalSelectedMenu ?? internalSelectedMenu;
 
@@ -197,7 +204,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     transition: "transition-all duration-300",
     rounded: "rounded-lg",
     buttonBase:
-      "flex items-center rounded-lg text-sm transition-all duration-300 cursor-pointer",
+      "flex items-center rounded-lg text-sm transition-all duration-300 cursor-pointer min-h-[30px]",
   };
 
   // 다크/라이트 테마별 클래스 정의
@@ -220,6 +227,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
   const tooltipBgClass = isDarkMode ? "bg-gray-900" : "bg-white";
   const tooltipTextClass = isDarkMode ? "text-white" : "text-gray-900";
   const tooltipBorderClass = isDarkMode ? "" : "border border-gray-200";
+  const inputRadiusClass = "rounded-lg";
 
   // 메뉴 클릭 시 외부/내부 상태를 동기화
   const handleMenuSelect = useCallback(
@@ -400,7 +408,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
       <button
         type="button"
         onClick={() => handleMenuSelect(menu)}
-        className={`mx-[6px] ${commonStyles.buttonBase} relative group/button min-h-[36px] ${
+        className={`mx-[6px] ${commonStyles.buttonBase} relative group/button ${
           isSelected
             ? selectedButtonClass
             : `${buttonDefaultTextClass} ${buttonDefaultHoverClass}`
@@ -430,7 +438,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
         <button
           type="button"
           onClick={() => onSelectLecture?.(lecture.lectureId)}
-          className={`${commonStyles.buttonBase} w-full min-h-[36px] justify-between px-3 py-2 ${
+          className={`${commonStyles.buttonBase} w-full justify-between px-3 py-2 ${
             isSelected ? selectedButtonClass : `${buttonDefaultTextClass} ${buttonDefaultHoverClass}`
           }`}
         >
@@ -515,6 +523,74 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     return sortedLectures.map((lecture) => <LectureButton key={lecture.lectureId} lecture={lecture} />);
   };
 
+  const openLectureModal = () => {
+    if (!isTeacher) {
+      return;
+    }
+    if (!courseDetail?.courseId) {
+      window.alert("강의실 정보를 찾을 수 없습니다.");
+      return;
+    }
+    setLectureModalTitle("");
+    setLectureModalWeek("");
+    setLectureModalDescription("");
+    setIsLectureModalOpen(true);
+  };
+
+  const closeLectureModal = () => {
+    if (isCreatingLecture) return;
+    setIsLectureModalOpen(false);
+  };
+
+  const handleCreateLecture = async () => {
+    if (!courseDetail?.courseId) {
+      window.alert("강의실 정보를 찾을 수 없습니다.");
+      return;
+    }
+
+    const trimmedTitle = lectureModalTitle.trim();
+    if (!trimmedTitle) {
+      window.alert("강의 제목을 입력해주세요.");
+      return;
+    }
+
+    const parsedWeek = Number(lectureModalWeek);
+    if (!Number.isFinite(parsedWeek) || parsedWeek < 0) {
+      window.alert("주차 번호는 0 이상의 숫자로 입력해주세요.");
+      return;
+    }
+
+    const duplicate = courseDetail.lectures?.find(
+      (lecture) => lecture.weekNumber === parsedWeek
+    );
+    if (duplicate) {
+      window.alert(`${parsedWeek}주차 강의가 이미 존재합니다.`);
+      return;
+    }
+
+    setIsCreatingLecture(true);
+    try {
+      const lecture = await lectureApi.createLecture(courseDetail.courseId, {
+        title: trimmedTitle,
+        weekNumber: parsedWeek,
+        description: lectureModalDescription.trim() || undefined,
+      });
+      window.alert("강의가 생성되었습니다.");
+      onLectureCreated?.(lecture);
+      onSelectLecture?.(lecture.lectureId);
+      setIsLectureModalOpen(false);
+      setLectureModalTitle("");
+      setLectureModalWeek("");
+      setLectureModalDescription("");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "강의 생성에 실패했습니다.";
+      window.alert(message);
+    } finally {
+      setIsCreatingLecture(false);
+    }
+  };
+
   // 메뉴 섹션 묶음 렌더링
   const renderMenuSection = (menus: MenuItem[]) => (
     <div className="flex flex-col gap-2">
@@ -565,7 +641,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                       aria-label="사이드바 펼치기"
                       type="button"
                       onClick={onToggleCollapse}
-                      className={`absolute inset-0 ${commonStyles.buttonBase} group/button justify-start px-3 py-2 min-w-[44px] min-h-[36px] rounded-lg cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass} ${isHomeHovered ? 'opacity-100 pointer-events-auto visible' : 'opacity-0 pointer-events-none invisible'}`}
+                      className={`absolute inset-0 ${commonStyles.buttonBase} group/button justify-start px-3 py-2 min-w-[44px] rounded-lg cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass} ${isHomeHovered ? 'opacity-100 pointer-events-auto visible' : 'opacity-0 pointer-events-none invisible'}`}
                       style={{ zIndex: isHomeHovered ? 10 : 0 }}
                     >
                       <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
@@ -580,7 +656,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     aria-label="홈"
                     type="button"
                     onClick={handleHomeClick}
-                    className={`ml-[6px] ${commonStyles.buttonBase} justify-start px-3 py-2 min-w-[44px] min-h-[36px] rounded-lg cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass}`}
+                    className={`ml-[6px] ${commonStyles.buttonBase} justify-start px-3 py-2 min-w-[44px] rounded-lg cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass}`}
                   >
                     <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
                       <MenuItemIcon
@@ -594,7 +670,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     aria-label="사이드바 접기"
                     type="button"
                     onClick={onToggleCollapse}
-                    className={`mr-[6px] ${commonStyles.buttonBase} justify-start px-3 py-2 min-w-[44px] min-h-[36px] rounded-lg relative group/button cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass}`}
+                    className={`mr-[6px] ${commonStyles.buttonBase} justify-start px-3 py-2 min-w-[44px] rounded-lg relative group/button cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass}`}
                   >
                     <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
                       <SidebarToggleIcon className="w-[20px] h-[20px]" />
@@ -607,10 +683,32 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
         </div>
 
         {/* 메인 컨텐츠 */}
-    <div id="sidebar-content" className="flex-1 overflow-y-auto scrollbar-hide">
+    <div id="sidebar-content" className="flex-1 overflow-y-auto sidebar-scroll">
           {viewMode === "course-detail" ? (
             <div className="flex flex-col gap-2 py-2">
               <div className="flex flex-col gap-1">{renderLectureList()}</div>
+              {isTeacher && (
+                <button
+                  type="button"
+                  onClick={openLectureModal}
+                  className={`mx-[6px] ${commonStyles.buttonBase} mt-1 ${
+                    isCollapsed ? "justify-center" : "justify-start"
+                  } px-3 py-2 border border-dashed text-sm font-medium leading-5 gap-2 transition-colors ${
+                    isDarkMode
+                      ? `border-zinc-700 text-white hover:border-emerald-500 hover:text-emerald-300 hover:bg-emerald-500/10`
+                      : `${buttonDefaultTextClass} border-gray-300 hover:border-emerald-500 hover:bg-emerald-500/10`
+                  }`}
+                >
+                  {isCollapsed ? (
+                    <span className="text-sm font-semibold">＋</span>
+                  ) : (
+                    <>
+                      <span className="text-sm font-semibold">＋</span>
+                      <span className="truncate">새 강의 만들기</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           ) : (
             <div className="flex flex-col gap-2 py-2">
@@ -850,8 +948,164 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
               )}
             </div>
           </div>
+          {isCollapsed && !isProfileDropdownOpen && (
+            <div className="pointer-events-none absolute left-full top-1/2 -translate-y-1/2 ml-2 opacity-0 group-hover/profile:opacity-100 transition-opacity">
+              <div
+                className={`${commonStyles.rounded} px-3 py-1.5 shadow-lg ${tooltipBgClass} ${tooltipTextClass} ${tooltipBorderClass}`}
+              >
+                <p className="text-xs font-semibold whitespace-nowrap">프로필</p>
+                <p className="text-[11px] opacity-70">로그아웃, 설정</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {isLectureModalOpen && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={closeLectureModal}
+        >
+          <div
+            className={`w-full max-w-md rounded-2xl shadow-xl border ${
+              isDarkMode
+                ? "bg-zinc-900 border-zinc-700 text-gray-100"
+                : "bg-white border-gray-200 text-gray-900"
+            }`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div
+              className={`flex items-center justify-between px-3 py-1.5 border-b ${
+                isDarkMode ? "border-zinc-700/50" : "border-gray-200"
+              }`}
+            >
+              <h2 className="text-lg font-semibold">새 강의 생성</h2>
+              <button
+                type="button"
+                onClick={closeLectureModal}
+                className={`p-1.5 ${inputRadiusClass} cursor-pointer ${
+                  isDarkMode
+                    ? "hover:bg-zinc-800 text-gray-300"
+                    : "hover:bg-gray-100 text-gray-500"
+                }`}
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-3 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-[3fr_auto] gap-3">
+                <div>
+                  <label
+                    className={`block text-sm font-medium mb-1 ${
+                      isDarkMode ? "text-gray-200" : "text-gray-700"
+                    }`}
+                  >
+                    강의 제목 *
+                  </label>
+                  <input
+                    type="text"
+                    value={lectureModalTitle}
+                    onChange={(event) => setLectureModalTitle(event.target.value)}
+                    placeholder="예: 1주차 - AI 개론"
+                    className={`w-full px-3 py-2 text-sm ${inputRadiusClass} border ${
+                      isDarkMode
+                        ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
+                        : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
+                    } focus:outline-none focus:ring-2 ${
+                      isDarkMode ? "focus:ring-emerald-500" : "focus:ring-emerald-500/70"
+                    }`}
+                  />
+                </div>
+                <div className="md:w-28">
+                  <label
+                    className={`block text-sm font-medium mb-1 ${
+                      isDarkMode ? "text-gray-200" : "text-gray-700"
+                    }`}
+                  >
+                    주차 번호 *
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={99}
+                    value={lectureModalWeek}
+                    onChange={(event) => {
+                      const value = event.target.value.slice(0, 2);
+                      setLectureModalWeek(value);
+                    }}
+                    placeholder="주차 번호"
+                    className={`w-full px-3 py-2 text-sm tracking-wide ${inputRadiusClass} border ${
+                      isDarkMode
+                        ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
+                        : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
+                    } focus:outline-none focus:ring-2 ${
+                      isDarkMode ? "focus:ring-emerald-500" : "focus:ring-emerald-500/70"
+                    }`}
+                  />
+                </div>
+              </div>
+              <div>
+                <label
+                  className={`block text-sm font-medium mb-1 ${
+                    isDarkMode ? "text-gray-200" : "text-gray-700"
+                  }`}
+                >
+                  설명 (선택)
+                </label>
+                <textarea
+                  value={lectureModalDescription}
+                  onChange={(event) => setLectureModalDescription(event.target.value)}
+                  placeholder="강의 한 줄 설명"
+                  rows={3}
+                  className={`w-full px-3 py-2 text-sm ${inputRadiusClass} border resize-none ${
+                    isDarkMode
+                      ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
+                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
+                  } focus:outline-none focus:ring-2 ${
+                    isDarkMode ? "focus:ring-emerald-500" : "focus:ring-emerald-500/70"
+                  }`}
+                />
+              </div>
+            </div>
+
+            <div
+              className={`px-4 py-3 border-t flex justify-end gap-2 ${
+                isDarkMode ? "border-zinc-700/50" : "border-gray-200"
+              }`}
+            >
+              <button
+                type="button"
+                onClick={closeLectureModal}
+                className={`px-4 py-2 text-sm ${inputRadiusClass} cursor-pointer ${
+                  isDarkMode
+                    ? "bg-zinc-800 hover:bg-zinc-700 text-gray-200"
+                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                }`}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateLecture}
+                disabled={isCreatingLecture}
+                className={`px-4 py-2 text-sm ${inputRadiusClass} font-semibold transition-colors ${
+                  isCreatingLecture
+                    ? isDarkMode
+                      ? "bg-emerald-600/50 text-white cursor-not-allowed"
+                      : "bg-emerald-300 text-white cursor-not-allowed"
+                    : "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                }`}
+              >
+                {isCreatingLecture ? "생성 중..." : "생성하기"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 };

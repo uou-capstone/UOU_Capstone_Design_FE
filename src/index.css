@@ -58,6 +58,32 @@ body {
   display: none;  /* Chrome, Safari and Opera */
 }
 
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(113, 113, 122, 0.45) transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(113, 113, 122, 0.35);
+  border-radius: 9999px;
+}
+
+.sidebar-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(16, 185, 129, 0.55);
+}
+
+.dark .sidebar-scroll::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.5);
+}
+
 /* From Uiverse.io by Galahhad */ 
 .theme-switch {
   --toggle-size: 14px;
