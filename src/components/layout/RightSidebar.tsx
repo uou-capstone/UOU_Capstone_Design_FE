@@ -927,7 +927,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             <button
               onClick={handleCancelStream}
               type="button"
-              className={`p-2.5 flex items-center justify-center rounded transition-all flex-shrink-0 cursor-pointer ${
+              className={`p-1.5 flex items-center justify-center rounded-lg transition-all flex-shrink-0 cursor-pointer ${
                 isDarkMode
                   ? "text-red-400 hover:text-red-300 hover:bg-zinc-700"
                   : "text-red-600 hover:text-red-700 hover:bg-zinc-200"
