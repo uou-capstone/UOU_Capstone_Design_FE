@@ -334,14 +334,9 @@ const LoginPage: React.FC = () => {
                   <ul className={`text-xs space-y-1 ${
                     isDarkMode ? 'text-gray-300' : 'text-gray-700'
                   }`}>
-                    <li>• 로그인 / 회원가입</li>
-                    <li>• 강의실 목록 조회</li>
-                    <li>• 초대 링크로 수강 신청</li>
-                    <li>• 강의 자료 보기 (PDF, 마크다운)</li>
-                    <li>• 프로필 사진 변경</li>
-                    <li>• 이메일/닉네임 수정</li>
-                    <li>• 비밀번호 변경</li>
-                    <li>• 다크 모드 전환</li>
+                    <li>• 강의실 조회 및 수강 신청</li>
+                    <li>• PDF 자료 보기</li>
+                    <li>• AI 학습 (질문-답변 형식)</li>
                   </ul>
                 </div>
 
@@ -355,58 +350,27 @@ const LoginPage: React.FC = () => {
                   <ul className={`text-xs space-y-1 ${
                     isDarkMode ? 'text-gray-300' : 'text-gray-700'
                   }`}>
-                    <li>• 로그인 / 회원가입</li>
-                    <li>• 강의실 목록 조회</li>
                     <li>• 강의실 생성/수정/삭제</li>
-                    <li>• 초대 링크 복사 및 공유</li>
-                    <li>• 강의 생성/삭제</li>
-                    <li>• 강의 자료 업로드 (PDF, PPT, DOC 등)</li>
+                    <li>• 강의 생성/수정/삭제</li>
+                    <li>• PDF 파일 업로드</li>
                     <li>• AI 강의 콘텐츠 생성</li>
-                    <li>• 강의 자료 마크다운 표시</li>
-                    <li>• 프로필 사진 변경</li>
-                    <li>• 이메일/닉네임 수정</li>
-                    <li>• 비밀번호 변경</li>
-                    <li>• 다크 모드 전환</li>
+                    <li>• 초대 링크 공유</li>
                   </ul>
                 </div>
 
-                {/* 공통 UI/UX */}
+                {/* 공통 기능 */}
                 <div>
                   <h3 className={`text-sm font-semibold mb-2 ${
                     isDarkMode ? 'text-purple-400' : 'text-purple-600'
                   }`}>
-                    🎨 공통 기능
+                    🎨 공통
                   </h3>
                   <ul className={`text-xs space-y-1 ${
                     isDarkMode ? 'text-gray-300' : 'text-gray-700'
                   }`}>
-                    <li>• 반응형 3단 레이아웃</li>
-                    <li>• 사이드바 리사이저 (드래그/더블클릭)</li>
-                    <li>• 사이드바 자동 접기/펼치기 (화면 크기 반응형)</li>
-                    <li>• 다크 모드 지원</li>
-                    <li>• 서버 상태 실시간 확인</li>
-                    <li>• 소셜 로그인 (카카오, 구글) UI</li>
-                    <li>• 로딩 애니메이션 (공 튀기기)</li>
-                  </ul>
-                </div>
-
-                {/* 미구현 기능 */}
-                <div>
-                  <h3 className={`text-sm font-semibold mb-2 ${
-                    isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                  }`}>
-                    🚧 미구현
-                  </h3>
-                  <ul className={`text-xs space-y-1 ${
-                    isDarkMode ? 'text-gray-500' : 'text-gray-500'
-                  }`}>
-                    <li>• 대시보드</li>
-                    <li>• 과제</li>
-                    <li>• 비밀번호 찾기</li>
-                    <li>• 시험생성 / 시험</li>
-                    <li>• 보고서</li>
-                    <li>• 학생관리</li>
-                    <li>• 소셜 로그인 백엔드 연동</li>
+                    <li>• 반응형 레이아웃</li>
+                    <li>• 다크 모드</li>
+                    <li>• 프로필 관리</li>
                   </ul>
                 </div>
               </div>
