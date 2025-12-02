@@ -438,7 +438,7 @@ const AppLayout: React.FC = () => {
         onMouseDown={handleRightMouseDown}
         onDoubleClick={handleRightDoubleClick}
         className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
-          isDarkMode ? "bg-[#1a1a1a] border-l border-white/10 hover:bg-gray-800" : "bg-white border-l border-gray-200 hover:bg-gray-200"
+          isDarkMode ? "bg-[#1a1a1a] border-l border-white/10 hover:bg-zinc-700" : "bg-white border-l border-gray-200 hover:bg-zinc-200"
         } ${isResizingRight ? (isDarkMode ? "bg-gray-800" : "bg-gray-200") : ""}`}
         style={{
           width: "1px",

@@ -79,16 +79,24 @@ const SettingsPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 pb-8">
-      <header>
-        <h1 className={`text-xl font-bold ${isDarkMode ? "text-white" : "text-gray-900"}`}>설정</h1>
-      </header>
+    <div className="flex flex-col gap-1.5 h-full">
+      <div
+        className={`p-6 rounded-xl shadow-sm border transition-colors ${
+          isDarkMode
+            ? "bg-gray-700 border-gray-700 text-gray-100"
+            : "bg-white border-gray-200 text-gray-900"
+        }`}
+      >
+        <header className="mb-6">
+          <h1 className={`text-xl font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>설정</h1>
+        </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* 프로필 정보 */}
         <section
-          className={`p-5 rounded-xl border shadow-sm ${
-            isDarkMode ? "bg-zinc-900 border-zinc-700" : "bg-white border-gray-200"
+          className={`p-6 rounded-xl border shadow-sm ${
+            isDarkMode ? "bg-gray-700 border-gray-700" : "bg-white border-gray-200"
           }`}
         >
           <h2 className={`text-base font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
@@ -173,8 +181,8 @@ const SettingsPage: React.FC = () => {
 
         {/* 비밀번호 변경 */}
         <section
-          className={`p-5 rounded-xl border shadow-sm ${
-            isDarkMode ? "bg-zinc-900 border-zinc-700" : "bg-white border-gray-200"
+          className={`p-6 rounded-xl border shadow-sm ${
+            isDarkMode ? "bg-gray-700 border-gray-700" : "bg-white border-gray-200"
           }`}
         >
           <h2 className={`text-base font-semibold mb-3 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
@@ -230,28 +238,26 @@ const SettingsPage: React.FC = () => {
             </button>
           </div>
         </section>
-      </div>
+          </div>
 
-      {/* 저장 버튼 */}
-      <div
-        className={`flex justify-end gap-4 p-4 rounded-xl border shadow-sm ${
-          isDarkMode ? "bg-zinc-900 border-zinc-700" : "bg-white border-gray-200"
-        }`}
-      >
-        <button
-          type="button"
-          onClick={handleSaveProfile}
-          disabled={isSaving}
-          className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-            isSaving
-              ? isDarkMode
-                ? "bg-zinc-800 text-gray-500 cursor-not-allowed"
-                : "bg-gray-200 text-gray-400 cursor-not-allowed"
-              : "bg-emerald-600 hover:bg-emerald-700 text-white"
-          }`}
-        >
-          {isSaving ? "저장 중..." : "저장"}
-        </button>
+          {/* 저장 버튼 */}
+          <div className="flex justify-end gap-4 pt-4">
+            <button
+              type="button"
+              onClick={handleSaveProfile}
+              disabled={isSaving}
+              className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+                isSaving
+                  ? isDarkMode
+                    ? "bg-zinc-800 text-gray-500 cursor-not-allowed"
+                    : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                  : "bg-emerald-600 hover:bg-emerald-700 text-white"
+              }`}
+            >
+              {isSaving ? "저장 중..." : "저장"}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

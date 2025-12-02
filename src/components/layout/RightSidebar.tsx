@@ -220,23 +220,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     };
   }, [isStreaming, currentLectureId, cancelStreaming]);
 
-  useEffect(() => {
-    if (!isActionMenuOpen) return;
-
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        actionMenuContainerRef.current &&
-        !actionMenuContainerRef.current.contains(event.target as Node)
-      ) {
-        setIsActionMenuOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
-  }, [isActionMenuOpen]);
 
   // 스트리밍 중지 함수
   const handleCancelStream = async () => {
@@ -383,27 +366,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      handleFileUpload(file);
-    }
-    // 같은 파일을 다시 선택할 수 있도록 리셋
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const handleToggleActionMenu = () => {
-    setIsActionMenuOpen((prev) => !prev);
-  };
-
-  const handleSelectFileUpload = () => {
-    setIsActionMenuOpen(false);
-    if (!isUploading) {
-      fileInputRef.current?.click();
-    }
-  };
 
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
@@ -442,6 +404,46 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   }, [handleFileUpload]);
 
   // generate-content 제거로 해당 핸들러 삭제
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+    // 같은 파일을 다시 선택할 수 있도록 리셋
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const handleToggleActionMenu = () => {
+    setIsActionMenuOpen((prev) => !prev);
+  };
+
+  const handleSelectFileUpload = () => {
+    setIsActionMenuOpen(false);
+    if (!isUploading) {
+      fileInputRef.current?.click();
+    }
+  };
+
+  useEffect(() => {
+    if (!isActionMenuOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        actionMenuContainerRef.current &&
+        !actionMenuContainerRef.current.contains(event.target as Node)
+      ) {
+        setIsActionMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isActionMenuOpen]);
 
   // 스트리밍: 다음 세그먼트 가져오기
   const fetchNextSegment = async (loadingMessageId?: number) => {
@@ -726,7 +728,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           >
             <p className="font-medium">메시지가 없습니다.</p>
             <span className="text-xs">
-              파일을 드래그하거나 + 버튼을 클릭하세요
+              파일을 드래그 앤 드롭하세요
             </span>
           </div>
         ) : (
@@ -818,74 +820,78 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       }`}
       style={{ padding: '6px 6px', height: '55px' }}>
         {/* 통합된 입력 컨테이너 */}
-        <div className={`flex items-center gap-2 rounded-lg border h-full ${
+        <div className={`flex items-center rounded-lg border h-full ${
           isDarkMode
             ? "bg-zinc-800 border-zinc-700"
             : "bg-white border-gray-300"
         }`}>
-          {/* 파일 업로드 버튼 (+ 버튼) */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept={allowedFileTypes.join(',')}
-            onChange={handleFileSelect}
-            className="hidden"
-            id="file-upload"
-            disabled={isUploading}
-          />
-          <div
-            ref={actionMenuContainerRef}
-            className="relative flex-shrink-0"
-          >
-            <button
-              onClick={handleToggleActionMenu}
-              type="button"
-              className={`p-2.5 flex items-center justify-center rounded transition-all cursor-pointer ${
-                isDarkMode
-                  ? "text-gray-400 hover:text-gray-900 hover:bg-gray-100"
-                  : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-              } ${isActionMenuOpen ? (isDarkMode ? "bg-zinc-800 text-white" : "bg-gray-200 text-gray-800") : ""}`}
-              title="작업 선택"
-            >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-            </button>
-
-            {isActionMenuOpen && viewMode === "course-detail" && (
+          {/* 파일 업로드 버튼 (+ 버튼) - 강의 상세 페이지에서만 표시 */}
+          {viewMode === "course-detail" && (
+            <>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={allowedFileTypes.join(',')}
+                onChange={handleFileSelect}
+                className="hidden"
+                id="file-upload"
+                disabled={isUploading}
+              />
               <div
-                className={`absolute bottom-full left-0 mb-2 w-48 rounded-xl shadow-lg overflow-hidden border ${
-                  isDarkMode
-                    ? "bg-zinc-900 border-zinc-800 text-gray-200"
-                    : "bg-white border-gray-200 text-gray-800"
-                }`}
+                ref={actionMenuContainerRef}
+                className="relative flex-shrink-0 ml-1.5"
               >
                 <button
+                  onClick={handleToggleActionMenu}
                   type="button"
-                  onClick={handleSelectFileUpload}
-                  disabled={isUploading}
-                  className={`w-full px-4 py-2 text-sm flex items-center gap-2 transition-colors ${
-                    isUploading
-                      ? "cursor-not-allowed opacity-60"
-                      : "cursor-pointer"
-                  } hover:bg-gray-100`}
+                  className={`p-1.5 flex items-center justify-center rounded-lg transition-all cursor-pointer ${
+                    isDarkMode
+                      ? "text-gray-400 hover:text-gray-300 hover:bg-zinc-700"
+                      : "text-gray-500 hover:text-zinc-700 hover:bg-zinc-200"
+                  } ${isActionMenuOpen ? (isDarkMode ? "bg-zinc-800 text-white" : "bg-gray-200 text-gray-800") : ""}`}
+                  title="작업 선택"
                 >
-                  <span>📎</span>
-                  <span>파일 업로드</span>
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
                 </button>
+
+                {isActionMenuOpen && (
+                  <div
+                    className={`absolute bottom-full left-0 mb-2 w-48 rounded-xl shadow-lg overflow-hidden border ${
+                      isDarkMode
+                        ? "bg-zinc-900 border-zinc-800 text-gray-200"
+                        : "bg-white border-gray-200 text-gray-800"
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={handleSelectFileUpload}
+                      disabled={isUploading}
+                      className={`w-full px-4 py-2 text-sm flex items-center gap-2 transition-colors ${
+                        isUploading
+                          ? "cursor-not-allowed opacity-60"
+                          : `cursor-pointer ${isDarkMode ? "hover:bg-zinc-700" : "hover:bg-zinc-200"}`
+                      }`}
+                    >
+                      <span>📎</span>
+                      <span>파일 업로드</span>
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </>
+          )}
 
           {/* 텍스트 입력창 */}
           <textarea
@@ -905,9 +911,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 ? (waitingForAnswer ? "AI 질문에 대한 답변을 입력하고 Enter" : "Enter로 다음 세그먼트 진행")
                 : hasUploadedMaterial
                   ? "Enter를 눌러 학습을 시작하세요"
-                  : "파일을 업로드하고 Enter를 눌러 시작하세요"
+                  : "파일을 드래그 앤 드롭하고 Enter를 눌러 시작하세요"
             }
-            className={`flex-1 py-2.5 text-sm resize-none bg-transparent border-0 focus:outline-none overflow-y-auto ${
+            className={`flex-1 px-1.5 py-2 text-sm resize-none bg-transparent border-0 focus:outline-none overflow-y-auto ${
               isDarkMode
                 ? "text-white placeholder-gray-500"
                 : "text-gray-900 placeholder-gray-400"
@@ -923,8 +929,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               type="button"
               className={`p-2.5 flex items-center justify-center rounded transition-all flex-shrink-0 cursor-pointer ${
                 isDarkMode
-                  ? "text-red-400 hover:text-red-300 hover:bg-red-900/20"
-                  : "text-red-600 hover:text-red-700 hover:bg-red-50"
+                  ? "text-red-400 hover:text-red-300 hover:bg-zinc-700"
+                  : "text-red-600 hover:text-red-700 hover:bg-zinc-200"
               }`}
               title="학습 중지"
             >
