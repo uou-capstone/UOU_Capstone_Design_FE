@@ -211,9 +211,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
   const sidebarBgClass = isDarkMode ? "bg-zinc-900" : "bg-gray-50";
   const sidebarTextClass = isDarkMode ? "text-white" : "text-[#0D0D0D]";
   const buttonDefaultTextClass = isDarkMode ? "text-white" : "text-[#0D0D0D]";
-  const buttonDefaultHoverClass = isDarkMode
-    ? "hover:bg-gray-800"
-    : "hover:bg-gray-200";
+  const buttonDefaultHoverClass = isDarkMode ? "hover:bg-zinc-700" : "hover:bg-zinc-200";
   const selectedButtonClass = "bg-emerald-600 text-white";
   const textSecondaryClass = isDarkMode ? "text-white" : "text-gray-700";
   const textMutedClass = isDarkMode ? "text-white" : "text-gray-500";
@@ -987,8 +985,8 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 onClick={closeLectureModal}
                 className={`p-1.5 ${inputRadiusClass} cursor-pointer ${
                   isDarkMode
-                    ? "hover:bg-zinc-800 text-gray-300"
-                    : "hover:bg-gray-100 text-gray-500"
+                    ? "hover:bg-zinc-700 text-gray-300"
+                    : "hover:bg-zinc-200 text-gray-500"
                 }`}
                 aria-label="닫기"
               >
@@ -1083,7 +1081,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 className={`px-4 py-2 text-sm ${inputRadiusClass} cursor-pointer ${
                   isDarkMode
                     ? "bg-zinc-800 hover:bg-zinc-700 text-gray-200"
-                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                    : "bg-gray-100 hover:bg-zinc-200 text-gray-700"
                 }`}
               >
                 취소

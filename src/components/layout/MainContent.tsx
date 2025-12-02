@@ -5,6 +5,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { courseApi, lectureApi, type Course, type CourseDetail } from "../../services/api";
 import SettingsPage from "../pages/SettingsPage";
+import HelpPage from "../pages/HelpPage";
 
 type ViewMode = "course-list" | "course-detail";
 type MenuItem = 
@@ -169,8 +170,8 @@ const MainContent: React.FC<MainContentProps> = ({
                 onClick={() => setIsCourseModalOpen(true)}
                 className={`text-center p-8 rounded-2xl border-2 border-dashed transition-all cursor-pointer ${
                   isDarkMode
-                    ? "border-gray-700 hover:border-gray-500 hover:bg-gray-800/50"
-                    : "border-gray-300 hover:border-emerald-500 hover:bg-gray-50"
+                    ? "border-gray-700 hover:border-gray-500 hover:bg-zinc-700"
+                    : "border-gray-300 hover:border-emerald-500 hover:bg-zinc-200"
                 } focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:ring-offset-2 ${
                   isDarkMode ? "focus:ring-offset-gray-900" : "focus:ring-offset-white"
                 }`}
@@ -237,7 +238,7 @@ const MainContent: React.FC<MainContentProps> = ({
                       className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors cursor-pointer ${
                         isDarkMode
                           ? "text-gray-200 hover:text-white hover:bg-zinc-700"
-                          : "text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                          : "text-gray-500 hover:text-gray-700 hover:bg-zinc-200"
                       }`}
                       aria-haspopup="menu"
                       aria-expanded={openCourseMenuId === course.courseId}
@@ -268,7 +269,7 @@ const MainContent: React.FC<MainContentProps> = ({
                           className={`w-full text-left px-3 py-2 text-xs transition-colors rounded-t-lg cursor-pointer ${
                             isDarkMode
                               ? "text-gray-200 hover:bg-zinc-700"
-                              : "text-gray-700 hover:bg-gray-100"
+                              : "text-gray-700 hover:bg-zinc-200"
                           }`}
                           role="menuitem"
                         >
@@ -283,8 +284,8 @@ const MainContent: React.FC<MainContentProps> = ({
                           }}
                           className={`w-full text-left px-3 py-2 text-xs transition-colors rounded-b-lg cursor-pointer ${
                             isDarkMode
-                              ? "text-red-300 hover:bg-red-900/20 hover:text-red-200"
-                              : "text-red-600 hover:bg-red-50"
+                              ? "text-red-300 hover:text-red-200 hover:bg-zinc-700"
+                              : "text-red-600 hover:bg-zinc-200"
                           }`}
                           role="menuitem"
                         >
@@ -367,8 +368,8 @@ const MainContent: React.FC<MainContentProps> = ({
               onClick={onBackToCourses}
               className={`mt-2 inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg cursor-pointer ${
                 isDarkMode
-                  ? "bg-gray-800 hover:bg-gray-700 text-white"
-                  : "bg-gray-200 hover:bg-gray-300 text-gray-800"
+                  ? "bg-gray-800 hover:bg-zinc-700 text-white"
+                  : "bg-gray-200 hover:bg-zinc-200 text-gray-800"
               }`}
             >
               강의실 목록으로 돌아가기
@@ -480,8 +481,8 @@ const MainContent: React.FC<MainContentProps> = ({
                         download={fileName}
                         className={`inline-block px-4 py-2 rounded-lg ${
                           isDarkMode
-                            ? "bg-gray-800 hover:bg-gray-700 text-white"
-                            : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                            ? "bg-gray-800 hover:bg-zinc-700 text-white"
+                            : "bg-emerald-600 hover:bg-zinc-200 text-white"
                         }`}
                       >
                         {fileName} 다운로드
@@ -572,8 +573,8 @@ const MainContent: React.FC<MainContentProps> = ({
           onClick={onBackToCourses}
           className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
             isDarkMode
-              ? "text-gray-200 hover:bg-gray-800"
-              : "text-gray-700 hover:bg-gray-100"
+              ? "text-gray-200 hover:bg-zinc-700"
+              : "text-gray-700 hover:bg-zinc-200"
           }`}
         >
           <svg className="w-[20px] h-[20px] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -610,6 +611,8 @@ const MainContent: React.FC<MainContentProps> = ({
         {viewMode === "course-list" ? (
           selectedMenu === "settings" ? (
             <SettingsPage />
+          ) : selectedMenu === "help" ? (
+            <HelpPage />
           ) : selectedMenu === "lectures" ? (
             renderCourseList()
           ) : (
@@ -659,8 +662,8 @@ const MainContent: React.FC<MainContentProps> = ({
                 }}
                 className={`p-1.5 rounded cursor-pointer ${
                   isDarkMode
-                    ? "hover:bg-zinc-800 text-gray-300"
-                    : "hover:bg-gray-100 text-gray-500"
+                    ? "hover:bg-zinc-700 text-gray-300"
+                    : "hover:bg-zinc-200 text-gray-500"
                 }`}
                 aria-label="닫기"
               >
@@ -721,7 +724,7 @@ const MainContent: React.FC<MainContentProps> = ({
                 className={`px-4 py-2 text-sm rounded cursor-pointer ${
                   isDarkMode
                     ? "bg-zinc-800 hover:bg-zinc-700 text-gray-200"
-                    : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                    : "bg-gray-100 hover:bg-zinc-200 text-gray-700"
                 }`}
               >
                 취소
@@ -736,8 +739,8 @@ const MainContent: React.FC<MainContentProps> = ({
                       ? "bg-zinc-800/40 text-gray-400 cursor-not-allowed"
                       : "bg-emerald-200 text-emerald-500 cursor-not-allowed"
                     : isDarkMode
-                    ? "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
-                    : "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                    ? "bg-emerald-600 hover:bg-zinc-700 text-white cursor-pointer"
+                    : "bg-emerald-600 hover:bg-zinc-200 text-white cursor-pointer"
                 }`}
               >
                 생성하기
