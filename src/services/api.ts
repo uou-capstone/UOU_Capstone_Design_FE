@@ -20,6 +20,7 @@ export interface User {
   email: string;
   fullName: string;
   role: 'STUDENT' | 'TEACHER';
+  profileImageUrl?: string;
 }
 
 export interface Course {

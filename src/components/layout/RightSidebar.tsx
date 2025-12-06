@@ -913,7 +913,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   ? "Enter를 눌러 학습을 시작하세요"
                   : "파일을 드래그 앤 드롭하고 Enter를 눌러 시작하세요"
             }
-            className={`flex-1 px-1.5 py-2 text-sm resize-none bg-transparent border-0 focus:outline-none overflow-y-auto ${
+            className={`flex-1 p-2 text-sm resize-none bg-transparent border-0 focus:outline-none overflow-y-auto ${
               isDarkMode
                 ? "text-white placeholder-gray-500"
                 : "text-gray-900 placeholder-gray-400"
