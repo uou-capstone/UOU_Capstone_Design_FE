@@ -80,23 +80,11 @@ const SettingsPage: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-1.5 h-full">
-      <div
-        className={`p-6 rounded-xl shadow-sm border transition-colors ${
-          isDarkMode
-            ? "bg-gray-700 border-gray-700 text-gray-100"
-            : "bg-white border-gray-200 text-gray-900"
-        }`}
-      >
-        <header className="mb-6">
-          <h1 className={`text-xl font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>설정</h1>
-        </header>
-
-        <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-1.5">
         {/* 프로필 정보 */}
         <section
-          className={`p-6 rounded-xl border shadow-sm ${
-            isDarkMode ? "bg-gray-700 border-gray-700" : "bg-white border-gray-200"
+          className={`p-6 rounded-xl shadow-sm ${
+            isDarkMode ? "bg-zinc-800" : "bg-white"
           }`}
         >
           <h2 className={`text-base font-semibold mb-4 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
@@ -122,13 +110,15 @@ const SettingsPage: React.FC = () => {
                   ) : (
                     <div
                       className={`w-16 h-16 rounded-full flex items-center justify-center text-white font-semibold text-lg ${
-                        isDarkMode ? "bg-gray-700 hover:bg-gray-600" : "bg-gray-500 hover:bg-gray-600"
+                        isDarkMode ? "bg-gray-700 hover:bg-zinc-700" : "bg-gray-500 hover:bg-zinc-200"
                       } transition-colors`}
                     >
                       {user?.fullName?.charAt(0).toUpperCase() || "?"}
                     </div>
                   )}
-                  <div className={`absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white`}>
+                  <div className={`absolute inset-0 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white ${
+                    isDarkMode ? "bg-zinc-700" : "bg-zinc-200"
+                  }`}>
                     <span className="text-xs font-medium">변경</span>
                   </div>
                 </button>
@@ -181,8 +171,8 @@ const SettingsPage: React.FC = () => {
 
         {/* 비밀번호 변경 */}
         <section
-          className={`p-6 rounded-xl border shadow-sm ${
-            isDarkMode ? "bg-gray-700 border-gray-700" : "bg-white border-gray-200"
+          className={`p-6 rounded-xl shadow-sm ${
+            isDarkMode ? "bg-zinc-800" : "bg-white"
           }`}
         >
           <h2 className={`text-base font-semibold mb-3 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
@@ -236,12 +226,18 @@ const SettingsPage: React.FC = () => {
             >
               {isSaving ? "변경 중..." : "비밀번호 변경"}
             </button>
-          </div>
+            </div>
         </section>
-          </div>
+      </div>
 
-          {/* 저장 버튼 */}
-          <div className="flex justify-end gap-4 pt-4">
+      {/* 저장 버튼 */}
+      <div
+        className={`rounded-xl ${
+          isDarkMode ? "bg-zinc-800" : "bg-white"
+        }`}
+      >
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-end">
             <button
               type="button"
               onClick={handleSaveProfile}

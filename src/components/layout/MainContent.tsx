@@ -392,7 +392,7 @@ const MainContent: React.FC<MainContentProps> = ({
         {/* OT(0주차)를 선택했을 때만 강의실 이름과 과목 설명 표시 */}
         {isOTSelected && (
           <div
-            className={`px-3 py-2 rounded-xl border ${
+            className={`rounded-xl border ${
               isDarkMode ? "bg-zinc-800 border-zinc-700" : "bg-white border-gray-200"
             }`}
           >
@@ -598,11 +598,30 @@ const MainContent: React.FC<MainContentProps> = ({
     );
   };
 
+  const renderSettingsHeader = () => {
+    if (viewMode !== "course-list" || selectedMenu !== "settings") {
+      return null;
+    }
+
+    return (
+      <div
+        className={`h-[50px] px-4 flex items-center justify-between ${
+          isDarkMode ? "bg-zinc-800" : "bg-white"
+        }`}
+      >
+        <h2 className={`text-xl font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+          설정
+        </h2>
+      </div>
+    );
+  };
+
   return (
     <>
       <div className="flex-1 flex flex-col min-h-0">
         {renderCourseListHeader()}
         {renderCourseDetailHeader()}
+        {renderSettingsHeader()}
         <div
           className={`flex-1 min-h-0 pt-2 p-1.5 overflow-y-auto scrollbar-hide transition-colors ${
             isDarkMode ? "bg-zinc-800" : "bg-white"
