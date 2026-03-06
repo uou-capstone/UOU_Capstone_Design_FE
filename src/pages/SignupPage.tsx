@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate, Link } from 'react-router-dom';
+import { userApi } from '../services/api';
 
 const SignupPage: React.FC = () => {
   const { isDarkMode } = useTheme();
@@ -13,10 +14,18 @@ const SignupPage: React.FC = () => {
     confirmPassword: '',
     fullName: '',
     role: 'STUDENT' as 'STUDENT' | 'TEACHER',
+    phoneNumber: '',
+    birthDate: '',
+    grade: '',
+    classNumber: '',
+    schoolName: '',
+    department: '',
   });
   const [error, setError] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [isCheckingEmail, setIsCheckingEmail] = useState(false);
+  const [emailChecked, setEmailChecked] = useState<null | 'available' | 'unavailable'>(null);
 
   // 이메일 형식 검증
   const validateEmail = (email: string): boolean => {
@@ -52,6 +61,11 @@ const SignupPage: React.FC = () => {
       ...prev,
       [name]: value,
     }));
+
+    // 이메일이 바뀌면 중복 확인 상태 초기화
+    if (name === 'email') {
+      setEmailChecked(null);
+    }
 
     // 실시간 검증
     const newErrors = { ...errors };
@@ -137,7 +151,15 @@ const SignupPage: React.FC = () => {
         formData.email,
         formData.password,
         formData.fullName,
-        formData.role
+        formData.role,
+        {
+          phoneNumber: formData.phoneNumber || undefined,
+          birthDate: formData.birthDate || undefined,
+          grade: formData.grade || undefined,
+          classNumber: formData.classNumber || undefined,
+          schoolName: formData.schoolName || undefined,
+          department: formData.department || undefined,
+        }
       );
       // 회원가입 성공 후 로그인 페이지로 이동
       navigate('/login', { 
@@ -230,29 +252,127 @@ const SignupPage: React.FC = () => {
             </div>
           </div>
 
+          {/* 추가 정보: 전화번호 / 생년월일 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={`block text-sm font-medium mb-2 ${
+                isDarkMode ? 'text-gray-200' : 'text-gray-700'
+              }`}>
+                전화번호
+              </label>
+              <input
+                type="tel"
+                name="phoneNumber"
+                value={formData.phoneNumber}
+                onChange={handleChange}
+                className={`w-full px-4 py-2 rounded-lg border ${
+                  isDarkMode
+                    ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-400'
+                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
+                } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                placeholder="010-1234-5678"
+              />
+            </div>
+            <div>
+              <label className={`block text-sm font-medium mb-2 ${
+                isDarkMode ? 'text-gray-200' : 'text-gray-700'
+              }`}>
+                생년월일
+              </label>
+              <input
+                type="date"
+                name="birthDate"
+                value={formData.birthDate}
+                onChange={handleChange}
+                className={`w-full px-4 py-2 rounded-lg border ${
+                  isDarkMode
+                    ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-400'
+                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
+                } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+              />
+            </div>
+          </div>
+
           <div>
             <label className={`block text-sm font-medium mb-2 ${
               isDarkMode ? 'text-gray-200' : 'text-gray-700'
             }`}>
               이메일
             </label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              required
-              className={`w-full px-4 py-2 rounded-lg border ${
-                errors.email
-                  ? isDarkMode
-                    ? 'bg-zinc-800 border-red-500 text-white placeholder-gray-400'
-                    : 'bg-white border-red-500 text-gray-900 placeholder-gray-400'
-                  : isDarkMode
-                  ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-400'
-                  : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
-              } focus:outline-none focus:ring-2 focus:ring-blue-500`}
-              placeholder="example@email.com"
-            />
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <input
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={handleChange}
+                  required
+                  className={`w-full px-4 py-2 rounded-lg border ${
+                    errors.email
+                      ? isDarkMode
+                        ? 'bg-zinc-800 border-red-500 text-white placeholder-gray-400'
+                        : 'bg-white border-red-500 text-gray-900 placeholder-gray-400'
+                      : isDarkMode
+                      ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-400'
+                      : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
+                  } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                  placeholder="example@email.com"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!formData.email) {
+                    setErrors((prev) => ({
+                      ...prev,
+                      email: '이메일을 입력해주세요.',
+                    }));
+                    return;
+                  }
+                  if (!validateEmail(formData.email)) {
+                    setErrors((prev) => ({
+                      ...prev,
+                      email: '올바른 이메일 형식이 아닙니다.',
+                    }));
+                    return;
+                  }
+
+                  setIsCheckingEmail(true);
+                  try {
+                    await userApi.checkEmail(formData.email);
+                    setEmailChecked('available');
+                    setErrors((prev) => {
+                      const { email, ...rest } = prev;
+                      return rest;
+                    });
+                  } catch (err) {
+                    const msg =
+                      err instanceof Error ? err.message : '이메일 중복 확인에 실패했습니다.';
+                    setEmailChecked('unavailable');
+                    setErrors((prev) => ({
+                      ...prev,
+                      email: msg.includes('이미') || msg.includes('중복')
+                        ? '이미 사용 중인 이메일입니다.'
+                        : msg,
+                    }));
+                  } finally {
+                    setIsCheckingEmail(false);
+                  }
+                }}
+                disabled={isCheckingEmail}
+                className={`px-3 py-2 text-xs rounded-lg font-medium whitespace-nowrap ${
+                  isCheckingEmail
+                    ? isDarkMode
+                      ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
+                      : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                    : isDarkMode
+                    ? 'bg-gray-700 hover:bg-gray-600 text-white cursor-pointer'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-800 cursor-pointer'
+                }`}
+              >
+                {isCheckingEmail ? '확인 중...' : '중복 확인'}
+              </button>
+            </div>
             <div className="h-4 mt-1">
               {errors.email && (
                 <p className={`text-xs leading-tight ${
@@ -261,6 +381,96 @@ const SignupPage: React.FC = () => {
                   {errors.email}
                 </p>
               )}
+              {!errors.email && emailChecked === 'available' && (
+                <p className={`text-xs leading-tight ${
+                  isDarkMode ? 'text-green-400' : 'text-green-600'
+                }`}>
+                  ✓ 사용 가능한 이메일입니다
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* 학교/학급/학과 정보 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={`block text-sm font-medium mb-2 ${
+                isDarkMode ? 'text-gray-200' : 'text-gray-700'
+              }`}>
+                학년
+              </label>
+              <input
+                type="text"
+                name="grade"
+                value={formData.grade}
+                onChange={handleChange}
+                className={`w-full px-4 py-2 rounded-lg border ${
+                  isDarkMode
+                    ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-400'
+                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
+                } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                placeholder="예: 3학년"
+              />
+            </div>
+            <div>
+              <label className={`block text-sm font-medium mb-2 ${
+                isDarkMode ? 'text-gray-200' : 'text-gray-700'
+              }`}>
+                반
+              </label>
+              <input
+                type="text"
+                name="classNumber"
+                value={formData.classNumber}
+                onChange={handleChange}
+                className={`w-full px-4 py-2 rounded-lg border ${
+                  isDarkMode
+                    ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-400'
+                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
+                } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                placeholder="예: 2반"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className={`block text-sm font-medium mb-2 ${
+                isDarkMode ? 'text-gray-200' : 'text-gray-700'
+              }`}>
+                학교명
+              </label>
+              <input
+                type="text"
+                name="schoolName"
+                value={formData.schoolName}
+                onChange={handleChange}
+                className={`w-full px-4 py-2 rounded-lg border ${
+                  isDarkMode
+                    ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-400'
+                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
+                } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                placeholder="학교 이름"
+              />
+            </div>
+            <div>
+              <label className={`block text-sm font-medium mb-2 ${
+                isDarkMode ? 'text-gray-200' : 'text-gray-700'
+              }`}>
+                학과 / 부서
+              </label>
+              <input
+                type="text"
+                name="department"
+                value={formData.department}
+                onChange={handleChange}
+                className={`w-full px-4 py-2 rounded-lg border ${
+                  isDarkMode
+                    ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-400'
+                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
+                } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                placeholder="예: 컴퓨터공학과 / 수학과 / OO부"
+              />
             </div>
           </div>
 

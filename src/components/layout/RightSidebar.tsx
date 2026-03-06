@@ -56,9 +56,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const [currentAiQuestionId, setCurrentAiQuestionId] = useState<string | null>(null);
   const [currentLectureId, setCurrentLectureId] = useState<number | null>(lectureId || null);
   const [currentCourseId, setCurrentCourseId] = useState<number | null>(courseId || null);
-  // uploadedFileDisplayUrl과 uploadedFileName은 onLectureDataChange로 직접 전달되므로 상태로 관리하지 않음
-  const [, setUploadedFileDisplayUrl] = useState<string>("");
-  const [, setUploadedFileName] = useState<string>("");
+  const [uploadedFileDisplayUrl, setUploadedFileDisplayUrl] = useState<string>("");
+  const [uploadedFileName, setUploadedFileName] = useState<string>("");
   const [hasUploadedMaterial, setHasUploadedMaterial] = useState<boolean>(false);
   const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -228,12 +227,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     try {
       shouldAbortPollingRef.current = true;
       await streamingApi.cancel(currentLectureId);
-      setIsStreaming(false);
-      setWaitingForAnswer(false);
-      setCurrentAiQuestionId(null);
-      setIsFetchingNext(false);
-      setMessages((prev) => prev.filter((message) => !message.isLoading));
-      
+
       const cancelMessage: ChatMessage = {
         id: Date.now(),
         text: "학습이 중지되었습니다.",
@@ -251,6 +245,13 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         isLoading: false,
       };
       setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      // API 호출 성공/실패와 관계없이 프론트 측 스트리밍 상태는 중지
+      setIsStreaming(false);
+      setWaitingForAnswer(false);
+      setCurrentAiQuestionId(null);
+      setIsFetchingNext(false);
+      setMessages((prev) => prev.filter((message) => !message.isLoading));
     }
   };
 
@@ -305,7 +306,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     setMessages((prev) => [...prev, uploadMessage]);
 
     try {
-      // Swagger 문서의 API 사용: /api/lectures/{lectureId}/materials
       const fileUrl = await lectureApi.uploadMaterial(targetLectureId!, file);
 
       setHasUploadedMaterial(true);
@@ -927,7 +927,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             <button
               onClick={handleCancelStream}
               type="button"
-              className={`p-1.5 flex items-center justify-center rounded-lg transition-all flex-shrink-0 cursor-pointer ${
+              className={`p-1.5 mr-1.5 flex items-center justify-center rounded-lg transition-all flex-shrink-0 cursor-pointer ${
                 isDarkMode
                   ? "text-red-400 hover:text-red-300 hover:bg-zinc-700"
                   : "text-red-600 hover:text-red-700 hover:bg-zinc-200"

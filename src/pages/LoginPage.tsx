@@ -100,23 +100,28 @@ const LoginPage: React.FC = () => {
         )}
         {/* 서버 상태 표시 */}
         {serverStatus && (
-          <div className={`mb-3 sm:mb-4 flex items-center gap-2 text-xs sm:text-sm md:text-base ${
+          <div className={`mb-3 sm:mb-4 text-xs sm:text-sm md:text-base ${
             isDarkMode ? 'text-gray-400' : 'text-gray-600'
           }`}>
-            <span>서버상태:</span>
-            <span className={`text-xs sm:text-sm font-semibold tracking-wide px-2 sm:px-3 py-0.5 sm:py-1 rounded ${
-              isCheckingServer
-                ? (isDarkMode ? 'text-yellow-200 bg-yellow-500/20' : 'text-yellow-700 bg-yellow-100')
-                : serverStatus.online
-                  ? (isDarkMode ? 'text-green-200 bg-green-500/20' : 'text-green-700 bg-green-100')
-                  : (isDarkMode ? 'text-red-200 bg-red-500/20' : 'text-red-700 bg-red-100')
-            }`}>
-              {isCheckingServer
-                ? 'CHECKING...'
-                : serverStatus.online
-                  ? 'ONLINE'
-                  : 'OFFLINE'}
-            </span>
+            <div className="flex items-center gap-2">
+              <span>서버상태:</span>
+              <span className={`text-xs sm:text-sm font-semibold tracking-wide px-2 sm:px-3 py-0.5 sm:py-1 rounded ${
+                isCheckingServer
+                  ? (isDarkMode ? 'text-yellow-200 bg-yellow-500/20' : 'text-yellow-700 bg-yellow-100')
+                  : serverStatus.online
+                    ? (isDarkMode ? 'text-green-200 bg-green-500/20' : 'text-green-700 bg-green-100')
+                    : (isDarkMode ? 'text-red-200 bg-red-500/20' : 'text-red-700 bg-red-100')
+              }`}>
+                {isCheckingServer
+                  ? 'CHECKING...'
+                  : serverStatus.online
+                    ? 'ONLINE'
+                    : 'OFFLINE'}
+              </span>
+            </div>
+            {!serverStatus.online && serverStatus.message && (
+              <p className="mt-1 text-xs opacity-90">{serverStatus.message}</p>
+            )}
           </div>
         )}
         

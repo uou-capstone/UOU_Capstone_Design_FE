@@ -25,6 +25,8 @@ const DEFAULT_RIGHT_SIDEBAR_WIDTH = 420;
 
 const COLLAPSED_LEFT_WIDTH = 56;
 
+const getLastLectureStorageKey = (courseId: number) => `course_${courseId}_last_lecture`;
+
 const AppLayout: React.FC = () => {
   const { isDarkMode } = useTheme();
   const navigate = useNavigate();
@@ -119,6 +121,21 @@ const AppLayout: React.FC = () => {
     loadCourseDetail(selectedCourseId);
   }, [selectedCourseId, loadCourseDetail, resetLectureOutputs]);
 
+  useEffect(() => {
+    if (!selectedCourseId || !courseDetail?.lectures?.length) return;
+    try {
+      const key = getLastLectureStorageKey(selectedCourseId);
+      const raw = localStorage.getItem(key);
+      if (!raw) return;
+      const lectureId = Number(raw);
+      if (!Number.isFinite(lectureId)) return;
+      const exists = courseDetail.lectures.some((l) => l.lectureId === lectureId);
+      if (exists) setCurrentLectureId(lectureId);
+    } catch {
+      // ignore
+    }
+  }, [selectedCourseId, courseDetail]);
+
   const handleSelectCourse = (courseId: number) => {
     navigate(`/courses/${courseId}`);
   };
@@ -170,6 +187,13 @@ const AppLayout: React.FC = () => {
   const handleLectureSelect = (lectureId: number) => {
     setCurrentLectureId(lectureId);
     resetLectureOutputs();
+    if (selectedCourseId != null) {
+      try {
+        localStorage.setItem(getLastLectureStorageKey(selectedCourseId), String(lectureId));
+      } catch {
+        // ignore
+      }
+    }
   };
 
   const handleLectureEdit = useCallback(
@@ -422,9 +446,6 @@ const AppLayout: React.FC = () => {
           isCourseDetailLoading={isCourseDetailLoading}
           courseDetailError={courseDetailError}
           selectedLectureId={currentLectureId}
-          lectureMarkdown={lectureMarkdown}
-          fileUrl={lectureFileUrl}
-          fileName={lectureFileName}
           onEditCourse={handleCourseEdit}
           onDeleteCourse={handleCourseDelete}
           onCourseCreated={handleCourseCreated}

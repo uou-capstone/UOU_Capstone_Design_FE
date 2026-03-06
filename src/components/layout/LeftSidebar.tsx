@@ -11,21 +11,18 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useTheme } from "../../contexts/ThemeContext";
 import { lectureApi, type CourseDetail, type LectureResponseDto } from "../../services/api";
 
-// 전체 레이아웃에서 사용하는 뷰 모드 타입
 type ViewMode = "course-list" | "course-detail";
 
-// 좌측 사이드바 메뉴 종류 정의
 type MenuItem =
-  | "dashboard" /* 대시보드 */
-  | "lectures" /* 강의 */
-  | "assignments" /* 과제 */
-  | "exam-creation" /* 시험 생성 */
-  | "reports" /* 보고서 */
-  | "student-management" /* 학생 관리 */
-  | "settings" /* 설정 */
-  | "help" /* 도움말 */;
+  | "dashboard"
+  | "lectures"
+  | "assignments"
+  | "exam-creation"
+  | "reports"
+  | "student-management"
+  | "settings"
+  | "help";
 
-/* 좌측 사이드바 컴포넌트 프로퍼티 */
 interface LeftSidebarProps {
   width?: number;
   expandedWidth?: number;
@@ -45,7 +42,6 @@ interface LeftSidebarProps {
 
 type CourseLecture = NonNullable<NonNullable<CourseDetail["lectures"]>[number]>;
 
-// 아이콘 컴포넌트
 const SidebarToggleIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg
     className={className}
@@ -146,7 +142,6 @@ const DeleteIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-// 좌측 사이드바의 메인 컴포넌트
 const LeftSidebar: React.FC<LeftSidebarProps> = ({
   width = 200,
   expandedWidth = 200,
@@ -199,7 +194,6 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
 
   const selectedMenu = externalSelectedMenu ?? internalSelectedMenu;
 
-  // 공통 스타일 클래스
   const commonStyles = {
     transition: "transition-all duration-300",
     rounded: "rounded-lg",
@@ -207,7 +201,6 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
       "flex items-center rounded-lg text-sm transition-all duration-300 cursor-pointer min-h-[30px]",
   };
 
-  // 다크/라이트 테마별 클래스 정의
   const sidebarBgClass = isDarkMode ? "bg-zinc-900" : "bg-gray-50";
   const sidebarTextClass = isDarkMode ? "text-white" : "text-[#0D0D0D]";
   const buttonDefaultTextClass = isDarkMode ? "text-white" : "text-[#0D0D0D]";
@@ -227,7 +220,6 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
   const tooltipBorderClass = isDarkMode ? "" : "border border-gray-200";
   const inputRadiusClass = "rounded-lg";
 
-  // 메뉴 클릭 시 외부/내부 상태를 동기화
   const handleMenuSelect = useCallback(
     (menu: MenuItem) => {
       if (onMenuSelect) {
@@ -239,20 +231,17 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     [onMenuSelect]
   );
 
-  // 로그아웃 버튼 동작
   const handleLogout = useCallback(() => {
     setIsProfileDropdownOpen(false);
     logout();
     navigate("/login");
   }, [logout, navigate]);
 
-  // 홈 버튼 클릭 시 대시보드 이동
   const handleHomeClick = useCallback(() => {
     handleMenuSelect("dashboard");
     navigate("/");
   }, [handleMenuSelect, navigate]);
 
-  // 프로필 드롭다운 위치 계산
   const updateDropdownPosition = useCallback(() => {
     if (profileButtonRef.current) {
       const buttonRect = profileButtonRef.current.getBoundingClientRect();
@@ -267,33 +256,27 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     }
   }, []);
 
-  // 프로필 드롭다운 열고 닫기
   const toggleProfileDropdown = useCallback(() => {
     updateDropdownPosition();
     setIsProfileDropdownOpen((prev) => !prev);
   }, [updateDropdownPosition]);
 
-  // 다크/라이트 전환 토글 처리
   const handleThemeChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       setThemeMode(e.target.checked ? "dark" : "light");
-      // 드롭다운을 열어둠 (닫지 않음)
     },
     [setThemeMode]
   );
 
-  // 사이드바 접힘 상태 변경 시 홈 호버 상태 리셋
   useEffect(() => {
     setIsHomeHovered(false);
   }, [isCollapsed]);
 
-  // 외부 클릭 시 드롭다운 닫기
   useEffect(() => {
     if (!isProfileDropdownOpen) return;
 
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
-      // 드롭다운 내부 클릭인지 확인
       const isInsideDropdown = target.closest("[data-profile-dropdown]");
       const isClickOnButton =
         profileButtonRef.current &&
@@ -327,7 +310,6 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     }
   }, [isProfileDropdownOpen, updateDropdownPosition, width, isCollapsed]);
 
-  // 메뉴 구조 정의
   const menuStructure = useMemo(() => {
     const learningMenu: MenuItem[] = [
       "dashboard",
@@ -352,7 +334,6 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     help: "도움말",
   };
 
-  // 강의 목록 정렬
   const sortedLectures = useMemo(() => {
     if (!courseDetail?.lectures) return [];
     return [...courseDetail.lectures].sort((a, b) => {
@@ -362,20 +343,15 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     });
   }, [courseDetail?.lectures]);
 
-  // 메뉴 버튼 컴포넌트
-  // 프로필 드롭다운 가로 길이 계산
   const dropdownWidth = useMemo(() => {
-    // 프로필 버튼의 실제 너비를 사용 (mx-[6px] 좌우 각 6px씩 마진)
     const { buttonWidth } = dropdownPosition;
     if (buttonWidth && buttonWidth > 0) {
       return buttonWidth;
     }
-    // 폴백: 사이드바 너비에서 좌우 마진(각 6px) 제외
     const targetSidebarWidth = isCollapsed ? expandedWidth : width;
     return Math.max(targetSidebarWidth - 12, 0);
   }, [expandedWidth, isCollapsed, width, dropdownPosition]);
 
-  // 드롭다운 좌측 위치 계산
   const dropdownLeft = useMemo(() => {
     const { sidebarLeft, sidebarWidth, buttonLeft, buttonWidth } =
       dropdownPosition;
@@ -396,7 +372,6 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     return Math.min(Math.max(centeredLeft, minLeft), maxLeft);
   }, [dropdownPosition, dropdownWidth, isCollapsed]);
 
-  // 좌측 메뉴 버튼 렌더링
   const MenuButton: React.FC<{ menu: MenuItem; label: string }> = ({
     menu,
     label,
@@ -500,7 +475,6 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     );
   };
 
-  // 강의 목록 UI
   const renderLectureList = () => {
     if (isCourseDetailLoading) {
       return (
@@ -589,7 +563,6 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     }
   };
 
-  // 메뉴 섹션 묶음 렌더링
   const renderMenuSection = (menus: MenuItem[]) => (
     <div className="flex flex-col gap-2">
       {menus.map((menu) => (
@@ -694,7 +667,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   } px-3 py-2 border border-dashed text-sm font-medium leading-5 gap-2 transition-colors ${
                     isDarkMode
                       ? `border-zinc-700 text-white hover:border-emerald-500 hover:text-emerald-300 hover:bg-emerald-500/10`
-                      : `${buttonDefaultTextClass} border-gray-300 hover:border-emerald-500 hover:bg-emerald-500/10`
+                      : `${buttonDefaultTextClass} border-gray-300 hover:border-emerald-500 hover:text-emerald-600 hover:bg-emerald-500/10`
                   }`}
                 >
                   {isCollapsed ? (

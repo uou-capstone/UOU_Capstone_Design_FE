@@ -1,7 +1,6 @@
 const BACKEND_URL = 'https://uouaitutor.duckdns.org';
-
-// HTTPS 백엔드이므로 개발/프로덕션 모두 직접 연결
 const API_BASE_URL = import.meta.env.VITE_API_URL || BACKEND_URL;
+const AI_SERVICE_URL = import.meta.env.VITE_AI_SERVICE_URL || API_BASE_URL;
 
 // API 응답 타입
 export interface ApiResponse<T = any> {
@@ -21,6 +20,8 @@ export interface User {
   fullName: string;
   role: 'STUDENT' | 'TEACHER';
   profileImageUrl?: string;
+  phoneNumber?: string;
+  birthDate?: string;
 }
 
 export interface Course {
@@ -193,6 +194,18 @@ export const removeAuthToken = (): void => {
   localStorage.removeItem('accessToken');
 };
 
+export const getRefreshToken = (): string | null => {
+  return localStorage.getItem('refreshToken');
+};
+
+export const setRefreshToken = (token: string): void => {
+  localStorage.setItem('refreshToken', token);
+};
+
+export const removeRefreshToken = (): void => {
+  localStorage.removeItem('refreshToken');
+};
+
 // API 요청 헤더 생성
 const createHeaders = (includeAuth: boolean = true, isFormData: boolean = false): HeadersInit => {
   const headers: HeadersInit = {};
@@ -230,13 +243,12 @@ const apiRequest = async <T>(
 
   try {
     const finalHeaders: HeadersInit = { ...config.headers };
-    
+
     if (isFormData) {
       delete (finalHeaders as any)['Content-Type'];
       delete (finalHeaders as any)['content-type'];
     }
-    
-    // Authorization 헤더 확인 (디버깅용)
+
     const hasAuthHeader = !!finalHeaders['Authorization'];
     const token = getAuthToken();
     
@@ -413,49 +425,48 @@ const apiRequest = async <T>(
 };
 
 // 서버 상태 확인
-export const checkServerStatus = async (): Promise<{ online: boolean; message?: string }> => {
+const tryFetch = async (baseUrl: string, path: string, signal: AbortSignal): Promise<Response | null> => {
   try {
-    const url = API_BASE_URL ? `${API_BASE_URL}/api/health` : `${BACKEND_URL}/api/health`;
-    
-    // Health check 엔드포인트가 없을 수 있으므로 간단한 요청으로 대체
-    // OPTIONS 요청으로 서버 연결 확인
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3초 타임아웃
-    
-    try {
-      const response = await fetch(url, {
-        method: 'GET',
-        mode: 'cors',
-        credentials: 'omit',
-        signal: controller.signal,
-      });
-      
+    const res = await fetch(`${baseUrl}${path}`, {
+      method: 'GET',
+      mode: 'cors',
+      credentials: 'omit',
+      signal,
+    });
+    return res;
+  } catch {
+    return null;
+  }
+};
+
+export const checkServerStatus = async (): Promise<{ online: boolean; message?: string }> => {
+  const baseUrl = API_BASE_URL || BACKEND_URL;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const paths = ['/api/health', '/actuator/health', '/'];
+    for (const path of paths) {
+      const response = await tryFetch(baseUrl, path, controller.signal);
       clearTimeout(timeoutId);
-      
-      // 200-299, 401 (인증 필요하지만 서버는 응답함), 404 (엔드포인트가 없어도 서버는 응답함)면 서버는 온라인
-      // 401은 서버가 정상 작동 중이지만 인증이 필요한 경우이므로 서버는 온라인으로 간주
-      if (response.status < 500) {
+      if (response != null && response.status < 500) {
         return { online: true };
-      } else {
+      }
+      if (response != null) {
         return { online: false, message: '서버 오류' };
       }
-    } catch (fetchError) {
-      clearTimeout(timeoutId);
-      
-      // CORS 오류는 서버가 응답했다는 의미일 수 있음
-      if (fetchError instanceof TypeError && fetchError.message.includes('fetch')) {
-        // 네트워크 오류인 경우 서버가 오프라인일 가능성
-        return { online: false, message: '서버에 연결할 수 없습니다' };
-      }
-      
-      // AbortError는 타임아웃
-      if (fetchError instanceof Error && fetchError.name === 'AbortError') {
-        return { online: false, message: '서버 응답 시간 초과' };
-      }
-      
-      return { online: false, message: '서버 상태 확인 실패' };
     }
-  } catch (error) {
+
+    clearTimeout(timeoutId);
+    return {
+      online: false,
+      message: '연결 실패. CORS 설정 또는 /api/health 엔드포인트를 확인해 주세요.',
+    };
+  } catch (e) {
+    clearTimeout(timeoutId);
+    if (e instanceof Error && e.name === 'AbortError') {
+      return { online: false, message: '서버 응답 시간 초과' };
+    }
     return { online: false, message: '서버 상태 확인 실패' };
   }
 };
@@ -468,6 +479,12 @@ export const authApi = {
     password: string;
     fullName: string;
     role: 'STUDENT' | 'TEACHER';
+    phoneNumber?: string;
+    birthDate?: string;
+    grade?: string;
+    classNumber?: string;
+    schoolName?: string;
+    department?: string;
   }): Promise<string> => {
     return apiRequest<string>('/api/auth/signup', {
       method: 'POST',
@@ -484,18 +501,106 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify(credentials),
     }, false);
-    
-    // 토큰 저장
+
     if (response.accessToken) {
       setAuthToken(response.accessToken);
     }
-    
+    if (response.refreshToken) {
+      setRefreshToken(response.refreshToken);
+    }
+
     return response;
+  },
+
+  // 토큰 갱신
+  refresh: async (): Promise<TokenResponseDto> => {
+    const currentRefreshToken = getRefreshToken();
+    if (!currentRefreshToken) {
+      throw new Error('리프레시 토큰이 없습니다. 다시 로그인해주세요.');
+    }
+    const response = await apiRequest<TokenResponseDto>(
+      '/api/auth/refresh',
+      {
+        method: 'POST',
+        body: JSON.stringify({ refreshToken: currentRefreshToken }),
+      },
+      false
+    );
+
+    if (response.accessToken) {
+      setAuthToken(response.accessToken);
+    }
+    if (response.refreshToken) {
+      setRefreshToken(response.refreshToken);
+    }
+
+    return response;
+  },
+
+  // 로그아웃
+  logout: async (): Promise<void> => {
+    try {
+      await apiRequest<void>('/api/auth/logout', {
+        method: 'POST',
+      });
+    } catch (error) {
+      // 인증이 이미 만료된 경우 등은 무시
+      console.warn('logout API 호출 실패 (무시 가능):', error);
+    }
   },
 
   // 내 정보 조회
   getMe: async (): Promise<User> => {
     return apiRequest<User>('/api/users/me');
+  },
+};
+
+// 사용자 API
+export const userApi = {
+  // 프로필 수정
+  updateProfile: async (payload: {
+    fullName?: string;
+    phoneNumber?: string;
+    birthDate?: string;
+  }): Promise<User> => {
+    return apiRequest<User>('/api/users/profile', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // 비밀번호 변경
+  changePassword: async (payload: {
+    currentPassword: string;
+    newPassword: string;
+    confirmNewPassword: string;
+  }): Promise<void> => {
+    await apiRequest<void>('/api/users/password', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // 이메일 중복 확인
+  checkEmail: async (email: string): Promise<boolean> => {
+    try {
+      await apiRequest<unknown>(`/api/users/check-email?email=${encodeURIComponent(email)}`, {
+        method: 'GET',
+      });
+      // 200 응답이면 사용 가능하다고 간주
+      return true;
+    } catch (error) {
+      // 백엔드 에러 메시지를 그대로 던져서 상위에서 처리
+      throw error;
+    }
+  },
+
+  // 회원 탈퇴
+  deleteAccount: async (password: string): Promise<void> => {
+    await apiRequest<void>('/api/users/account', {
+      method: 'DELETE',
+      body: JSON.stringify({ password }),
+    });
   },
 };
 
@@ -601,10 +706,30 @@ export const lectureApi = {
     const formData = new FormData();
     formData.append('file', file);
     
-    return apiRequest<string>(`/api/lectures/${lectureId}/materials`, {
+    const fileUrl = await apiRequest<string>(`/api/lectures/${lectureId}/materials`, {
       method: 'POST',
       body: formData,
     }, true); // includeAuth = true로 명시
+
+    // 백엔드가 상대 경로를 반환하는 경우 절대 URL로 변환
+    if (fileUrl && !/^https?:\/\//i.test(fileUrl)) {
+      const baseUrl = API_BASE_URL || BACKEND_URL;
+      if (fileUrl.startsWith('/')) {
+        return `${baseUrl}${fileUrl}`;
+      }
+      return `${baseUrl}/${fileUrl}`;
+    }
+
+    return fileUrl;
+  },
+};
+
+// 강의 자료 API
+export const materialApi = {
+  deleteMaterial: async (materialId: number): Promise<void> => {
+    return apiRequest<void>(`/api/materials/${materialId}`, {
+      method: 'DELETE',
+    });
   },
 };
 
@@ -686,6 +811,88 @@ export interface LectureMaterialResponse {
   fileName: string;
 }
 
+// 강의 자료 생성 v2 Phase 응답 타입 (필요 부분만 최소 정의)
+export interface MaterialsPhase1Request {
+  lectureId: number;
+  keyword: string;
+  pdfPath: string;
+}
+
+export interface MaterialsPhase1Response {
+  sessionId: number;
+  draftPlan: Record<string, unknown>;
+  progressPercentage: number;
+  message?: string;
+}
+
+export interface MaterialsPhase2Request {
+  sessionId: number;
+  action: "confirm" | "update";
+  feedback?: string;
+}
+
+export interface MaterialsPhase2Response {
+  sessionId: number;
+  draftPlan?: Record<string, unknown>;
+  finalizedBrief?: Record<string, unknown>;
+  progressPercentage: number;
+  message?: string;
+}
+
+export interface MaterialsPhase3Request {
+  sessionId: number;
+}
+
+export interface MaterialsPhase3Response {
+  sessionId: number;
+  chapterContentList: Record<string, unknown>;
+  totalChapters?: number;
+  progressPercentage: number;
+  message?: string;
+}
+
+export interface MaterialsPhase4Request {
+  sessionId: number;
+}
+
+export interface MaterialsPhase4Response {
+  sessionId: number;
+  verifiedContent: Record<string, unknown>;
+  progressPercentage: number;
+  message?: string;
+}
+
+export interface MaterialsPhase5Request {
+  sessionId: number;
+}
+
+export interface MaterialsPhase5Response {
+  sessionId: number;
+  finalDocument: string;
+  documentUrl?: string;
+  progressPercentage: number;
+  message?: string;
+}
+
+// 모니터링 API 타입 (필수 필드만 최소 정의, 나머지는 자유형)
+export interface MonitoringOverview {
+  timestamp?: string;
+  status?: string;
+  [key: string]: unknown;
+}
+
+export interface RateLimitStats {
+  [key: string]: unknown;
+}
+
+export interface CacheStats {
+  [key: string]: unknown;
+}
+
+export interface AgentStats {
+  [key: string]: unknown;
+}
+
 // 스트리밍 러닝 세션 타입
 export interface StreamSessionState {
   status: string;
@@ -750,6 +957,64 @@ export const lectureMaterialApi = {
   },
 };
 
+// 강의 자료 생성 v2 Phase API
+export const materialGenerationApi = {
+  phase1: async (payload: MaterialsPhase1Request): Promise<MaterialsPhase1Response> => {
+    return apiRequest<MaterialsPhase1Response>("/api/materials/generation/phase1", {
+      method: "POST",
+      body: JSON.stringify({
+        keyword: payload.keyword ?? (payload as unknown as { topic?: string }).topic ?? "",
+        lectureId: payload.lectureId,
+        pdfPath: payload.pdfPath ?? "",
+      }),
+    });
+  },
+
+  phase2: async (payload: MaterialsPhase2Request): Promise<MaterialsPhase2Response> => {
+    return apiRequest<MaterialsPhase2Response>("/api/materials/generation/phase2", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  phase3: async (payload: MaterialsPhase3Request): Promise<MaterialsPhase3Response> => {
+    return apiRequest<MaterialsPhase3Response>("/api/materials/generation/phase3", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  phase4: async (payload: MaterialsPhase4Request): Promise<MaterialsPhase4Response> => {
+    return apiRequest<MaterialsPhase4Response>("/api/materials/generation/phase4", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  phase5: async (payload: MaterialsPhase5Request): Promise<MaterialsPhase5Response> => {
+    return apiRequest<MaterialsPhase5Response>("/api/materials/generation/phase5", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+};
+
+// 모니터링 API
+export const monitoringApi = {
+  getOverview: async (): Promise<MonitoringOverview> => {
+    return apiRequest<MonitoringOverview>("/api/monitoring");
+  },
+  getRateLimit: async (): Promise<RateLimitStats> => {
+    return apiRequest<RateLimitStats>("/api/monitoring/rate-limit");
+  },
+  getCache: async (): Promise<CacheStats> => {
+    return apiRequest<CacheStats>("/api/monitoring/cache");
+  },
+  getAgents: async (): Promise<AgentStats> => {
+    return apiRequest<AgentStats>("/api/monitoring/agents");
+  },
+};
+
 // 스트리밍 학습 세션 API
 export const streamingApi = {
   getSession: async (lectureId: number): Promise<StreamSessionState> => {
@@ -774,6 +1039,66 @@ export const streamingApi = {
   cancel: async (lectureId: number): Promise<void> => {
     return apiRequest<void>(`/api/lectures/${lectureId}/stream/cancel`, {
       method: 'POST',
+    });
+  },
+};
+
+// AI 서비스 전용 요청 (시험 생성 등 - ai-service URL 사용)
+const aiServiceRequest = async <T>(endpoint: string, options: RequestInit = {}): Promise<T> => {
+  const url = `${AI_SERVICE_URL.replace(/\/$/, '')}${endpoint}`;
+  const headers: HeadersInit = { 'Content-Type': 'application/json', ...(options.headers as object) };
+  const token = getAuthToken();
+  if (token) (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+  const res = await fetch(url, { ...options, headers, mode: 'cors', credentials: 'omit' });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API Error (${res.status}): ${text}`);
+  }
+  if (res.status === 204) return {} as T;
+  return res.json();
+};
+
+/** 시험 생성 API 요청 (문서: camelCase, lectureId/targetCount/lectureContent 등) */
+export interface ExamGenerationRequest {
+  lectureId: number;
+  examType: string;
+  targetCount: number;
+  lectureContent: string;
+  topic?: string;
+  userProfile?: { learningGoal?: string; focusAreas?: string[]; targetDepth?: string; questionModality?: string };
+  userStatus?: { proficiencyLevel?: string; weaknessFocus?: string[] };
+  interactionStyle?: { languagePreference?: string; scenarioBased?: boolean };
+  feedbackPreference?: { strictness?: string; explanationDepth?: string };
+}
+
+export interface ExamGenerationResponse {
+  examSessionId: string;
+  status: string;
+  progress?: number;
+  exam?: { topic: string; questionCount?: number; questions?: unknown[] };
+}
+
+/** 시험 생성 API 요청 본문: API 문서 기준 camelCase */
+function buildExamGenerationBody(payload: ExamGenerationRequest): string {
+  const body: Record<string, unknown> = {
+    lectureId: payload.lectureId,
+    examType: payload.examType,
+    targetCount: payload.targetCount,
+    lectureContent: payload.lectureContent,
+  };
+  if (payload.topic != null && payload.topic !== '') body.topic = payload.topic;
+  if (payload.userProfile != null) body.userProfile = payload.userProfile;
+  if (payload.userStatus != null) body.userStatus = payload.userStatus;
+  if (payload.interactionStyle != null) body.interactionStyle = payload.interactionStyle;
+  if (payload.feedbackPreference != null) body.feedbackPreference = payload.feedbackPreference;
+  return JSON.stringify(body);
+}
+
+export const examGenerationApi = {
+  createExam: async (payload: ExamGenerationRequest): Promise<ExamGenerationResponse> => {
+    return aiServiceRequest<ExamGenerationResponse>('/api/exams/generation', {
+      method: 'POST',
+      body: buildExamGenerationBody(payload),
     });
   },
 };
