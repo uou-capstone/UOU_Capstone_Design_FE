@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
-import { authApi, User, getAuthToken, setAuthToken, removeAuthToken } from '../services/api';
+import { authApi, User, getAuthToken, setAuthToken, removeAuthToken, removeRefreshToken } from '../services/api';
 
 interface AuthContextType {
   user: User | null;
@@ -34,12 +34,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logoutTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
 
-  // 초기 로드 시 토큰 확인 및 사용자 정보 가져오기
   useEffect(() => {
     const initAuth = async () => {
       const token = getAuthToken();
       if (!token) {
-        // 토큰이 없으면 인증되지 않은 상태로 설정
         setUser(null);
         setIsLoading(false);
         return;
@@ -48,7 +46,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // getMe 호출 시도 (최대 3번 재시도)
       let userData: User | null = null;
       let lastError: any = null;
-      
+
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           userData = await authApi.getMe();
@@ -61,21 +59,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           lastError = error;
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.warn(`초기 로드 getMe 호출 실패 (시도 ${attempt + 1}/3):`, errorMessage);
-          
-          // 마지막 시도가 아니면 잠시 대기 후 재시도
+
           if (attempt < 2) {
             await new Promise(resolve => setTimeout(resolve, 500));
           }
         }
       }
-      
-      // 모든 시도 실패 시
+
       if (lastError) {
         const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
         console.error('초기 로드 getMe 호출이 모든 재시도 후에도 실패했습니다:', errorMessage);
-        
-        // 백엔드에 /api/auth/me가 구현되어 있지 않거나 CORS 문제인 경우
-        // 토큰은 유지하고 사용자 정보만 null로 설정
+
         if (errorMessage.includes('네트워크 연결 실패') || 
             errorMessage.includes('Failed to fetch') ||
             errorMessage.includes('404') ||
@@ -83,16 +77,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             errorMessage.includes('Not Found') ||
             errorMessage.includes('Method Not Allowed') ||
             errorMessage.includes('CORS')) {
-          // 백엔드에 엔드포인트가 없거나 CORS 문제인 경우 토큰 유지
           setUser(null);
         } else if (errorMessage.includes('인증이 필요합니다') || 
                    errorMessage.includes('401') ||
                    errorMessage.includes('Unauthorized')) {
-          // 명시적인 인증 오류인 경우에만 토큰 제거
           removeAuthToken();
           setUser(null);
         } else {
-          // 기타 오류인 경우 토큰 유지 (백엔드 문제일 수 있음)
           setUser(null);
         }
       }
@@ -156,10 +147,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     email: string,
     password: string,
     fullName: string,
-    role: 'STUDENT' | 'TEACHER'
+    role: 'STUDENT' | 'TEACHER',
+    extra?: {
+      phoneNumber?: string;
+      birthDate?: string;
+      grade?: string;
+      classNumber?: string;
+      schoolName?: string;
+      department?: string;
+    }
   ): Promise<void> => {
     try {
-      await authApi.signup({ email, password, fullName, role });
+      await authApi.signup({
+        email,
+        password,
+        fullName,
+        role,
+        ...extra,
+      });
       // 회원가입만 하고 로그인은 하지 않음 (로그인 페이지로 이동)
     } catch (error) {
       throw error;
@@ -167,7 +172,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = useCallback((): void => {
+    // 백엔드 로그아웃은 best-effort로 비동기 호출
+    void authApi.logout().catch((error) => {
+      console.warn('로그아웃 API 호출 실패 (무시 가능):', error);
+    });
     removeAuthToken();
+    removeRefreshToken();
     setUser(null);
     // 타이머 정리
     if (logoutTimerRef.current) {
