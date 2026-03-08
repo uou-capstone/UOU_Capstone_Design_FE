@@ -6,7 +6,10 @@ import {
   lectureApi,
   assessmentApi,
   materialGenerationApi,
+  tasksApi,
   examGenerationApi,
+  getAuthToken,
+  API_BASE_URL,
   type Course,
   type CourseDetail,
   type AssessmentSimpleDto,
@@ -86,6 +89,18 @@ const MainContent: React.FC<MainContentProps> = ({
   const [uploadFile, setUploadFile] = React.useState<File | null>(null);
   const [uploadDragOver, setUploadDragOver] = React.useState(false);
   const [materialKeyword, setMaterialKeyword] = React.useState("");
+  const [materialGenStep, setMaterialGenStep] = React.useState<1 | 2 | 3 | 4 | 5>(1);
+  const [materialSessionId, setMaterialSessionId] = React.useState<number | null>(null);
+  const [materialDraftPlan, setMaterialDraftPlan] = React.useState<Record<string, unknown> | null>(null);
+  const [materialPhase2Feedback, setMaterialPhase2Feedback] = React.useState("");
+  const [materialPhase2UpdateMode, setMaterialPhase2UpdateMode] = React.useState(false);
+  const [materialChapterSummary, setMaterialChapterSummary] = React.useState<string | null>(null);
+  const [materialVerifiedSummary, setMaterialVerifiedSummary] = React.useState<string | null>(null);
+  const [materialFinalUrl, setMaterialFinalUrl] = React.useState<string | null>(null);
+  const [materialPdfPath, setMaterialPdfPath] = React.useState("");
+  const [materialPdfPathUsed, setMaterialPdfPathUsed] = React.useState("");
+  const [materialAsyncTaskId, setMaterialAsyncTaskId] = React.useState<string | null>(null);
+  const [materialCompletedViaAsync, setMaterialCompletedViaAsync] = React.useState(false);
   const [examType, setExamType] = React.useState("FLASH_CARD");
   const [examTopic, setExamTopic] = React.useState("");
   const [examCount, setExamCount] = React.useState(10);
@@ -101,7 +116,109 @@ const MainContent: React.FC<MainContentProps> = ({
   const [joinCode, setJoinCode] = React.useState("");
   const [joinError, setJoinError] = React.useState<string | null>(null);
   const [isJoining, setIsJoining] = React.useState(false);
+  const [previewFileUrl, setPreviewFileUrl] = React.useState<string | null>(null);
+  const [previewFileName, setPreviewFileName] = React.useState<string | null>(null);
+  const [previewBlobUrl, setPreviewBlobUrl] = React.useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = React.useState(false);
+  const [previewLoadError, setPreviewLoadError] = React.useState(false);
+  const [previewRetryKey, setPreviewRetryKey] = React.useState(0);
   const actionMenuRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    if (!previewFileUrl) {
+      setPreviewBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setPreviewLoadError(false);
+      return;
+    }
+    setPreviewBlobUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    const token = getAuthToken();
+    setPreviewLoading(true);
+    setPreviewLoadError(false);
+    let objectUrl: string | null = null;
+    const apiOrigin = API_BASE_URL ? new URL(API_BASE_URL).origin : "";
+    const isSameOrigin = typeof window !== "undefined" && window.location.origin === apiOrigin;
+    let fetchUrl: string;
+    try {
+      const baseForParse = API_BASE_URL || "https://uouaitutor.duckdns.org";
+      const u = previewFileUrl.startsWith("http") ? new URL(previewFileUrl) : new URL(previewFileUrl, baseForParse);
+      // localhost(개발)에서는 path만 쓰면 Vite 서버로 요청 가서 404 발생 → 항상 API 전체 URL로 요청
+      if (isSameOrigin) {
+        fetchUrl = u.pathname + u.search;
+      } else {
+        fetchUrl = u.href;
+      }
+    } catch {
+      fetchUrl = previewFileUrl.startsWith("/") ? (API_BASE_URL || "") + previewFileUrl : previewFileUrl;
+    }
+    fetch(fetchUrl, {
+      method: "GET",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: "omit",
+      mode: "cors",
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("파일을 불러올 수 없습니다.");
+        return res.blob();
+      })
+      .then((blob) => {
+        const type = (blob.type || "").toLowerCase();
+        const isHtml = type.includes("text/html") || type.includes("application/xhtml");
+        if (isHtml) {
+          setPreviewLoadError(true);
+          setPreviewLoading(false);
+          return;
+        }
+        objectUrl = URL.createObjectURL(blob);
+        setPreviewBlobUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return objectUrl;
+        });
+      })
+      .catch(() => setPreviewLoadError(true))
+      .finally(() => setPreviewLoading(false));
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [previewFileUrl, previewRetryKey]);
+
+  const handleOpenPreviewInNewTab = React.useCallback(async () => {
+    if (!previewFileUrl) return;
+    const token = getAuthToken();
+    const apiOrigin = API_BASE_URL ? new URL(API_BASE_URL).origin : "";
+    const isDevOrigin = typeof window !== "undefined" && window.location.hostname === "localhost";
+    const useProxyPath =
+      isDevOrigin && apiOrigin && previewFileUrl.startsWith(apiOrigin);
+    const fetchUrl = useProxyPath
+      ? (() => {
+          try {
+            const u = new URL(previewFileUrl);
+            return u.pathname + u.search;
+          } catch {
+            return previewFileUrl;
+          }
+        })()
+      : previewFileUrl;
+    try {
+      const res = await fetch(fetchUrl, {
+        method: "GET",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: useProxyPath ? "same-origin" : "include",
+        mode: "cors",
+      });
+      if (!res.ok) throw new Error("파일을 불러올 수 없습니다.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener");
+    } catch {
+      window.open(previewFileUrl, "_blank", "noopener");
+    }
+  }, [previewFileUrl]);
 
   React.useEffect(() => {
     if (openCourseMenuId === null) {
@@ -183,18 +300,32 @@ const MainContent: React.FC<MainContentProps> = ({
     }
   }, [uploadModalOpen]);
 
+  React.useEffect(() => {
+    setPreviewFileUrl(null);
+    setPreviewFileName(null);
+  }, [selectedLectureId]);
+
+  // AI 자료 생성 모달을 열었을 때, 이 강의에 업로드된 PDF가 있으면 경로 자동 입력
+  React.useEffect(() => {
+    if (!materialGenModalOpen || materialGenStep !== 1 || selectedLectureId == null) return;
+    const list = localMaterials[selectedLectureId];
+    const firstWithUrl = list?.find((it) => it.fileUrl);
+    if (firstWithUrl?.fileUrl && materialPdfPath === "") setMaterialPdfPath(firstWithUrl.fileUrl);
+  }, [materialGenModalOpen, materialGenStep, selectedLectureId, localMaterials, materialPdfPath]);
+
   const handleUploadSubmit = React.useCallback(async () => {
     if (!selectedLectureId || !uploadFile || !courseDetail?.courseId) return;
     setSubmitting(true);
     try {
       const fileUrl = await lectureApi.uploadMaterial(selectedLectureId, uploadFile);
+      const url = fileUrl || undefined;
       const newItem: CenterItem = {
         id: `material-${Date.now()}`,
         type: "material",
         title: uploadFile.name,
         meta: "자료",
         createdAt: new Date().toISOString(),
-        fileUrl: fileUrl || undefined,
+        fileUrl: url,
       };
       setLocalMaterials((prev) => ({
         ...prev,
@@ -202,6 +333,10 @@ const MainContent: React.FC<MainContentProps> = ({
       }));
       setUploadModalOpen(false);
       setUploadFile(null);
+      if (url) {
+        setPreviewFileUrl(url);
+        setPreviewFileName(uploadFile.name);
+      }
       window.alert("자료가 업로드되었습니다.");
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "업로드에 실패했습니다.");
@@ -212,35 +347,211 @@ const MainContent: React.FC<MainContentProps> = ({
 
   const handleMaterialGenSubmit = React.useCallback(async () => {
     if (!materialKeyword.trim()) return;
+    if (selectedLectureId == null) {
+      window.alert("강의를 먼저 선택해주세요.");
+      return;
+    }
     setSubmitting(true);
     try {
-      await materialGenerationApi.phase1({
-        lectureId: selectedLectureId ?? 0,
+      const pdfPath = materialPdfPath.trim() || "";
+      const res = await materialGenerationApi.phase1({
+        lectureId: selectedLectureId,
         keyword: materialKeyword.trim(),
-        pdfPath: "",
+        pdfPath,
       });
-      const newItem: CenterItem = {
-        id: `material-gen-${Date.now()}`,
-        type: "material",
-        title: `${materialKeyword.trim()} (기획안 생성됨)`,
-        meta: "자료",
-        createdAt: new Date().toISOString(),
-      };
-      if (selectedLectureId) {
-        setLocalMaterials((prev) => ({
-          ...prev,
-          [selectedLectureId]: [...(prev[selectedLectureId] || []), newItem],
-        }));
-      }
-      setMaterialGenModalOpen(false);
-      setMaterialKeyword("");
-      window.alert("기획안 생성이 시작되었습니다.");
+      setMaterialPdfPathUsed(pdfPath);
+      setMaterialSessionId(res.sessionId);
+      setMaterialDraftPlan(res.draftPlan ?? null);
+      setMaterialGenStep(2);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "자료 생성에 실패했습니다.");
+      window.alert(e instanceof Error ? e.message : "기획안 생성에 실패했습니다.");
     } finally {
       setSubmitting(false);
     }
-  }, [materialKeyword, selectedLectureId]);
+  }, [materialKeyword, materialPdfPath, selectedLectureId]);
+
+  const resetMaterialGenModal = React.useCallback(() => {
+    setMaterialGenStep(1);
+    setMaterialSessionId(null);
+    setMaterialDraftPlan(null);
+    setMaterialPhase2Feedback("");
+    setMaterialPhase2UpdateMode(false);
+    setMaterialChapterSummary(null);
+    setMaterialVerifiedSummary(null);
+    setMaterialFinalUrl(null);
+    setMaterialKeyword("");
+    setMaterialPdfPath("");
+    setMaterialPdfPathUsed("");
+    setMaterialAsyncTaskId(null);
+    setMaterialCompletedViaAsync(false);
+  }, []);
+
+  const handleMaterialPhase2Confirm = React.useCallback(async () => {
+    if (materialSessionId == null) return;
+    setSubmitting(true);
+    try {
+      const res = await materialGenerationApi.phase2({ sessionId: materialSessionId, action: "confirm" });
+      if (res.draftPlan) setMaterialDraftPlan(res.draftPlan);
+      setMaterialGenStep(3);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "기획안 확정에 실패했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [materialSessionId]);
+
+  const handleMaterialPhase2Update = React.useCallback(async () => {
+    if (materialSessionId == null) return;
+    setSubmitting(true);
+    try {
+      const res = await materialGenerationApi.phase2({
+        sessionId: materialSessionId,
+        action: "update",
+        feedback: materialPhase2Feedback.trim() || undefined,
+      });
+      if (res.draftPlan) setMaterialDraftPlan(res.draftPlan);
+      setMaterialPhase2Feedback("");
+      setMaterialPhase2UpdateMode(false);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "기획안 수정에 실패했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [materialSessionId, materialPhase2Feedback]);
+
+  const handleMaterialPhase3To5Async = React.useCallback(async () => {
+    if (materialSessionId == null) return;
+    setSubmitting(true);
+    setMaterialAsyncTaskId(null);
+    try {
+      const res = await materialGenerationApi.runAsync({ sessionId: materialSessionId });
+      const taskId = res.taskId;
+      if (!taskId) {
+        window.alert(res.message || "작업 ID를 받지 못했습니다.");
+        return;
+      }
+      setMaterialAsyncTaskId(taskId);
+      const pollMs = 2500;
+      const maxAttempts = 720; // 30분
+      for (let i = 0; i < maxAttempts; i++) {
+        const statusRes = await tasksApi.getStatus(taskId);
+        const s = (statusRes.status || "").toUpperCase();
+        if (s === "COMPLETED" || s === "DONE" || s === "SUCCESS") {
+          const docUrl = statusRes.documentUrl ?? null;
+          // documentUrl이 있을 때만 5단계로 이동 (아직 결과가 안 나온 상태에서 최종문서 생성 버튼 노출 방지)
+          if (docUrl) {
+            setMaterialFinalUrl(docUrl);
+            setMaterialGenStep(5);
+            setMaterialCompletedViaAsync(true);
+            setMaterialAsyncTaskId(null);
+            // 닫은 상태에서도 완료 시 목록에 자동 추가
+            const title = materialKeyword.trim() || "AI 자료";
+            const newItem: CenterItem = {
+              id: `material-${materialSessionId}-${Date.now()}`,
+              type: "material",
+              title: `${title} (문서)`,
+              meta: "자료",
+              createdAt: new Date().toISOString(),
+              fileUrl: docUrl,
+            };
+            if (selectedLectureId) {
+              setLocalMaterials((prev) => ({
+                ...prev,
+                [selectedLectureId]: [...(prev[selectedLectureId] || []), newItem],
+              }));
+            }
+            return;
+          }
+          // COMPLETED인데 documentUrl 없으면 계속 폴링 (백엔드가 늦게 채울 수 있음)
+        }
+        if (s === "FAILED" || s === "ERROR") {
+          window.alert(statusRes.message || "Phase 3~5 처리에 실패했습니다.");
+          setMaterialAsyncTaskId(null);
+          return;
+        }
+        await new Promise((r) => setTimeout(r, pollMs));
+      }
+      window.alert("처리 시간이 초과되었습니다. 잠시 후 작업 상태를 확인해 주세요.");
+      setMaterialAsyncTaskId(null);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "Phase 3~5 실행에 실패했습니다.");
+      setMaterialAsyncTaskId(null);
+    } finally {
+      setSubmitting(false);
+    }
+  }, [materialSessionId, materialKeyword, selectedLectureId]);
+
+  const handleMaterialPhase3 = React.useCallback(async () => {
+    if (materialSessionId == null) return;
+    setSubmitting(true);
+    try {
+      const res = await materialGenerationApi.phase3({ sessionId: materialSessionId });
+      const total = res.totalChapters ?? (res.chapterContentList && typeof res.chapterContentList === "object" ? Object.keys(res.chapterContentList).length : 0);
+      setMaterialChapterSummary(total ? `챕터 ${total}개 생성 완료` : (res.message || "챕터 내용 생성 완료"));
+      setMaterialGenStep(4);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "챕터 내용 생성에 실패했습니다.";
+      if (msg.includes("PDF") && msg.includes("찾을 수 없습니다")) {
+        window.alert("현재 서버가 PDF 자료를 필수로 요구하고 있습니다. 과정상 PDF는 선택이므로, 백엔드에서 PDF 없이도 챕터 생성을 지원하도록 수정이 필요합니다. 백엔드 담당자에게 요청해 주세요.");
+      } else {
+        window.alert(msg);
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }, [materialSessionId]);
+
+  const handleMaterialPhase4 = React.useCallback(async () => {
+    if (materialSessionId == null) return;
+    setSubmitting(true);
+    try {
+      const res = await materialGenerationApi.phase4({ sessionId: materialSessionId });
+      setMaterialVerifiedSummary(res.message ?? "내용 검증 완료");
+      setMaterialGenStep(5);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "내용 검증에 실패했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [materialSessionId]);
+
+  const handleMaterialPhase5 = React.useCallback(async () => {
+    if (materialSessionId == null) return;
+    setSubmitting(true);
+    try {
+      const res = await materialGenerationApi.phase5({ sessionId: materialSessionId });
+      setMaterialFinalUrl(res.documentUrl ?? null);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "최종 문서 생성에 실패했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [materialSessionId]);
+
+  const handleMaterialGenAddToList = React.useCallback(() => {
+    if (materialCompletedViaAsync && selectedLectureId) {
+      resetMaterialGenModal();
+      setMaterialGenModalOpen(false);
+      return;
+    }
+    const title = materialKeyword.trim() || "AI 자료";
+    const newItem: CenterItem = {
+      id: `material-${materialSessionId ?? Date.now()}`,
+      type: "material",
+      title: materialFinalUrl ? `${title} (문서)` : title,
+      meta: "자료",
+      createdAt: new Date().toISOString(),
+      fileUrl: materialFinalUrl ?? undefined,
+    };
+    if (selectedLectureId) {
+      setLocalMaterials((prev) => ({
+        ...prev,
+        [selectedLectureId]: [...(prev[selectedLectureId] || []), newItem],
+      }));
+    }
+    resetMaterialGenModal();
+    setMaterialGenModalOpen(false);
+  }, [materialKeyword, materialSessionId, materialFinalUrl, selectedLectureId, resetMaterialGenModal, materialCompletedViaAsync]);
 
   const handleExamGenSubmit = React.useCallback(async () => {
     if (!examTopic.trim()) return;
@@ -306,8 +617,17 @@ const MainContent: React.FC<MainContentProps> = ({
   }, [courseDetail?.courseId, assessmentTitle, assessmentType, assessmentDueDate]);
 
   const handleCardClick = React.useCallback((item: CenterItem) => {
-    if (item.fileUrl) window.open(item.fileUrl, "_blank");
-    else if (item.assessmentId) window.alert(`평가 상세 (ID: ${item.assessmentId}) - 연동 예정`);
+    if (item.fileUrl) {
+      setPreviewFileUrl(item.fileUrl);
+      setPreviewFileName(item.title || null);
+    } else if (item.type === "material") {
+      window.alert(
+        "이 항목은 API Phase1으로 생성된 기획안 초안입니다.\n\n" +
+        "Phase1은 키워드 기반 기획안(DraftPlan)만 만들고, PDF 파일은 생성하지 않습니다. " +
+        "PDF 문서가 필요하면 Phase 2~5를 순서대로 진행하거나, " +
+        '"자료 업로드"로 직접 PDF를 올린 뒤 미리보기할 수 있습니다.'
+      );
+    } else if (item.assessmentId) window.alert(`평가 상세 (ID: ${item.assessmentId}) - 연동 예정`);
     else if (item.examSessionId) window.alert(`시험 세션: ${item.examSessionId} - 연동 예정`);
   }, []);
 
@@ -352,6 +672,7 @@ const MainContent: React.FC<MainContentProps> = ({
       setCourseModalDescription("");
       setIsCourseModalOpen(false);
       window.alert("강의실이 생성되었습니다!");
+      onSelectCourse(course.courseId);
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : '강의실 생성에 실패했습니다.';
       window.alert(errorMsg);
@@ -694,8 +1015,81 @@ const MainContent: React.FC<MainContentProps> = ({
         : `${selectedLecture.weekNumber}주차`
       : null;
 
+    // 업로드한 자료 미리보기 (같은 페이지 내 표시, 오른쪽 채팅에서 에이전트와 소통)
+    if (previewFileUrl) {
+      return (
+        <div className="flex flex-col h-full">
+          <div className={`flex items-center justify-between gap-3 shrink-0 px-4 py-2 border-b ${
+            isDarkMode ? "border-zinc-700 bg-zinc-800" : "border-gray-200 bg-white"
+          }`}>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { setPreviewFileUrl(null); setPreviewFileName(null); }}
+                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer ${
+                  isDarkMode ? "text-gray-200 hover:bg-zinc-700" : "text-gray-700 hover:bg-gray-100"
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                </svg>
+                목록으로
+              </button>
+              {previewFileName && (
+                <span className={`text-sm truncate max-w-[200px] ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+                  {previewFileName}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex-1 min-h-0 bg-gray-100 dark:bg-zinc-900 flex flex-col">
+            {previewLoading ? (
+              <div className={`flex-1 flex items-center justify-center ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                <p className="text-sm">자료를 불러오는 중…</p>
+              </div>
+            ) : previewLoadError ? (
+              <div className={`flex-1 flex flex-col items-center justify-center p-6 text-center ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                <p className="text-sm mb-2">미리보기를 불러오지 못했습니다.</p>
+                <p className="text-xs mb-6 opacity-80">잠시 후 다시 시도해주세요.</p>
+                <button
+                  type="button"
+                  onClick={() => { setPreviewLoadError(false); setPreviewRetryKey((k) => k + 1); }}
+                  className={`inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold cursor-pointer ${
+                    isDarkMode ? "bg-emerald-600 hover:bg-emerald-500 text-white" : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  }`}
+                >
+                  다시 시도
+                </button>
+              </div>
+            ) : previewBlobUrl ? (
+              <object
+                data={previewBlobUrl}
+                type="application/pdf"
+                className="w-full h-full border-0 flex-1 min-h-0"
+                title={previewFileName || "자료 미리보기"}
+              >
+                <iframe
+                  src={previewBlobUrl}
+                  title={previewFileName || "자료 미리보기"}
+                  className="w-full h-full border-0 flex-1 min-h-0"
+                />
+              </object>
+            ) : null}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-col gap-1.5 h-full">
+        {/* 자료 생성 중 표시 (모달 닫은 후 백그라운드 진행 시) */}
+        {materialAsyncTaskId && (
+          <div className={`shrink-0 flex items-center gap-3 px-4 py-2.5 rounded-xl border ${isDarkMode ? "bg-emerald-900/30 border-emerald-700 text-emerald-200" : "bg-emerald-50 border-emerald-200 text-emerald-800"}`}>
+            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse" aria-hidden />
+            <span className="text-sm font-medium">자료 생성 중: {materialKeyword.trim() || "AI 자료"}</span>
+            <span className="text-xs opacity-80">완료 시 목록에 자동 추가됩니다.</span>
+          </div>
+        )}
         {/* 박스형 목록 + 정렬 + 추가 버튼 */}
         <div className={`flex-1 flex flex-col min-h-0 rounded-xl overflow-hidden ${
           isDarkMode ? "bg-zinc-800" : "bg-white"
@@ -741,7 +1135,10 @@ const MainContent: React.FC<MainContentProps> = ({
                   }`}
                 >
                   <p className="text-sm font-medium truncate">{item.title}</p>
-                  <p className={`text-xs mt-1 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>{item.meta}</p>
+                  <p className={`text-xs mt-1 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
+                    {item.meta}
+                    {item.type === "material" && !item.fileUrl && " · 클릭 시 안내"}
+                  </p>
                 </button>
               ))}
               <div className="relative min-h-[100px]" ref={addMenuRef}>
@@ -773,7 +1170,7 @@ const MainContent: React.FC<MainContentProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setAddMenuOpen(false); if (selectedLectureId) setMaterialGenModalOpen(true); else window.alert("강의를 먼저 선택해주세요."); }}
+                      onClick={() => { setAddMenuOpen(false); if (selectedLectureId) { resetMaterialGenModal(); setMaterialGenModalOpen(true); } else window.alert("강의를 먼저 선택해주세요."); }}
                       className={`w-full text-left px-3 py-2 text-sm cursor-pointer ${
                         isDarkMode ? "hover:bg-zinc-700 text-gray-200" : "hover:bg-gray-100 text-gray-800"
                       }`}
@@ -1316,22 +1713,206 @@ const MainContent: React.FC<MainContentProps> = ({
         </div>
       )}
 
-      {/* AI 자료 생성 모달 */}
+      {/* AI 자료 생성 모달 (Phase 1~5 단계형) */}
       {materialGenModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true" onClick={() => !submitting && setMaterialGenModalOpen(false)}>
-          <div className={`w-full max-w-md rounded-xl shadow-xl border ${isDarkMode ? "bg-zinc-900 border-zinc-700" : "bg-white border-gray-200"}`} onClick={(e) => e.stopPropagation()}>
-            <div className={`flex justify-between px-5 py-4 border-b ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
-              <h2 className={`text-lg font-semibold ${isDarkMode ? "text-gray-100" : "text-gray-900"}`}>AI 자료 생성</h2>
-              <button type="button" onClick={() => !submitting && setMaterialGenModalOpen(false)} className="p-1.5 rounded hover:bg-black/10">✕</button>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true" onClick={() => { if (!submitting) { resetMaterialGenModal(); setMaterialGenModalOpen(false); } }}>
+          <div className={`w-full max-w-lg rounded-xl shadow-xl border ${isDarkMode ? "bg-zinc-900 border-zinc-700" : "bg-white border-gray-200"}`} onClick={(e) => e.stopPropagation()}>
+            <div className={`flex justify-between items-center px-5 py-4 border-b ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+              <h2 className={`text-lg font-semibold ${isDarkMode ? "text-gray-100" : "text-gray-900"}`}>
+                AI 자료 생성 {materialGenStep > 1 && `(단계 ${materialGenStep}/5)`}
+              </h2>
+              <button type="button" onClick={() => { if (!submitting) { resetMaterialGenModal(); setMaterialGenModalOpen(false); } }} className="p-1.5 rounded hover:bg-black/10">✕</button>
             </div>
-            <div className="px-5 py-4 space-y-4">
-              <label className={`block text-sm font-medium ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>주제 또는 키워드</label>
-              <input type="text" value={materialKeyword} onChange={(e) => setMaterialKeyword(e.target.value)} placeholder="예: 강화학습 DQN" className={`w-full px-3 py-2 text-sm rounded border ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`} />
+            <div className="px-5 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
+              {/* Step 1: 키워드 입력 */}
+              {materialGenStep === 1 && (
+                <>
+                  <div>
+                    <label className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>주제 또는 키워드</label>
+                    <input type="text" value={materialKeyword} onChange={(e) => setMaterialKeyword(e.target.value)} placeholder="예: 강화학습 DQN" className={`w-full px-3 py-2 text-sm rounded border ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`} />
+                  </div>
+                  <div>
+                    <label className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>PDF 경로 (선택, 있으면 챕터 분해에 활용)</label>
+                    <input type="text" value={materialPdfPath} onChange={(e) => setMaterialPdfPath(e.target.value)} placeholder="자료 업로드 후 자동 입력되거나 경로를 직접 입력" className={`w-full px-3 py-2 text-sm rounded border ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`} />
+                    {(() => {
+                      const list = selectedLectureId != null ? localMaterials[selectedLectureId] : [];
+                      const withUrl = list?.filter((it) => it.fileUrl) ?? [];
+                      if (withUrl.length <= 1) return null;
+                      return (
+                        <p className={`mt-1 text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                          이 강의의 업로드 자료: {withUrl.map((it) => (
+                            <button key={it.id} type="button" onClick={() => setMaterialPdfPath(it.fileUrl ?? "")} className="ml-1 underline hover:no-underline">{it.title}</button>
+                          ))}
+                        </p>
+                      );
+                    })()}
+                  </div>
+                </>
+              )}
+
+              {/* Step 2: 기획안 확인 / 확정 또는 수정 */}
+              {materialGenStep === 2 && (
+                <>
+                  {materialDraftPlan && (
+                    <div className={`space-y-4 text-sm rounded-lg border p-4 max-h-[50vh] overflow-y-auto ${isDarkMode ? "bg-zinc-800/50 border-zinc-600" : "bg-gray-50 border-gray-200"}`}>
+                      {/* 프로젝트 개요 */}
+                      {materialDraftPlan.project_meta && typeof materialDraftPlan.project_meta === "object" && (
+                        <div>
+                          <h3 className={`font-semibold mb-1.5 ${isDarkMode ? "text-emerald-400" : "text-emerald-700"}`}>📋 프로젝트 개요</h3>
+                          <ul className={`space-y-0.5 text-xs ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                            {(materialDraftPlan.project_meta as Record<string, unknown>).title != null && <li><span className="font-medium">제목:</span> {String((materialDraftPlan.project_meta as Record<string, unknown>).title)}</li>}
+                            {(materialDraftPlan.project_meta as Record<string, unknown>).goal != null && <li><span className="font-medium">목표:</span> {String((materialDraftPlan.project_meta as Record<string, unknown>).goal)}</li>}
+                            {(materialDraftPlan.project_meta as Record<string, unknown>).target_audience != null && <li><span className="font-medium">대상:</span> {String((materialDraftPlan.project_meta as Record<string, unknown>).target_audience)}</li>}
+                            {(materialDraftPlan.project_meta as Record<string, unknown>).description != null && <li><span className="font-medium">설명:</span> {String((materialDraftPlan.project_meta as Record<string, unknown>).description)}</li>}
+                          </ul>
+                        </div>
+                      )}
+                      {/* 작성 스타일 */}
+                      {materialDraftPlan.style_guide && typeof materialDraftPlan.style_guide === "object" && (
+                        <div>
+                          <h3 className={`font-semibold mb-1.5 ${isDarkMode ? "text-emerald-400" : "text-emerald-700"}`}>✒️ 작성 스타일</h3>
+                          <ul className={`space-y-0.5 text-xs ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                            {(materialDraftPlan.style_guide as Record<string, unknown>).tone != null && <li><span className="font-medium">톤:</span> {String((materialDraftPlan.style_guide as Record<string, unknown>).tone)}</li>}
+                            {(materialDraftPlan.style_guide as Record<string, unknown>).formatting != null && <li><span className="font-medium">서식:</span> {String((materialDraftPlan.style_guide as Record<string, unknown>).formatting)}</li>}
+                            {(materialDraftPlan.style_guide as Record<string, unknown>).detail_level != null && <li><span className="font-medium">상세도:</span> {String((materialDraftPlan.style_guide as Record<string, unknown>).detail_level)}</li>}
+                            {(materialDraftPlan.style_guide as Record<string, unknown>).math_policy != null && <li><span className="font-medium">수식:</span> {String((materialDraftPlan.style_guide as Record<string, unknown>).math_policy)}</li>}
+                            {(materialDraftPlan.style_guide as Record<string, unknown>).example_policy != null && <li><span className="font-medium">예시:</span> {String((materialDraftPlan.style_guide as Record<string, unknown>).example_policy)}</li>}
+                          </ul>
+                        </div>
+                      )}
+                      {/* 챕터 구성 */}
+                      {Array.isArray(materialDraftPlan.chapters) && materialDraftPlan.chapters.length > 0 && (
+                        <div>
+                          <h3 className={`font-semibold mb-2 ${isDarkMode ? "text-emerald-400" : "text-emerald-700"}`}>📑 챕터 구성 ({materialDraftPlan.chapters.length}개)</h3>
+                          <ol className="space-y-3 list-decimal list-inside">
+                            {materialDraftPlan.chapters.map((ch: unknown, i: number) => {
+                              const c = ch as Record<string, unknown>;
+                              const title = c.title != null ? String(c.title) : `챕터 ${i + 1}`;
+                              const objective = c.objective != null ? String(c.objective) : null;
+                              const keyTopics = Array.isArray(c.key_topics) ? c.key_topics as string[] : [];
+                              const mustInclude = Array.isArray(c.must_include) ? c.must_include as string[] : [];
+                              return (
+                                <li key={i} className={`pl-1 border-l-2 ${isDarkMode ? "border-zinc-600" : "border-gray-300"}`}>
+                                  <span className={`font-medium ${isDarkMode ? "text-gray-100" : "text-gray-900"}`}>{title}</span>
+                                  {objective && <p className={`mt-0.5 text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>{objective}</p>}
+                                  {keyTopics.length > 0 && (
+                                    <p className={`mt-1 text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+                                      <span className="font-medium">주요 주제:</span> {keyTopics.slice(0, 4).join(" · ")}{keyTopics.length > 4 ? " …" : ""}
+                                    </p>
+                                  )}
+                                  {mustInclude.length > 0 && (
+                                    <ul className="mt-0.5 text-xs list-disc list-inside text-gray-500">
+                                      {mustInclude.slice(0, 2).map((s, j) => <li key={j}>{s}</li>)}
+                                      {mustInclude.length > 2 && <li>외 {mustInclude.length - 2}개</li>}
+                                    </ul>
+                                  )}
+                                </li>
+                              );
+                            })}
+                          </ol>
+                        </div>
+                      )}
+                      {/* 알 수 없는 구조면 JSON 폴백 */}
+                      {!materialDraftPlan.project_meta && !materialDraftPlan.style_guide && !(Array.isArray(materialDraftPlan.chapters) && materialDraftPlan.chapters.length > 0) && (
+                        <pre className={`text-xs p-2 rounded overflow-x-auto ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>{JSON.stringify(materialDraftPlan, null, 2)}</pre>
+                      )}
+                    </div>
+                  )}
+                  {!materialDraftPlan && <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>기획안이 생성되었습니다. 확정하거나 수정 요청을 입력하세요.</p>}
+                  {!materialPhase2UpdateMode ? (
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={handleMaterialPhase2Confirm} disabled={submitting} className="px-4 py-2 text-sm rounded font-medium bg-emerald-600 text-white disabled:opacity-50">기획안 확정</button>
+                      <button type="button" onClick={() => setMaterialPhase2UpdateMode(true)} disabled={submitting} className={`px-4 py-2 text-sm rounded font-medium ${isDarkMode ? "bg-zinc-700 text-gray-200" : "bg-gray-200 text-gray-800"}`}>수정 요청</button>
+                    </div>
+                  ) : (
+                    <>
+                      <div>
+                        <label className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>수정 요청 사항</label>
+                        <textarea value={materialPhase2Feedback} onChange={(e) => setMaterialPhase2Feedback(e.target.value)} placeholder="수정하고 싶은 내용을 입력하세요" rows={3} className={`w-full px-3 py-2 text-sm rounded border ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`} />
+                      </div>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={handleMaterialPhase2Update} disabled={submitting} className="px-4 py-2 text-sm rounded font-medium bg-emerald-600 text-white disabled:opacity-50">{submitting ? "반영 중..." : "반영 후 다시 보기"}</button>
+                        <button type="button" onClick={() => { setMaterialPhase2UpdateMode(false); setMaterialPhase2Feedback(""); }} disabled={submitting} className={`px-4 py-2 text-sm rounded ${isDarkMode ? "bg-zinc-700 text-gray-200" : "bg-gray-200 text-gray-800"}`}>취소</button>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+
+              {/* Step 3: Phase 3~5 한 번에 실행 (async) */}
+              {materialGenStep === 3 && (
+                <div className="space-y-3">
+                  {submitting && materialAsyncTaskId ? (
+                    <>
+                      <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>챕터·검증·최종 문서를 생성하고 있습니다.</p>
+                      <p className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>아래 [닫기]를 누르면 모달만 닫히고, 작업은 백그라운드에서 계속됩니다. 완료되면 목록에 자동으로 추가됩니다.</p>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => setMaterialGenModalOpen(false)} className={`px-4 py-2 text-sm rounded font-medium ${isDarkMode ? "bg-zinc-700 text-gray-200" : "bg-gray-200 text-gray-800"}`}>닫고 다른 작업하기</button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
+                        챕터 내용 생성·검증·최종 문서 생성을 한 번에 실행합니다.
+                        {materialPdfPathUsed && <span className={`block mt-1 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>PDF가 연결되어 활용됩니다.</span>}
+                      </p>
+                      <button type="button" onClick={handleMaterialPhase3To5Async} disabled={submitting} className="px-4 py-2 text-sm rounded font-medium bg-emerald-600 text-white disabled:opacity-50">{submitting ? "처리 중… (완료될 때까지 잠시 기다려 주세요)" : "Phase 3~5 실행"}</button>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Step 4: (async 사용 시 건너뜀, 기존 단계별 진행용 유지) */}
+              {materialGenStep === 4 && (
+                <div className="space-y-3">
+                  {materialChapterSummary && <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>{materialChapterSummary}</p>}
+                  <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>내용을 검증합니다.</p>
+                  <button type="button" onClick={handleMaterialPhase4} disabled={submitting} className="px-4 py-2 text-sm rounded font-medium bg-emerald-600 text-white disabled:opacity-50">{submitting ? "검증 중..." : "내용 검증"}</button>
+                </div>
+              )}
+
+              {/* Step 5: 최종 문서 생성 및 완료 */}
+              {materialGenStep === 5 && (
+                <div className="space-y-3">
+                  {materialVerifiedSummary && <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>{materialVerifiedSummary}</p>}
+                  {materialFinalUrl == null ? (
+                    <>
+                      {materialCompletedViaAsync ? (
+                        <>
+                          <p className={`text-sm ${isDarkMode ? "text-amber-300" : "text-amber-700"}`}>문서 링크가 아직 반영되지 않았을 수 있습니다.</p>
+                          <p className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>백엔드에서 완료 후 documentUrl을 내려주면 여기서 보입니다. 잠시 후 목록에서 확인하거나 닫아 주세요.</p>
+                          <button type="button" onClick={() => { resetMaterialGenModal(); setMaterialGenModalOpen(false); }} className={`px-4 py-2 text-sm rounded ${isDarkMode ? "bg-zinc-700 text-gray-200" : "bg-gray-200 text-gray-800"}`}>닫기</button>
+                        </>
+                      ) : (
+                        <>
+                          <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>최종 문서를 생성합니다.</p>
+                          <button type="button" onClick={handleMaterialPhase5} disabled={submitting} className="px-4 py-2 text-sm rounded font-medium bg-emerald-600 text-white disabled:opacity-50">{submitting ? "생성 중..." : "최종 문서 생성"}</button>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <p className={`text-sm ${isDarkMode ? "text-green-300" : "text-green-700"}`}>문서 생성이 완료되었습니다.</p>
+                      {materialFinalUrl && (
+                        <p className="text-sm">
+                          <a href={materialFinalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-600 underline">문서 보기/다운로드</a>
+                        </p>
+                      )}
+                      <div className="flex gap-2 pt-2">
+                        <button type="button" onClick={handleMaterialGenAddToList} className="px-4 py-2 text-sm rounded font-medium bg-emerald-600 text-white">목록에 추가하고 닫기</button>
+                        <button type="button" onClick={() => { resetMaterialGenModal(); setMaterialGenModalOpen(false); }} className={`px-4 py-2 text-sm rounded ${isDarkMode ? "bg-zinc-700 text-gray-200" : "bg-gray-200 text-gray-800"}`}>닫기</button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
-            <div className={`px-5 py-4 border-t flex justify-end gap-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
-              <button type="button" onClick={() => !submitting && setMaterialGenModalOpen(false)} className={`px-4 py-2 text-sm rounded ${isDarkMode ? "bg-zinc-800 text-gray-200" : "bg-gray-100 text-gray-700"}`}>취소</button>
-              <button type="button" onClick={handleMaterialGenSubmit} disabled={submitting || !materialKeyword.trim()} className="px-4 py-2 text-sm rounded font-medium bg-emerald-600 text-white disabled:opacity-50 cursor-pointer">{submitting ? "생성 중..." : "기획안 생성"}</button>
-            </div>
+            {materialGenStep === 1 && (
+              <div className={`px-5 py-4 border-t flex justify-end gap-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                <button type="button" onClick={() => { resetMaterialGenModal(); setMaterialGenModalOpen(false); }} className={`px-4 py-2 text-sm rounded ${isDarkMode ? "bg-zinc-800 text-gray-200" : "bg-gray-100 text-gray-700"}`}>취소</button>
+                <button type="button" onClick={handleMaterialGenSubmit} disabled={submitting || !materialKeyword.trim()} className="px-4 py-2 text-sm rounded font-medium bg-emerald-600 text-white disabled:opacity-50 cursor-pointer">{submitting ? "생성 중..." : "기획안 생성"}</button>
+              </div>
+            )}
           </div>
         </div>
       )}

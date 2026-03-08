@@ -1,5 +1,5 @@
 const BACKEND_URL = 'https://uouaitutor.duckdns.org';
-const API_BASE_URL = import.meta.env.VITE_API_URL || BACKEND_URL;
+export const API_BASE_URL = import.meta.env.VITE_API_URL || BACKEND_URL;
 const AI_SERVICE_URL = import.meta.env.VITE_AI_SERVICE_URL || API_BASE_URL;
 
 // API 응답 타입
@@ -874,6 +874,27 @@ export interface MaterialsPhase5Response {
   message?: string;
 }
 
+// Phase 3~5 비동기 실행 (한 번에 실행)
+export interface MaterialsGenerationAsyncRequest {
+  sessionId: number;
+}
+
+export interface MaterialsGenerationAsyncResponse {
+  taskId: string;
+  status: string;
+  message?: string;
+  statusUrl?: string;
+}
+
+export interface TaskStatusResponse {
+  taskId?: string;
+  status: string;
+  documentUrl?: string;
+  progressPercentage?: number;
+  message?: string;
+  [key: string]: unknown;
+}
+
 // 모니터링 API 타입 (필수 필드만 최소 정의, 나머지는 자유형)
 export interface MonitoringOverview {
   timestamp?: string;
@@ -996,6 +1017,20 @@ export const materialGenerationApi = {
       method: "POST",
       body: JSON.stringify(payload),
     });
+  },
+
+  /** Phase 3~5 한 번에 비동기 실행. taskId 반환 후 /api/tasks/{taskId}/status 로 진행 조회 */
+  runAsync: async (payload: MaterialsGenerationAsyncRequest): Promise<MaterialsGenerationAsyncResponse> => {
+    return apiRequest<MaterialsGenerationAsyncResponse>("/api/materials/generation/async", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+};
+
+export const tasksApi = {
+  getStatus: async (taskId: string): Promise<TaskStatusResponse> => {
+    return apiRequest<TaskStatusResponse>(`/api/tasks/${encodeURIComponent(taskId)}/status`, { method: "GET" });
   },
 };
 

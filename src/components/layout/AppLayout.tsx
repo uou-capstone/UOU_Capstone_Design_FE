@@ -1,8 +1,7 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import LeftSidebar from "./LeftSidebar.tsx";
-import RightSidebar from "./RightSidebar.tsx";
 import MainContent from "./MainContent.tsx";
 import { useCourses } from "../../hooks/useCourses";
 import type { Course, CourseDetail, LectureResponseDto } from "../../services/api";
@@ -21,8 +20,6 @@ type MenuItem =
 type CourseLecture = NonNullable<NonNullable<CourseDetail["lectures"]>[number]>;
 
 const DEFAULT_LEFT_SIDEBAR_WIDTH = 220;
-const DEFAULT_RIGHT_SIDEBAR_WIDTH = 420;
-
 const COLLAPSED_LEFT_WIDTH = 56;
 
 const getLastLectureStorageKey = (courseId: number) => `course_${courseId}_last_lecture`;
@@ -54,13 +51,6 @@ const AppLayout: React.FC = () => {
   const [currentCourseId, setCurrentCourseId] = useState<number | null>(null);
   const [currentLectureId, setCurrentLectureId] = useState<number | null>(null);
 
-  const [lectureMarkdown, setLectureMarkdown] = useState<string>("");
-  const [lectureFileUrl, setLectureFileUrl] = useState<string>("");
-  const [lectureFileName, setLectureFileName] = useState<string>("");
-
-  const [rightSidebarWidth, setRightSidebarWidth] = useState<number>(DEFAULT_RIGHT_SIDEBAR_WIDTH);
-  const [isResizingRight, setIsResizingRight] = useState<boolean>(false);
-  const rightResizeRef = useRef<HTMLDivElement>(null);
   const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState(false);
   const [isAutoCollapsed, setIsAutoCollapsed] = useState(false);
   
@@ -69,11 +59,7 @@ const AppLayout: React.FC = () => {
 
   const viewMode: ViewMode = selectedCourseId ? "course-detail" : "course-list";
 
-  const resetLectureOutputs = useCallback(() => {
-    setLectureMarkdown("");
-    setLectureFileUrl("");
-    setLectureFileName("");
-  }, []);
+  const resetLectureOutputs = useCallback(() => {}, []);
 
   const loadCourseDetail = useCallback(
     async (courseId: number) => {
@@ -126,11 +112,19 @@ const AppLayout: React.FC = () => {
     try {
       const key = getLastLectureStorageKey(selectedCourseId);
       const raw = localStorage.getItem(key);
-      if (!raw) return;
-      const lectureId = Number(raw);
-      if (!Number.isFinite(lectureId)) return;
-      const exists = courseDetail.lectures.some((l) => l.lectureId === lectureId);
-      if (exists) setCurrentLectureId(lectureId);
+      if (raw) {
+        const lectureId = Number(raw);
+        if (Number.isFinite(lectureId)) {
+          const exists = courseDetail.lectures.some((l) => l.lectureId === lectureId);
+          if (exists) {
+            setCurrentLectureId(lectureId);
+            return;
+          }
+        }
+      }
+      // 저장된 강의가 없거나 유효하지 않으면 OT(0주차)로 진입
+      const otLecture = courseDetail.lectures.find((l) => l.weekNumber === 0);
+      if (otLecture) setCurrentLectureId(otLecture.lectureId);
     } catch {
       // ignore
     }
@@ -340,50 +334,6 @@ const AppLayout: React.FC = () => {
     [currentCourseId, deleteCourse, navigate, resetLectureOutputs]
   );
 
-  const handleRightMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    setIsResizingRight(true);
-  }, []);
-
-  const handleRightMouseMove = useCallback(
-    (e: MouseEvent) => {
-      if (!isResizingRight) return;
-
-      const newWidth = window.innerWidth - e.clientX;
-      const minWidth = 260;
-      const maxWidth = window.innerWidth * 0.6;
-
-      if (newWidth >= minWidth && newWidth <= maxWidth) {
-        setRightSidebarWidth(newWidth);
-      }
-    },
-    [isResizingRight]
-  );
-
-  const handleRightMouseUp = useCallback(() => {
-    setIsResizingRight(false);
-  }, []);
-
-  const handleRightDoubleClick = useCallback(() => {
-    setRightSidebarWidth(DEFAULT_RIGHT_SIDEBAR_WIDTH);
-  }, []);
-
-  useEffect(() => {
-    if (isResizingRight) {
-      document.addEventListener("mousemove", handleRightMouseMove);
-      document.addEventListener("mouseup", handleRightMouseUp);
-      document.body.style.cursor = "col-resize";
-      document.body.style.userSelect = "none";
-
-      return () => {
-        document.removeEventListener("mousemove", handleRightMouseMove);
-        document.removeEventListener("mouseup", handleRightMouseUp);
-        document.body.style.cursor = "";
-        document.body.style.userSelect = "";
-      };
-    }
-  }, [isResizingRight, handleRightMouseMove, handleRightMouseUp]);
-
   // 화면 크기에 따라 좌측 사이드바 자동 접기/펼치기 (반응형)
   useEffect(() => {
     const handleResize = () => {
@@ -452,40 +402,6 @@ const AppLayout: React.FC = () => {
           selectedMenu={selectedMenu}
         />
       </div>
-
-      {/* 우측 사이드바 구분선 및 리사이즈 핸들러 */}
-      <div
-        ref={rightResizeRef}
-        onMouseDown={handleRightMouseDown}
-        onDoubleClick={handleRightDoubleClick}
-        className={`relative flex-shrink-0 cursor-col-resize transition-colors group ${
-          isDarkMode ? "bg-[#1a1a1a] border-l border-white/10 hover:bg-zinc-700" : "bg-white border-l border-gray-200 hover:bg-zinc-200"
-        } ${isResizingRight ? (isDarkMode ? "bg-gray-800" : "bg-gray-200") : ""}`}
-        style={{
-          width: "1px",
-          zIndex: 10,
-        }}
-      >
-        <div
-          className={`absolute inset-y-0 left-1/2 -translate-x-1/2 w-8 transition-opacity ${
-            isResizingRight ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-          }`}
-          style={{ cursor: "col-resize" }}
-        />
-      </div>
-
-      <RightSidebar
-        onLectureDataChange={(markdown, fileUrl, fileName) => {
-          setLectureMarkdown(markdown);
-          setLectureFileUrl(fileUrl);
-          setLectureFileName(fileName);
-        }}
-        width={rightSidebarWidth}
-        courseId={selectedCourseId ?? currentCourseId ?? undefined}
-        lectureId={currentLectureId ?? undefined}
-        viewMode={viewMode}
-        courseDetail={courseDetail}
-      />
     </div>
   );
 };
