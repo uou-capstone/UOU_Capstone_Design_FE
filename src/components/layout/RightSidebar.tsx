@@ -50,6 +50,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [isGeneratingContent, setIsGeneratingContent] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isFetchingNext, setIsFetchingNext] = useState(false);
   const [waitingForAnswer, setWaitingForAnswer] = useState(false);
@@ -328,7 +329,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       // 업로드 완료 메시지 추가
       const successMessage: ChatMessage = {
         id: Date.now() + 1,
-        text: "파일이 업로드되었습니다. Enter를 눌러 학습을 시작하세요.",
+        text:
+          "파일이 업로드되었습니다.\n\n- 강의 콘텐츠 생성: `/generate`\n- 스트리밍 학습 시작: Enter (빈 입력)\n- 현재 세션 상태 조회: `/status`\n- 스트리밍 중단: `/cancel`",
         isUser: false,
         isLoading: false,
       };
@@ -450,11 +452,44 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     if (!currentLectureId || isFetchingNext) return;
     shouldAbortPollingRef.current = false;
     setIsFetchingNext(true);
+
+    const parseHttpStatusFromError = (msg: string): number | null => {
+      const m = msg.match(/API Error\s*\(\s*(\d{3})/i);
+      return m ? Number(m[1]) : null;
+    };
+
+    const isKnownTransientStreamError = (msg: string): boolean => {
+      // 백엔드(파이썬)에서 간헐적으로 내려오는 내부 오류 문자열
+      return /tuple indices must be integers or slices, not str/i.test(msg);
+    };
+
+    const callNextWithRetry = async (): Promise<StreamNextResponse> => {
+      // 간헐적 500을 짧게 재시도해서 UX를 개선
+      const delaysMs = [500, 1000, 2000];
+      let lastErr: unknown;
+      for (let attempt = 0; attempt < delaysMs.length + 1; attempt++) {
+        if (!currentLectureId || shouldAbortPollingRef.current) {
+          throw new Error("요청이 중단되었습니다.");
+        }
+        try {
+          return await streamingApi.next(currentLectureId);
+        } catch (e) {
+          lastErr = e;
+          const msg = e instanceof Error ? e.message : String(e);
+          const status = parseHttpStatusFromError(msg);
+          const shouldRetry = status === 500 || isKnownTransientStreamError(msg);
+          if (!shouldRetry || attempt >= delaysMs.length) break;
+          await sleep(delaysMs[attempt]);
+        }
+      }
+      throw lastErr instanceof Error ? lastErr : new Error("다음 세그먼트 수신 실패");
+    };
+
     const pollNext = async (): Promise<void> => {
       if (!currentLectureId || shouldAbortPollingRef.current) {
         return;
       }
-      const res = await streamingApi.next(currentLectureId);
+      const res = await callNextWithRetry();
       const status = (res.status || "").toUpperCase();
       if (status === "PROCESSING") {
         await sleep(2000);
@@ -494,7 +529,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               setMessages((prev) => prev.filter((m) => m.id !== questionLoadingId));
               return;
             }
-            const nextRes = await streamingApi.next(currentLectureId);
+            const nextRes = await callNextWithRetry();
             const nextStatus = (nextRes.status || "").toUpperCase();
             if (nextStatus === "PROCESSING") {
               await sleep(2000);
@@ -526,6 +561,18 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       await pollNext();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "다음 세그먼트 수신 실패";
+      if (isKnownTransientStreamError(msg)) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now(),
+            text:
+              "서버 내부 오류가 발생했어요(일시적). 잠시 후 Enter를 다시 눌러 재시도해 주세요. 계속 반복되면 `/cancel` 후 다시 시작해 보세요.",
+            isUser: false,
+          },
+        ]);
+        return;
+      }
       setMessages((prev) => [
         ...prev,
         { id: Date.now(), text: `오류: ${msg}`, isUser: false },
@@ -563,6 +610,39 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
   const handleSendMessage = () => {
     const trimmed = inputText.trim();
+
+    // 공통 명령어: 스트리밍 취소
+    if (trimmed === "/cancel") {
+      if (isStreaming) {
+        void cancelStreaming();
+      } else {
+        setMessages((prev) => [...prev, { id: Date.now(), text: "현재 진행 중인 스트리밍이 없습니다.", isUser: false }]);
+      }
+      resetInputText();
+      return;
+    }
+
+    // 공통 명령어: 세션/상태 조회
+    if (trimmed === "/status") {
+      if (!currentLectureId) return;
+      resetInputText();
+      setMessages((prev) => [...prev, { id: Date.now(), text: "", isUser: false, isLoading: true }]);
+      streamingApi.getSession(currentLectureId)
+        .then((res) => {
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.isLoading
+                ? { ...m, text: "세션 상태", markdown: "```json\n" + JSON.stringify(res, null, 2) + "\n```", isLoading: false }
+                : m
+            )
+          );
+        })
+        .catch((e) => {
+          const msg = e instanceof Error ? e.message : "상태 조회 실패";
+          setMessages((prev) => prev.map((m) => (m.isLoading ? { ...m, text: `오류: ${msg}`, isLoading: false } : m)));
+        });
+      return;
+    }
 
     // 질문 대기 시: 사용자의 답변 전송
     if (isStreaming && waitingForAnswer && currentAiQuestionId && currentLectureId) {
@@ -638,8 +718,65 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       return;
     }
 
-    // 파일이 업로드되었고 스트리밍이 시작되지 않았을 때: Enter로 스트리밍 시작
+    // 파일이 업로드되었고 스트리밍이 시작되지 않았을 때:
+    // - /generate: generate-content 실행 후 ai-status 완료까지 폴링
+    // - Enter(빈 입력): 스트리밍 시작
     if (!isStreaming && hasUploadedMaterial && currentLectureId) {
+      if (trimmed === "/generate" || trimmed === "강의 생성") {
+        if (isGeneratingContent) {
+          resetInputText();
+          setMessages((prev) => [...prev, { id: Date.now(), text: "이미 강의 콘텐츠 생성을 진행 중입니다.", isUser: false }]);
+          return;
+        }
+        resetInputText();
+        setIsGeneratingContent(true);
+        const loadingId = Date.now();
+        setMessages((prev) => [...prev, { id: loadingId, text: "", isUser: false, isLoading: true }]);
+        lectureApi.generateContent(currentLectureId)
+          .then(async () => {
+            // ai-status 폴링
+            const pollMs = 2500;
+            const maxAttempts = 720; // 30분
+            for (let i = 0; i < maxAttempts; i++) {
+              const st = await lectureApi.getAiStatus(currentLectureId);
+              const s = (st.status || "").toUpperCase();
+              if (s === "COMPLETED" || s === "DONE" || s === "SUCCESS") {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === loadingId
+                      ? { ...m, text: "강의 콘텐츠 생성 완료", isLoading: false }
+                      : m
+                  )
+                );
+                setMessages((prev) => [...prev, { id: Date.now() + 1, text: "Enter를 눌러 스트리밍 학습을 시작하세요.", isUser: false }]);
+                return;
+              }
+              if (s === "FAILED" || s === "ERROR") {
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === loadingId
+                      ? { ...m, text: `생성 실패: ${st.message || "알 수 없는 오류"}`, isLoading: false }
+                      : m
+                  )
+                );
+                return;
+              }
+              await sleep(pollMs);
+            }
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === loadingId ? { ...m, text: "생성 시간이 초과되었습니다. `/status`로 상태를 확인하세요.", isLoading: false } : m
+              )
+            );
+          })
+          .catch((e) => {
+            const msg = e instanceof Error ? e.message : "강의 콘텐츠 생성 시작 실패";
+            setMessages((prev) => prev.map((m) => (m.id === loadingId ? { ...m, text: `오류: ${msg}`, isLoading: false } : m)));
+          })
+          .finally(() => setIsGeneratingContent(false));
+        return;
+      }
+
       resetInputText(); // 입력창 비우기
       const initMessageId = Date.now();
       setMessages((prev) => [

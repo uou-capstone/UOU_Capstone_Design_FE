@@ -231,7 +231,13 @@ const apiRequest = async <T>(
   includeAuth: boolean = true
 ): Promise<T> => {
   const requestEndpoint = endpoint;
-  const url = API_BASE_URL ? `${API_BASE_URL}${endpoint}` : endpoint;
+  // 개발(localhost)에서는 Vite proxy(/api -> duckdns)를 활용해 CORS를 피한다.
+  // API_BASE_URL을 그대로 붙이면 브라우저가 cross-origin 요청을 하면서 CORS/네트워크 오류가 날 수 있음.
+  const isDevHost =
+    typeof window !== 'undefined' &&
+    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  const shouldUseViteProxy = isDevHost && endpoint.startsWith('/api');
+  const url = shouldUseViteProxy ? endpoint : (API_BASE_URL ? `${API_BASE_URL}${endpoint}` : endpoint);
   const isFormData = options.body instanceof FormData;
   const config: RequestInit = {
     ...options,
@@ -698,8 +704,18 @@ export const lectureApi = {
     });
   },
 
-  // AI 강의 콘텐츠 생성 (선생님)
-  // (스트리밍으로 대체됨) generate-content 제거
+  // AI 강의 콘텐츠 생성 (선생님) — PDF 업로드 후 강의 생성
+  generateContent: async (lectureId: number, body?: { pdfPath?: string }): Promise<void> => {
+    return apiRequest<void>(`/api/lectures/${lectureId}/generate-content`, {
+      method: 'POST',
+      body: body ? JSON.stringify(body) : '{}',
+    });
+  },
+
+  // AI 콘텐츠 생성 상태 조회
+  getAiStatus: async (lectureId: number): Promise<{ status: string; progress?: number; message?: string }> => {
+    return apiRequest<{ status: string; progress?: number; message?: string }>(`/api/lectures/${lectureId}/ai-status`, { method: 'GET' });
+  },
 
   // 강의 자료 업로드 (PDF) (선생님)
   uploadMaterial: async (lectureId: number, file: File): Promise<string> => {
@@ -1094,16 +1110,42 @@ const aiServiceRequest = async <T>(endpoint: string, options: RequestInit = {}):
 };
 
 /** 시험 생성 API 요청 (문서: camelCase, lectureId/targetCount/lectureContent 등) */
+export interface ExamLearningGoal {
+  focusAreas: string[];
+  targetDepth: "Concept" | "Application" | "Derivation" | "Deep Understanding";
+  questionModality: "Mathematical" | "Theoretical" | "Balance";
+}
+
+export interface ExamUserStatus {
+  proficiencyLevel: "Beginner" | "Intermediate" | "Advanced";
+  weaknessFocus: boolean;
+}
+
+export interface ExamInteractionStyle {
+  languagePreference: "Korean_with_English_Terms" | "Korean_with_Korean_Terms" | "Only_English";
+  scenarioBased: boolean;
+}
+
+export interface ExamFeedbackPreference {
+  strictness: "Strict" | "Lenient";
+  explanationDepth: "Answer_Only" | "Detailed_with_Examples";
+}
+
+export interface ExamUserProfile {
+  learningGoal: ExamLearningGoal;
+  userStatus: ExamUserStatus;
+  interactionStyle: ExamInteractionStyle;
+  feedbackPreference: ExamFeedbackPreference;
+  scopeBoundary: "Lecture_Material_Only" | "Allow_External_Knowledge";
+}
+
 export interface ExamGenerationRequest {
   lectureId: number;
   examType: string;
   targetCount: number;
   lectureContent: string;
   topic?: string;
-  userProfile?: { learningGoal?: string; focusAreas?: string[]; targetDepth?: string; questionModality?: string };
-  userStatus?: { proficiencyLevel?: string; weaknessFocus?: string[] };
-  interactionStyle?: { languagePreference?: string; scenarioBased?: boolean };
-  feedbackPreference?: { strictness?: string; explanationDepth?: string };
+  userProfile?: ExamUserProfile;
 }
 
 export interface ExamGenerationResponse {
@@ -1111,6 +1153,104 @@ export interface ExamGenerationResponse {
   status: string;
   progress?: number;
   exam?: { topic: string; questionCount?: number; questions?: unknown[] };
+}
+
+// 시험 생성 비동기 요청/응답 (Swagger: /api/exams/generation/async)
+export interface ExamGenerationAsyncRequest {
+  examType: string;
+  targetCount: number;
+  lectureContent: string;
+  topic?: string;
+  userProfile?: ExamUserProfile;
+}
+
+export interface ExamGenerationAsyncResponse {
+  taskId: string;
+  message?: string;
+  status: string;
+  statusUrl?: string;
+}
+
+// 시험 세션 상세 조회 응답 (/api/exams/generation/{examSessionId})
+export interface ExamFlashCard {
+  categoryTag: string;
+  frontContent: string;
+  backContent: string;
+  complexityLevel: string;
+}
+
+export interface ExamOxProblem {
+  questionContent: string;
+  correctAnswer: string;
+  explanation: string;
+  intentType: string;
+}
+
+export interface ExamFiveChoiceOption {
+  id: string;
+  content: string;
+  intent: string;
+  isCorrect: boolean;
+}
+
+export interface ExamFiveChoiceProblem {
+  questionContent: string;
+  options: ExamFiveChoiceOption[];
+  correctAnswer: string;
+  intentDiagnosis: string;
+}
+
+export interface ExamShortAnswerProblem {
+  questionContent: string;
+  relatedKeywords: string[];
+  bestAnswer: string;
+  evaluationCriteria: string;
+}
+
+export interface ExamDebateTopic {
+  topic: string;
+  context: string;
+  proSideStand: string;
+  conSideStand: string;
+  evaluationCriteria: string[];
+}
+
+export interface ExamUsedProfile {
+  learningGoal?: {
+    focusAreas?: string[];
+    targetDepth?: string;
+    questionModality?: string;
+  };
+  userStatus?: {
+    proficiencyLevel?: string;
+    weaknessFocus?: string[];
+  };
+  interactionStyle?: {
+    languagePreference?: string;
+    scenarioBased?: boolean;
+  };
+  feedbackPreference?: {
+    strictness?: string;
+    explanationDepth?: string;
+  };
+  scopeBoundary?: string;
+}
+
+export interface ExamSessionDetailResponse {
+  examSessionId: number;
+  examType: string;
+  flashCards: ExamFlashCard[];
+  oxProblems: ExamOxProblem[];
+  fiveChoiceProblems: ExamFiveChoiceProblem[];
+  shortAnswerProblems: ExamShortAnswerProblem[];
+  debateTopics: ExamDebateTopic[];
+  usedProfile: ExamUsedProfile;
+  totalCount: number;
+}
+
+// 시험 세션 복구 응답 (/api/exams/generation/{examSessionId}/recover) - Swagger가 key/value 임의 맵을 사용
+export interface ExamSessionRecoverResponse {
+  [key: string]: string;
 }
 
 /** 시험 생성 API 요청 본문: API 문서 기준 camelCase */
@@ -1123,9 +1263,6 @@ function buildExamGenerationBody(payload: ExamGenerationRequest): string {
   };
   if (payload.topic != null && payload.topic !== '') body.topic = payload.topic;
   if (payload.userProfile != null) body.userProfile = payload.userProfile;
-  if (payload.userStatus != null) body.userStatus = payload.userStatus;
-  if (payload.interactionStyle != null) body.interactionStyle = payload.interactionStyle;
-  if (payload.feedbackPreference != null) body.feedbackPreference = payload.feedbackPreference;
   return JSON.stringify(body);
 }
 
@@ -1134,6 +1271,22 @@ export const examGenerationApi = {
     return aiServiceRequest<ExamGenerationResponse>('/api/exams/generation', {
       method: 'POST',
       body: buildExamGenerationBody(payload),
+    });
+  },
+  runAsync: async (payload: ExamGenerationAsyncRequest): Promise<ExamGenerationAsyncResponse> => {
+    return aiServiceRequest<ExamGenerationAsyncResponse>('/api/exams/generation/async', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  recoverSession: async (examSessionId: number): Promise<ExamSessionRecoverResponse> => {
+    return aiServiceRequest<ExamSessionRecoverResponse>(`/api/exams/generation/${encodeURIComponent(examSessionId)}/recover`, {
+      method: 'POST',
+    });
+  },
+  getSession: async (examSessionId: number): Promise<ExamSessionDetailResponse> => {
+    return aiServiceRequest<ExamSessionDetailResponse>(`/api/exams/generation/${encodeURIComponent(examSessionId)}`, {
+      method: 'GET',
     });
   },
 };
