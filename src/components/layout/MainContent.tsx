@@ -13,7 +13,9 @@ import {
   type Course,
   type CourseDetail,
   type AssessmentSimpleDto,
+  type ExamSessionDetailResponse,
 } from "../../services/api";
+import RightSidebar from "./RightSidebar";
 import SettingsPage from "../pages/SettingsPage";
 import HelpPage from "../pages/HelpPage";
 
@@ -104,6 +106,17 @@ const MainContent: React.FC<MainContentProps> = ({
   const [examType, setExamType] = React.useState("FLASH_CARD");
   const [examTopic, setExamTopic] = React.useState("");
   const [examCount, setExamCount] = React.useState(10);
+  // 시험 생성 프로파일 공통 상태
+  const [profileFocusAreasInput, setProfileFocusAreasInput] = React.useState("");
+  const [profileTargetDepth, setProfileTargetDepth] = React.useState<"Concept" | "Application" | "Derivation" | "Deep Understanding">("Concept");
+  const [profileQuestionModality, setProfileQuestionModality] = React.useState<"Mathematical" | "Theoretical" | "Balance">("Balance");
+  const [profileProficiencyLevel, setProfileProficiencyLevel] = React.useState<"Beginner" | "Intermediate" | "Advanced">("Beginner");
+  const [profileWeaknessFocus, setProfileWeaknessFocus] = React.useState(false);
+  const [profileLanguagePreference, setProfileLanguagePreference] = React.useState<"Korean_with_English_Terms" | "Korean_with_Korean_Terms" | "Only_English">("Korean_with_English_Terms");
+  const [profileScenarioBased, setProfileScenarioBased] = React.useState(true);
+  const [profileStrictness, setProfileStrictness] = React.useState<"Strict" | "Lenient">("Strict");
+  const [profileExplanationDepth, setProfileExplanationDepth] = React.useState<"Answer_Only" | "Detailed_with_Examples">("Detailed_with_Examples");
+  const [profileScopeBoundary, setProfileScopeBoundary] = React.useState<"Lecture_Material_Only" | "Allow_External_Knowledge">("Lecture_Material_Only");
   const [assessmentTitle, setAssessmentTitle] = React.useState("");
   const [assessmentType, setAssessmentType] = React.useState<"QUIZ" | "ASSIGNMENT">("QUIZ");
   const [assessmentDueDate, setAssessmentDueDate] = React.useState("");
@@ -123,6 +136,12 @@ const MainContent: React.FC<MainContentProps> = ({
   const [previewLoadError, setPreviewLoadError] = React.useState(false);
   const [previewRetryKey, setPreviewRetryKey] = React.useState(0);
   const actionMenuRef = React.useRef<HTMLDivElement | null>(null);
+  // 시험 세션 상세 보기 모달 상태
+  const [examDetailSessionId, setExamDetailSessionId] = React.useState<string | null>(null);
+  const [examDetail, setExamDetail] = React.useState<ExamSessionDetailResponse | null>(null);
+  const [examDetailLoading, setExamDetailLoading] = React.useState(false);
+  const [examDetailError, setExamDetailError] = React.useState<string | null>(null);
+  const [examDetailFlipped, setExamDetailFlipped] = React.useState<Record<number, boolean>>({});
 
   React.useEffect(() => {
     if (!previewFileUrl) {
@@ -293,6 +312,40 @@ const MainContent: React.FC<MainContentProps> = ({
     return merged;
   }, [selectedLectureId, localMaterials, localExams, assessments, sortOrder]);
 
+  const handleDeleteCenterItem = React.useCallback(
+    (item: CenterItem) => {
+      if (!selectedLectureId) return;
+      const baseMessage =
+        item.type === "material"
+          ? "이 자료 카드를 목록에서 삭제하시겠습니까?\n(서버에 업로드된 PDF 파일은 그대로 남습니다.)"
+          : item.type === "exam"
+          ? "이 시험 카드를 목록에서 삭제하시겠습니까?\n(필요하면 다시 생성할 수 있습니다.)"
+          : "이 항목을 삭제하시겠습니까?";
+      if (!window.confirm(baseMessage)) return;
+
+      if (item.type === "material") {
+        setLocalMaterials((prev) => {
+          const list = prev[selectedLectureId] || [];
+          return {
+            ...prev,
+            [selectedLectureId]: list.filter((it) => it.id !== item.id),
+          };
+        });
+      } else if (item.type === "exam") {
+        setLocalExams((prev) => {
+          const list = prev[selectedLectureId] || [];
+          return {
+            ...prev,
+            [selectedLectureId]: list.filter((it) => it.id !== item.id),
+          };
+        });
+      } else {
+        window.alert("이 항목은 아직 삭제 기능이 연결되지 않았습니다.");
+      }
+    },
+    [selectedLectureId]
+  );
+
   React.useEffect(() => {
     if (uploadModalOpen) {
       setUploadFile(null);
@@ -331,19 +384,25 @@ const MainContent: React.FC<MainContentProps> = ({
         ...prev,
         [selectedLectureId]: [...(prev[selectedLectureId] || []), newItem],
       }));
-      setUploadModalOpen(false);
       setUploadFile(null);
       if (url) {
         setPreviewFileUrl(url);
         setPreviewFileName(uploadFile.name);
       }
-      window.alert("자료가 업로드되었습니다.");
+      // 업로드 후에는 모달만 닫고, 강의 콘텐츠 생성은 채팅(/generate)에서 수행
+      setUploadModalOpen(false);
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "업로드에 실패했습니다.");
     } finally {
       setSubmitting(false);
     }
   }, [selectedLectureId, uploadFile, courseDetail?.courseId]);
+
+  const handleCloseUploadModal = React.useCallback(() => {
+    setUploadFile(null);
+    setUploadDragOver(false);
+    setUploadModalOpen(false);
+  }, []);
 
   const handleMaterialGenSubmit = React.useCallback(async () => {
     if (!materialKeyword.trim()) return;
@@ -561,12 +620,40 @@ const MainContent: React.FC<MainContentProps> = ({
     }
     setSubmitting(true);
     try {
+      const focusAreas = profileFocusAreasInput
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      const userProfile =
+        focusAreas.length === 0
+          ? undefined
+          : {
+              learningGoal: {
+                focusAreas,
+                targetDepth: profileTargetDepth,
+                questionModality: profileQuestionModality,
+              },
+              userStatus: {
+                proficiencyLevel: profileProficiencyLevel,
+                weaknessFocus: profileWeaknessFocus,
+              },
+              interactionStyle: {
+                languagePreference: profileLanguagePreference,
+                scenarioBased: profileScenarioBased,
+              },
+              feedbackPreference: {
+                strictness: profileStrictness,
+                explanationDepth: profileExplanationDepth,
+              },
+              scopeBoundary: profileScopeBoundary,
+            };
       const res = await examGenerationApi.createExam({
         lectureId: selectedLectureId,
         examType,
         targetCount: examCount,
         lectureContent: examTopic.trim(),
         topic: examTopic.trim(),
+        userProfile,
       });
       const newItem: CenterItem = {
         id: res.examSessionId,
@@ -585,13 +672,155 @@ const MainContent: React.FC<MainContentProps> = ({
       setExamGenModalOpen(false);
       setExamTopic("");
       setExamCount(10);
+      setProfileFocusAreasInput("");
       window.alert("시험이 생성되었습니다.");
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "시험 생성에 실패했습니다.");
     } finally {
       setSubmitting(false);
     }
-  }, [examType, examTopic, examCount, selectedLectureId]);
+  }, [
+    examType,
+    examTopic,
+    examCount,
+    selectedLectureId,
+    profileFocusAreasInput,
+    profileTargetDepth,
+    profileQuestionModality,
+    profileProficiencyLevel,
+    profileWeaknessFocus,
+    profileLanguagePreference,
+    profileScenarioBased,
+    profileStrictness,
+    profileExplanationDepth,
+    profileScopeBoundary,
+  ]);
+
+  const handleExamGenAsyncSubmit = React.useCallback(async () => {
+    if (!examTopic.trim()) return;
+    if (selectedLectureId == null) {
+      window.alert("강의를 먼저 선택해주세요.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const focusAreas = profileFocusAreasInput
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      const userProfile =
+        focusAreas.length === 0
+          ? undefined
+          : {
+              learningGoal: {
+                focusAreas,
+                targetDepth: profileTargetDepth,
+                questionModality: profileQuestionModality,
+              },
+              userStatus: {
+                proficiencyLevel: profileProficiencyLevel,
+                weaknessFocus: profileWeaknessFocus,
+              },
+              interactionStyle: {
+                languagePreference: profileLanguagePreference,
+                scenarioBased: profileScenarioBased,
+              },
+              feedbackPreference: {
+                strictness: profileStrictness,
+                explanationDepth: profileExplanationDepth,
+              },
+              scopeBoundary: profileScopeBoundary,
+            };
+      const res = await examGenerationApi.runAsync({
+        examType,
+        targetCount: examCount,
+        lectureContent: examTopic.trim(),
+        topic: examTopic.trim(),
+        userProfile,
+      });
+      const lines = [
+        "비동기 시험 생성이 시작되었습니다.",
+        "",
+        `작업 ID: ${res.taskId}`,
+        `상태: ${res.status}`,
+      ];
+      if (res.statusUrl) {
+        lines.push(`상태 URL: ${res.statusUrl}`);
+      }
+      if (res.message) {
+        lines.push("", `메시지: ${res.message}`);
+      }
+      window.alert(lines.join("\n"));
+      setExamGenModalOpen(false);
+      setExamTopic("");
+      setExamCount(10);
+      setProfileFocusAreasInput("");
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "비동기 시험 생성 시작에 실패했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [
+    examType,
+    examTopic,
+    examCount,
+    selectedLectureId,
+    profileFocusAreasInput,
+    profileTargetDepth,
+    profileQuestionModality,
+    profileProficiencyLevel,
+    profileWeaknessFocus,
+    profileLanguagePreference,
+    profileScenarioBased,
+    profileStrictness,
+    profileExplanationDepth,
+    profileScopeBoundary,
+  ]);
+
+  const openExamSessionDetail = React.useCallback(async (sessionId: string) => {
+    setExamDetailSessionId(sessionId);
+    setExamDetail(null);
+    setExamDetailError(null);
+    setExamDetailLoading(true);
+    try {
+      const numericId = Number(sessionId);
+      if (!Number.isFinite(numericId)) {
+        throw new Error("유효하지 않은 시험 세션 ID입니다.");
+      }
+      const detail = await examGenerationApi.getSession(numericId);
+      setExamDetail(detail);
+      setExamDetailFlipped({});
+    } catch (e) {
+      setExamDetailError(e instanceof Error ? e.message : "시험 세션 정보를 불러오지 못했습니다.");
+    } finally {
+      setExamDetailLoading(false);
+    }
+  }, []);
+
+  const handleExamSessionRecover = React.useCallback(async () => {
+    const raw = window.prompt("복구할 시험 세션 ID를 입력하세요.");
+    if (!raw) return;
+    const trimmed = raw.trim();
+    const id = Number(trimmed);
+    if (!Number.isFinite(id) || id <= 0) {
+      window.alert("올바른 숫자 ID를 입력해주세요.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await examGenerationApi.recoverSession(id);
+      const pretty = JSON.stringify(res, null, 2);
+      window.alert(`시험 세션이 복구되었습니다.\n\n${pretty}`);
+    } catch (e) {
+      window.alert(e instanceof Error ? e.message : "시험 세션 복구에 실패했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, []);
+
+  const handleToggleFlashCard = (id: number) => {
+    setExamDetailFlipped((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
 
   const handleAssessmentSubmit = React.useCallback(async () => {
     if (!courseDetail?.courseId || !assessmentTitle.trim() || !assessmentDueDate.trim()) return;
@@ -620,16 +849,25 @@ const MainContent: React.FC<MainContentProps> = ({
     if (item.fileUrl) {
       setPreviewFileUrl(item.fileUrl);
       setPreviewFileName(item.title || null);
-    } else if (item.type === "material") {
+      return;
+    }
+    if (item.type === "material") {
       window.alert(
         "이 항목은 API Phase1으로 생성된 기획안 초안입니다.\n\n" +
         "Phase1은 키워드 기반 기획안(DraftPlan)만 만들고, PDF 파일은 생성하지 않습니다. " +
         "PDF 문서가 필요하면 Phase 2~5를 순서대로 진행하거나, " +
         '"자료 업로드"로 직접 PDF를 올린 뒤 미리보기할 수 있습니다.'
       );
-    } else if (item.assessmentId) window.alert(`평가 상세 (ID: ${item.assessmentId}) - 연동 예정`);
-    else if (item.examSessionId) window.alert(`시험 세션: ${item.examSessionId} - 연동 예정`);
-  }, []);
+      return;
+    }
+    if (item.assessmentId) {
+      window.alert(`평가 상세 (ID: ${item.assessmentId}) - 연동 예정`);
+      return;
+    }
+    if (item.examSessionId) {
+      void openExamSessionDetail(item.examSessionId);
+    }
+  }, [openExamSessionDetail]);
 
   const toggleCourseMenu = (courseId: number) => {
     setOpenCourseMenuId((prev) => (prev === courseId ? null : courseId));
@@ -1015,7 +1253,7 @@ const MainContent: React.FC<MainContentProps> = ({
         : `${selectedLecture.weekNumber}주차`
       : null;
 
-    // 업로드한 자료 미리보기 (같은 페이지 내 표시, 오른쪽 채팅에서 에이전트와 소통)
+    // 업로드한 자료 미리보기 (좌: 미리보기 | 우: 채팅)
     if (previewFileUrl) {
       return (
         <div className="flex flex-col h-full">
@@ -1042,39 +1280,56 @@ const MainContent: React.FC<MainContentProps> = ({
               )}
             </div>
           </div>
-          <div className="flex-1 min-h-0 bg-gray-100 dark:bg-zinc-900 flex flex-col">
-            {previewLoading ? (
-              <div className={`flex-1 flex items-center justify-center ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                <p className="text-sm">자료를 불러오는 중…</p>
-              </div>
-            ) : previewLoadError ? (
-              <div className={`flex-1 flex flex-col items-center justify-center p-6 text-center ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-                <p className="text-sm mb-2">미리보기를 불러오지 못했습니다.</p>
-                <p className="text-xs mb-6 opacity-80">잠시 후 다시 시도해주세요.</p>
-                <button
-                  type="button"
-                  onClick={() => { setPreviewLoadError(false); setPreviewRetryKey((k) => k + 1); }}
-                  className={`inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold cursor-pointer ${
-                    isDarkMode ? "bg-emerald-600 hover:bg-emerald-500 text-white" : "bg-emerald-600 hover:bg-emerald-700 text-white"
-                  }`}
-                >
-                  다시 시도
-                </button>
-              </div>
-            ) : previewBlobUrl ? (
-              <object
-                data={previewBlobUrl}
-                type="application/pdf"
-                className="w-full h-full border-0 flex-1 min-h-0"
-                title={previewFileName || "자료 미리보기"}
-              >
-                <iframe
-                  src={previewBlobUrl}
-                  title={previewFileName || "자료 미리보기"}
+          <div className="flex-1 min-h-0 flex">
+            {/* 좌: 미리보기 */}
+            <div className="flex-1 min-w-0 bg-gray-100 dark:bg-zinc-900 flex flex-col border-r border-zinc-700/50">
+              {previewLoading ? (
+                <div className={`flex-1 flex items-center justify-center ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                  <p className="text-sm">자료를 불러오는 중…</p>
+                </div>
+              ) : previewLoadError ? (
+                <div className={`flex-1 flex flex-col items-center justify-center p-6 text-center ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                  <p className="text-sm mb-2">미리보기를 불러오지 못했습니다.</p>
+                  <p className="text-xs mb-6 opacity-80">잠시 후 다시 시도해주세요.</p>
+                  <button
+                    type="button"
+                    onClick={() => { setPreviewLoadError(false); setPreviewRetryKey((k) => k + 1); }}
+                    className={`inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold cursor-pointer ${
+                      isDarkMode ? "bg-emerald-600 hover:bg-emerald-500 text-white" : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                    }`}
+                  >
+                    다시 시도
+                  </button>
+                </div>
+              ) : previewBlobUrl ? (
+                <object
+                  data={previewBlobUrl}
+                  type="application/pdf"
                   className="w-full h-full border-0 flex-1 min-h-0"
-                />
-              </object>
-            ) : null}
+                  title={previewFileName || "자료 미리보기"}
+                >
+                  <iframe
+                    src={previewBlobUrl}
+                    title={previewFileName || "자료 미리보기"}
+                    className="w-full h-full border-0 flex-1 min-h-0"
+                  />
+                </object>
+              ) : null}
+            </div>
+            {/* 우: 채팅(스트리밍 기반) */}
+            <RightSidebar
+              width={360}
+              lectureId={selectedLectureId ?? undefined}
+              courseId={courseDetail.courseId}
+              viewMode="course-detail"
+              courseDetail={courseDetail}
+              onLectureDataChange={(_, fileUrl, fileName) => {
+                if (fileUrl) {
+                  setPreviewFileUrl(fileUrl);
+                  setPreviewFileName(fileName);
+                }
+              }}
+            />
           </div>
         </div>
       );
@@ -1124,22 +1379,37 @@ const MainContent: React.FC<MainContentProps> = ({
             ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 auto-rows-fr">
               {sortedItems.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => handleCardClick(item)}
-                  className={`rounded-xl border p-4 min-h-[100px] flex flex-col justify-between transition-colors cursor-pointer text-left ${
-                    isDarkMode
-                      ? "bg-zinc-800 border-zinc-700 hover:border-zinc-600"
-                      : "bg-white border-gray-200 hover:border-gray-300"
-                  }`}
-                >
-                  <p className="text-sm font-medium truncate">{item.title}</p>
-                  <p className={`text-xs mt-1 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
-                    {item.meta}
-                    {item.type === "material" && !item.fileUrl && " · 클릭 시 안내"}
-                  </p>
-                </button>
+                <div key={item.id} className="relative group/card">
+                  <button
+                    type="button"
+                    onClick={() => handleCardClick(item)}
+                    className={`w-full rounded-xl border p-4 min-h-[100px] flex flex-col justify-between transition-colors cursor-pointer text-left ${
+                      isDarkMode
+                        ? "bg-zinc-800 border-zinc-700 hover:border-zinc-600"
+                        : "bg-white border-gray-200 hover:border-gray-300"
+                    }`}
+                  >
+                    <p className="text-sm font-medium truncate">{item.title}</p>
+                    <p className={`text-xs mt-1 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
+                      {item.meta}
+                      {item.type === "material" && !item.fileUrl && " · 클릭 시 안내"}
+                    </p>
+                  </button>
+                  {isTeacher && (item.type === "material" || item.type === "exam") && (
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCenterItem(item)}
+                      className={`absolute top-1.5 right-1.5 p-1 rounded-full opacity-0 group-hover/card:opacity-100 transition-opacity text-xs ${
+                        isDarkMode
+                          ? "bg-zinc-900/80 text-red-300 hover:bg-red-900/60"
+                          : "bg-white/90 text-red-500 hover:bg-red-50"
+                      }`}
+                      title="이 카드 삭제"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               ))}
               <div className="relative min-h-[100px]" ref={addMenuRef}>
                 <button
@@ -1645,11 +1915,11 @@ const MainContent: React.FC<MainContentProps> = ({
 
       {/* 자료 업로드 모달 */}
       {uploadModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true" onClick={() => !submitting && setUploadModalOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true" onClick={() => !submitting && handleCloseUploadModal()}>
           <div className={`w-full max-w-md rounded-xl shadow-xl border ${isDarkMode ? "bg-zinc-900 border-zinc-700" : "bg-white border-gray-200"}`} onClick={(e) => e.stopPropagation()}>
             <div className={`flex justify-between items-center px-5 py-4 border-b ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
               <h2 className={`text-lg font-semibold ${isDarkMode ? "text-gray-100" : "text-gray-900"}`}>자료 업로드</h2>
-              <button type="button" onClick={() => !submitting && setUploadModalOpen(false)} className="p-1.5 rounded hover:bg-black/10" aria-label="닫기">✕</button>
+              <button type="button" onClick={() => !submitting && handleCloseUploadModal()} className="p-1.5 rounded hover:bg-black/10" aria-label="닫기">✕</button>
             </div>
             <div className="px-5 py-4 space-y-4">
               <p className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
@@ -1706,7 +1976,7 @@ const MainContent: React.FC<MainContentProps> = ({
               )}
             </div>
             <div className={`px-5 py-4 border-t flex justify-end gap-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
-              <button type="button" onClick={() => !submitting && setUploadModalOpen(false)} className={`px-4 py-2 text-sm rounded ${isDarkMode ? "bg-zinc-800 text-gray-200" : "bg-gray-100 text-gray-700"}`}>취소</button>
+              <button type="button" onClick={() => !submitting && handleCloseUploadModal()} className={`px-4 py-2 text-sm rounded ${isDarkMode ? "bg-zinc-800 text-gray-200" : "bg-gray-100 text-gray-700"}`}>취소</button>
               <button type="button" onClick={handleUploadSubmit} disabled={submitting || !uploadFile} className="px-4 py-2 text-sm rounded font-medium bg-emerald-600 text-white disabled:opacity-50 cursor-pointer">{submitting ? "업로드 중..." : "업로드"}</button>
             </div>
           </div>
@@ -1921,9 +2191,22 @@ const MainContent: React.FC<MainContentProps> = ({
       {examGenModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true" onClick={() => !submitting && setExamGenModalOpen(false)}>
           <div className={`w-full max-w-md rounded-xl shadow-xl border ${isDarkMode ? "bg-zinc-900 border-zinc-700" : "bg-white border-gray-200"}`} onClick={(e) => e.stopPropagation()}>
-            <div className={`flex justify-between px-5 py-4 border-b ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+            <div className={`flex justify-between items-center px-5 py-4 border-b ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
               <h2 className={`text-lg font-semibold ${isDarkMode ? "text-gray-100" : "text-gray-900"}`}>시험 생성</h2>
-              <button type="button" onClick={() => !submitting && setExamGenModalOpen(false)} className="p-1.5 rounded hover:bg-black/10">✕</button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExamSessionRecover}
+                  className={`text-xs px-2 py-1 rounded border cursor-pointer ${
+                    isDarkMode
+                      ? "border-zinc-600 text-gray-200 hover:bg-zinc-800"
+                      : "border-gray-300 text-gray-700 hover:bg-gray-100"
+                  }`}
+                >
+                  세션 복구
+                </button>
+                <button type="button" onClick={() => !submitting && setExamGenModalOpen(false)} className="p-1.5 rounded hover:bg-black/10">✕</button>
+              </div>
             </div>
             <div className="px-5 py-4 space-y-4">
               <div>
@@ -1941,10 +2224,379 @@ const MainContent: React.FC<MainContentProps> = ({
                 <label className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>문항 수</label>
                 <input type="number" min={1} max={50} value={examCount} onChange={(e) => setExamCount(Number(e.target.value) || 10)} className={`w-full px-3 py-2 text-sm rounded border ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`} />
               </div>
+              <div className="pt-2 border-t border-dashed border-gray-300 dark:border-zinc-700 space-y-3">
+                <p className={`text-xs font-medium ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>시험 생성 프로파일 (선택)</p>
+                <div className="space-y-2">
+                  <label className={`block text-xs font-medium mb-1 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>집중 학습 영역 (콤마로 구분)</label>
+                  <input
+                    type="text"
+                    value={profileFocusAreasInput}
+                    onChange={(e) => setProfileFocusAreasInput(e.target.value)}
+                    placeholder="예: Policy Gradient, Clipping method"
+                    className={`w-full px-3 py-2 text-xs rounded border ${
+                      isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
+                    }`}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium">목표 이해 수준</label>
+                    <select
+                      value={profileTargetDepth}
+                      onChange={(e) => setProfileTargetDepth(e.target.value as typeof profileTargetDepth)}
+                      className={`w-full px-2 py-1.5 text-xs rounded border ${
+                        isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
+                      }`}
+                    >
+                      <option value="Concept">개념 이해</option>
+                      <option value="Application">응용</option>
+                      <option value="Derivation">유도/증명</option>
+                      <option value="Deep Understanding">심층 이해</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium">출제 스타일</label>
+                    <select
+                      value={profileQuestionModality}
+                      onChange={(e) => setProfileQuestionModality(e.target.value as typeof profileQuestionModality)}
+                      className={`w-full px-2 py-1.5 text-xs rounded border ${
+                        isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
+                      }`}
+                    >
+                      <option value="Mathematical">수식/수리 중심</option>
+                      <option value="Theoretical">개념/이론 중심</option>
+                      <option value="Balance">균형 있게</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium">현재 수준</label>
+                    <select
+                      value={profileProficiencyLevel}
+                      onChange={(e) => setProfileProficiencyLevel(e.target.value as typeof profileProficiencyLevel)}
+                      className={`w-full px-2 py-1.5 text-xs rounded border ${
+                        isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
+                      }`}
+                    >
+                      <option value="Beginner">초급</option>
+                      <option value="Intermediate">중급</option>
+                      <option value="Advanced">고급</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium">오답/취약점 위주</label>
+                    <button
+                      type="button"
+                      onClick={() => setProfileWeaknessFocus((v) => !v)}
+                      className={`w-full px-2 py-1.5 text-xs rounded border text-left ${
+                        profileWeaknessFocus
+                          ? isDarkMode
+                            ? "bg-emerald-700 border-emerald-500 text-white"
+                            : "bg-emerald-600 border-emerald-500 text-white"
+                          : isDarkMode
+                          ? "bg-zinc-800 border-zinc-600 text-gray-200"
+                          : "bg-white border-gray-300 text-gray-800"
+                      }`}
+                    >
+                      {profileWeaknessFocus ? "예, 취약점 중심으로 출제" : "아니요, 균형 있게 출제"}
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium">언어/용어 스타일</label>
+                    <select
+                      value={profileLanguagePreference}
+                      onChange={(e) => setProfileLanguagePreference(e.target.value as typeof profileLanguagePreference)}
+                      className={`w-full px-2 py-1.5 text-xs rounded border ${
+                        isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
+                      }`}
+                    >
+                      <option value="Korean_with_English_Terms">한글 + 영문 용어</option>
+                      <option value="Korean_with_Korean_Terms">한글 용어 위주</option>
+                      <option value="Only_English">영어만</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium">상황/시나리오 활용</label>
+                    <button
+                      type="button"
+                      onClick={() => setProfileScenarioBased((v) => !v)}
+                      className={`w-full px-2 py-1.5 text-xs rounded border text-left ${
+                        profileScenarioBased
+                          ? isDarkMode
+                            ? "bg-emerald-700 border-emerald-500 text-white"
+                            : "bg-emerald-600 border-emerald-500 text-white"
+                          : isDarkMode
+                          ? "bg-zinc-800 border-zinc-600 text-gray-200"
+                          : "bg-white border-gray-300 text-gray-800"
+                      }`}
+                    >
+                      {profileScenarioBased ? "예, 상황/예시 포함" : "아니요, 정의 위주"}
+                    </button>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium">채점 기준</label>
+                    <select
+                      value={profileStrictness}
+                      onChange={(e) => setProfileStrictness(e.target.value as typeof profileStrictness)}
+                      className={`w-full px-2 py-1.5 text-xs rounded border ${
+                        isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
+                      }`}
+                    >
+                      <option value="Strict">엄격 (키워드 중심)</option>
+                      <option value="Lenient">관대 (맥락 허용)</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-medium">해설 깊이</label>
+                    <select
+                      value={profileExplanationDepth}
+                      onChange={(e) => setProfileExplanationDepth(e.target.value as typeof profileExplanationDepth)}
+                      className={`w-full px-2 py-1.5 text-xs rounded border ${
+                        isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
+                      }`}
+                    >
+                      <option value="Answer_Only">정답만</option>
+                      <option value="Detailed_with_Examples">예시 포함 상세 해설</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-medium">지식 범위</label>
+                  <select
+                    value={profileScopeBoundary}
+                    onChange={(e) => setProfileScopeBoundary(e.target.value as typeof profileScopeBoundary)}
+                    className={`w-full px-2 py-1.5 text-xs rounded border ${
+                      isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
+                    }`}
+                  >
+                    <option value="Lecture_Material_Only">강의 자료 내부만 사용</option>
+                    <option value="Allow_External_Knowledge">외부 지식도 허용</option>
+                  </select>
+                </div>
+              </div>
             </div>
             <div className={`px-5 py-4 border-t flex justify-end gap-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
               <button type="button" onClick={() => !submitting && setExamGenModalOpen(false)} className={`px-4 py-2 text-sm rounded ${isDarkMode ? "bg-zinc-800 text-gray-200" : "bg-gray-100 text-gray-700"}`}>취소</button>
+              <button
+                type="button"
+                onClick={handleExamGenAsyncSubmit}
+                disabled={submitting || !examTopic.trim()}
+                className={`px-4 py-2 text-sm rounded font-medium border cursor-pointer ${
+                  isDarkMode
+                    ? "border-emerald-500 text-emerald-300 hover:bg-zinc-800"
+                    : "border-emerald-500 text-emerald-700 hover:bg-emerald-50"
+                } disabled:opacity-50`}
+              >
+                {submitting ? "요청 중..." : "비동기 생성"}
+              </button>
               <button type="button" onClick={handleExamGenSubmit} disabled={submitting || !examTopic.trim()} className="px-4 py-2 text-sm rounded font-medium bg-emerald-600 text-white disabled:opacity-50 cursor-pointer">{submitting ? "생성 중..." : "생성"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 시험 세션 상세 모달 */}
+      {examDetailSessionId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true" onClick={() => { if (!examDetailLoading) { setExamDetailSessionId(null); setExamDetail(null); setExamDetailError(null); } }}>
+          <div
+            className={`w-full max-w-3xl max-h-[80vh] overflow-hidden rounded-xl shadow-xl border ${
+              isDarkMode ? "bg-zinc-900 border-zinc-700 text-gray-100" : "bg-white border-gray-200 text-gray-900"
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={`flex items-center justify-between px-5 py-4 border-b ${isDarkMode ? "border-zinc-700/60" : "border-gray-200"}`}>
+              <div>
+                <h2 className="text-lg font-semibold">시험 세션 상세</h2>
+                <p className="text-xs mt-0.5 opacity-80">
+                  세션 ID: {examDetailSessionId}
+                  {examDetail?.examType && ` · 유형: ${examDetail.examType}`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { if (!examDetailLoading) { setExamDetailSessionId(null); setExamDetail(null); setExamDetailError(null); } }}
+                className={`p-1.5 rounded cursor-pointer ${isDarkMode ? "hover:bg-zinc-800" : "hover:bg-gray-100"}`}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
+              {examDetailLoading && (
+                <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>시험 세션 정보를 불러오는 중입니다...</p>
+              )}
+              {examDetailError && (
+                <p className={`text-sm ${isDarkMode ? "text-red-300" : "text-red-600"}`}>{examDetailError}</p>
+              )}
+              {!examDetailLoading && !examDetailError && examDetail && (
+                <>
+                  {examDetail.usedProfile && (
+                    <div className={`rounded-lg border text-xs p-3 ${isDarkMode ? "border-zinc-700 bg-zinc-900/60" : "border-gray-200 bg-gray-50"}`}>
+                      <p className="font-semibold mb-1">사용된 Profile</p>
+                      <div className="flex flex-wrap gap-2">
+                        {examDetail.usedProfile.learningGoal?.focusAreas && examDetail.usedProfile.learningGoal.focusAreas.length > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-600/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/40">
+                            집중 영역: {examDetail.usedProfile.learningGoal.focusAreas.join(", ")}
+                          </span>
+                        )}
+                        {examDetail.usedProfile.userStatus?.proficiencyLevel && (
+                          <span className="px-2 py-0.5 rounded-full bg-blue-600/10 text-blue-600 dark:text-blue-300 border border-blue-500/40">
+                            수준: {examDetail.usedProfile.userStatus.proficiencyLevel}
+                          </span>
+                        )}
+                        {examDetail.usedProfile.scopeBoundary && (
+                          <span className="px-2 py-0.5 rounded-full bg-gray-600/10 text-gray-600 dark:text-gray-300 border border-gray-500/40">
+                            범위: {examDetail.usedProfile.scopeBoundary}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {examDetail.flashCards && examDetail.flashCards.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-semibold">플래시카드 ({examDetail.flashCards.length}개)</h3>
+                        <span className="text-xs opacity-70">카드를 클릭하면 앞/뒷면이 전환됩니다.</span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                        {examDetail.flashCards.map((card, index) => {
+                          const id = index + 1;
+                          const flipped = !!examDetailFlipped[id];
+                          return (
+                            <button
+                              key={id}
+                              type="button"
+                              onClick={() => handleToggleFlashCard(id)}
+                              className={`group relative text-left rounded-xl border p-3 text-xs transition-all cursor-pointer ${
+                                isDarkMode
+                                  ? "border-zinc-700 bg-zinc-900 hover:bg-zinc-800"
+                                  : "border-gray-200 bg-white hover:bg-emerald-50/50"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-[10px] font-semibold opacity-70">#{id}</span>
+                                {card.categoryTag && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-600/10 text-emerald-600 dark:text-emerald-300 border border-emerald-500/30">
+                                    {card.categoryTag}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="mt-1 min-h-[60px]">
+                                <p className="text-[11px] whitespace-pre-line">
+                                  {flipped ? card.backContent : card.frontContent}
+                                </p>
+                              </div>
+                              <div className="mt-2 flex items-center justify-between text-[10px] opacity-70">
+                                <span>{flipped ? "정답 / 개념명" : "질문 / 힌트"}</span>
+                                <span>{flipped ? "앞면 보기" : "뒷면 보기"}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {examDetail.oxProblems && examDetail.oxProblems.length > 0 && (
+                    <div className="space-y-2">
+                      <h3 className="text-sm font-semibold">O/X 문제 ({examDetail.oxProblems.length}개)</h3>
+                      <ol className="space-y-2 text-xs list-decimal list-inside">
+                        {examDetail.oxProblems.map((q, idx) => (
+                          <li key={idx} className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                            <p className="font-medium mb-1">{q.questionContent}</p>
+                            <p className="text-[11px]">
+                              <span className="font-semibold">정답:</span> {q.correctAnswer}
+                            </p>
+                            {q.explanation && (
+                              <p className="mt-1 text-[11px] opacity-80 whitespace-pre-line">해설: {q.explanation}</p>
+                            )}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                  {examDetail.fiveChoiceProblems && examDetail.fiveChoiceProblems.length > 0 && (
+                    <div className="space-y-2">
+                      <h3 className="text-sm font-semibold">5지선다 ({examDetail.fiveChoiceProblems.length}개)</h3>
+                      <ol className="space-y-3 text-xs list-decimal list-inside">
+                        {examDetail.fiveChoiceProblems.map((q, idx) => (
+                          <li key={idx} className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                            <p className="font-medium mb-1">{q.questionContent}</p>
+                            <ul className="space-y-0.5 mt-1">
+                              {q.options.map((opt) => (
+                                <li key={opt.id}>
+                                  <span className="font-semibold mr-1">{opt.id}.</span>
+                                  <span>{opt.content}</span>
+                                  {opt.isCorrect && <span className="ml-1 text-[10px] text-emerald-500">(정답)</span>}
+                                </li>
+                              ))}
+                            </ul>
+                            <p className="mt-1 text-[11px]">
+                              <span className="font-semibold">정답:</span> {q.correctAnswer}
+                            </p>
+                            {q.intentDiagnosis && (
+                              <p className="mt-1 text-[11px] opacity-80 whitespace-pre-line">
+                                출제 의도: {q.intentDiagnosis}
+                              </p>
+                            )}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                  {examDetail.shortAnswerProblems && examDetail.shortAnswerProblems.length > 0 && (
+                    <div className="space-y-2">
+                      <h3 className="text-sm font-semibold">단답형 / 서술형 ({examDetail.shortAnswerProblems.length}개)</h3>
+                      <ol className="space-y-3 text-xs list-decimal list-inside">
+                        {examDetail.shortAnswerProblems.map((q, idx) => (
+                          <li key={idx} className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                            <p className="font-medium mb-1">{q.questionContent}</p>
+                            {q.relatedKeywords?.length > 0 && (
+                              <p className="text-[11px] opacity-80">
+                                키워드: {q.relatedKeywords.join(", ")}
+                              </p>
+                            )}
+                            <p className="mt-1 text-[11px]">
+                              <span className="font-semibold">모범 답안:</span> {q.bestAnswer}
+                            </p>
+                            {q.evaluationCriteria && (
+                              <p className="mt-1 text-[11px] opacity-80 whitespace-pre-line">
+                                평가 기준: {q.evaluationCriteria}
+                              </p>
+                            )}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                  {examDetail.debateTopics && examDetail.debateTopics.length > 0 && (
+                    <div className="space-y-2">
+                      <h3 className="text-sm font-semibold">토론형 주제 ({examDetail.debateTopics.length}개)</h3>
+                      <ol className="space-y-3 text-xs list-decimal list-inside">
+                        {examDetail.debateTopics.map((d, idx) => (
+                          <li key={idx} className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                            <p className="font-medium mb-1">{d.topic}</p>
+                            {d.context && <p className="text-[11px] opacity-80 whitespace-pre-line">맥락: {d.context}</p>}
+                            <p className="mt-1 text-[11px]">
+                              <span className="font-semibold">찬성 입장:</span> {d.proSideStand}
+                            </p>
+                            <p className="mt-1 text-[11px]">
+                              <span className="font-semibold">반대 입장:</span> {d.conSideStand}
+                            </p>
+                            {d.evaluationCriteria?.length > 0 && (
+                              <p className="mt-1 text-[11px] opacity-80">
+                                평가 기준: {d.evaluationCriteria.join(", ")}
+                              </p>
+                            )}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
+                  {examDetail.totalCount != null && (
+                    <p className="text-[11px] opacity-70">총 문항 수: {examDetail.totalCount}</p>
+                  )}
+                </>
+              )}
             </div>
           </div>
         </div>

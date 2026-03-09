@@ -119,13 +119,10 @@ const LoginPage: React.FC = () => {
                     : 'OFFLINE'}
               </span>
             </div>
-            {!serverStatus.online && serverStatus.message && (
-              <p className="mt-1 text-xs opacity-90">{serverStatus.message}</p>
-            )}
           </div>
         )}
         
-        {error && (
+        {error && !(serverStatus && !serverStatus.online) && (
           <div className={`mb-3 sm:mb-4 p-2 sm:p-3 md:p-4 text-xs sm:text-sm md:text-base rounded-lg ${
             isDarkMode ? 'bg-red-900/30 text-red-300' : 'bg-red-50 text-red-600'
           }`}>
