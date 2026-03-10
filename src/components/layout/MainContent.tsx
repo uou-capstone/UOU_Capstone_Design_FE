@@ -99,8 +99,6 @@ const MainContent: React.FC<MainContentProps> = ({
   const [materialChapterSummary, setMaterialChapterSummary] = React.useState<string | null>(null);
   const [materialVerifiedSummary, setMaterialVerifiedSummary] = React.useState<string | null>(null);
   const [materialFinalUrl, setMaterialFinalUrl] = React.useState<string | null>(null);
-  const [materialPdfPath, setMaterialPdfPath] = React.useState("");
-  const [materialPdfPathUsed, setMaterialPdfPathUsed] = React.useState("");
   const [materialAsyncTaskId, setMaterialAsyncTaskId] = React.useState<string | null>(null);
   const [materialCompletedViaAsync, setMaterialCompletedViaAsync] = React.useState(false);
   const [examType, setExamType] = React.useState("FLASH_CARD");
@@ -117,6 +115,9 @@ const MainContent: React.FC<MainContentProps> = ({
   const [profileStrictness, setProfileStrictness] = React.useState<"Strict" | "Lenient">("Strict");
   const [profileExplanationDepth, setProfileExplanationDepth] = React.useState<"Answer_Only" | "Detailed_with_Examples">("Detailed_with_Examples");
   const [profileScopeBoundary, setProfileScopeBoundary] = React.useState<"Lecture_Material_Only" | "Allow_External_Knowledge">("Lecture_Material_Only");
+  type ExamDesignMessage = { id: string; role: "assistant" | "user"; text: string };
+  const [examDesignMessages, setExamDesignMessages] = React.useState<ExamDesignMessage[]>([]);
+  const [examDesignInput, setExamDesignInput] = React.useState("");
   const [assessmentTitle, setAssessmentTitle] = React.useState("");
   const [assessmentType, setAssessmentType] = React.useState<"QUIZ" | "ASSIGNMENT">("QUIZ");
   const [assessmentDueDate, setAssessmentDueDate] = React.useState("");
@@ -152,6 +153,18 @@ const MainContent: React.FC<MainContentProps> = ({
       setPreviewLoadError(false);
       return;
     }
+
+    // 방어: previewFileUrl이 문자열이 아닌 경우 미리보기 시도 중단
+    if (typeof previewFileUrl !== "string") {
+      setPreviewBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setPreviewLoadError(true);
+      setPreviewLoading(false);
+      return;
+    }
+
     setPreviewBlobUrl((prev) => {
       if (prev) URL.revokeObjectURL(prev);
       return null;
@@ -208,6 +221,13 @@ const MainContent: React.FC<MainContentProps> = ({
 
   const handleOpenPreviewInNewTab = React.useCallback(async () => {
     if (!previewFileUrl) return;
+
+    // 방어: 문자열이 아닌 경우 안전하게 종료
+    if (typeof previewFileUrl !== "string") {
+      window.alert("파일 경로를 불러오지 못했습니다.");
+      return;
+    }
+
     const token = getAuthToken();
     const apiOrigin = API_BASE_URL ? new URL(API_BASE_URL).origin : "";
     const isDevOrigin = typeof window !== "undefined" && window.location.hostname === "localhost";
@@ -358,13 +378,7 @@ const MainContent: React.FC<MainContentProps> = ({
     setPreviewFileName(null);
   }, [selectedLectureId]);
 
-  // AI 자료 생성 모달을 열었을 때, 이 강의에 업로드된 PDF가 있으면 경로 자동 입력
-  React.useEffect(() => {
-    if (!materialGenModalOpen || materialGenStep !== 1 || selectedLectureId == null) return;
-    const list = localMaterials[selectedLectureId];
-    const firstWithUrl = list?.find((it) => it.fileUrl);
-    if (firstWithUrl?.fileUrl && materialPdfPath === "") setMaterialPdfPath(firstWithUrl.fileUrl);
-  }, [materialGenModalOpen, materialGenStep, selectedLectureId, localMaterials, materialPdfPath]);
+  // AI 자료 생성 시 PDF는 선택 사항이므로, 더 이상 자동 입력/강제 사용하지 않는다.
 
   const handleUploadSubmit = React.useCallback(async () => {
     if (!selectedLectureId || !uploadFile || !courseDetail?.courseId) return;
@@ -412,13 +426,10 @@ const MainContent: React.FC<MainContentProps> = ({
     }
     setSubmitting(true);
     try {
-      const pdfPath = materialPdfPath.trim() || "";
       const res = await materialGenerationApi.phase1({
         lectureId: selectedLectureId,
         keyword: materialKeyword.trim(),
-        pdfPath,
       });
-      setMaterialPdfPathUsed(pdfPath);
       setMaterialSessionId(res.sessionId);
       setMaterialDraftPlan(res.draftPlan ?? null);
       setMaterialGenStep(2);
@@ -427,7 +438,7 @@ const MainContent: React.FC<MainContentProps> = ({
     } finally {
       setSubmitting(false);
     }
-  }, [materialKeyword, materialPdfPath, selectedLectureId]);
+  }, [materialKeyword, selectedLectureId]);
 
   const resetMaterialGenModal = React.useCallback(() => {
     setMaterialGenStep(1);
@@ -439,8 +450,6 @@ const MainContent: React.FC<MainContentProps> = ({
     setMaterialVerifiedSummary(null);
     setMaterialFinalUrl(null);
     setMaterialKeyword("");
-    setMaterialPdfPath("");
-    setMaterialPdfPathUsed("");
     setMaterialAsyncTaskId(null);
     setMaterialCompletedViaAsync(false);
   }, []);
@@ -465,7 +474,8 @@ const MainContent: React.FC<MainContentProps> = ({
     try {
       const res = await materialGenerationApi.phase2({
         sessionId: materialSessionId,
-        action: "update",
+        // BE 스펙: action은 "feedback" 또는 "confirm"만 허용
+        action: "feedback",
         feedback: materialPhase2Feedback.trim() || undefined,
       });
       if (res.draftPlan) setMaterialDraftPlan(res.draftPlan);
@@ -550,11 +560,7 @@ const MainContent: React.FC<MainContentProps> = ({
       setMaterialGenStep(4);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "챕터 내용 생성에 실패했습니다.";
-      if (msg.includes("PDF") && msg.includes("찾을 수 없습니다")) {
-        window.alert("현재 서버가 PDF 자료를 필수로 요구하고 있습니다. 과정상 PDF는 선택이므로, 백엔드에서 PDF 없이도 챕터 생성을 지원하도록 수정이 필요합니다. 백엔드 담당자에게 요청해 주세요.");
-      } else {
-        window.alert(msg);
-      }
+      window.alert(msg);
     } finally {
       setSubmitting(false);
     }
@@ -579,7 +585,9 @@ const MainContent: React.FC<MainContentProps> = ({
     setSubmitting(true);
     try {
       const res = await materialGenerationApi.phase5({ sessionId: materialSessionId });
-      setMaterialFinalUrl(res.documentUrl ?? null);
+      // 백엔드가 documentUrl 또는 finalDocument(문서 URL)를 내려줄 수 있으므로 둘 다 지원
+      const url = (res as any).documentUrl ?? (res as any).finalDocument ?? null;
+      setMaterialFinalUrl(typeof url === "string" && url.length > 0 ? url : null);
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "최종 문서 생성에 실패했습니다.");
     } finally {
@@ -620,8 +628,15 @@ const MainContent: React.FC<MainContentProps> = ({
     }
     setSubmitting(true);
     try {
-      const focusAreas = profileFocusAreasInput
-        .split(",")
+      // 에이전트와의 대화 내용을 기반으로 학습 집중 포인트/난이도 프로파일 구성
+      const convoTextFromChat = examDesignMessages
+        .filter((m) => m.role === "user")
+        .map((m) => m.text)
+        .join(" | ");
+      const focusSource =
+        profileFocusAreasInput.trim() || convoTextFromChat.trim() || examTopic.trim();
+      const focusAreas = focusSource
+        .split(/[,\n]/)
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
       const userProfile =
@@ -673,6 +688,7 @@ const MainContent: React.FC<MainContentProps> = ({
       setExamTopic("");
       setExamCount(10);
       setProfileFocusAreasInput("");
+      setExamDesignMessages([]);
       window.alert("시험이 생성되었습니다.");
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "시험 생성에 실패했습니다.");
@@ -694,6 +710,7 @@ const MainContent: React.FC<MainContentProps> = ({
     profileStrictness,
     profileExplanationDepth,
     profileScopeBoundary,
+    examDesignMessages,
   ]);
 
   const handleExamGenAsyncSubmit = React.useCallback(async () => {
@@ -704,8 +721,14 @@ const MainContent: React.FC<MainContentProps> = ({
     }
     setSubmitting(true);
     try {
-      const focusAreas = profileFocusAreasInput
-        .split(",")
+      const convoTextFromChat = examDesignMessages
+        .filter((m) => m.role === "user")
+        .map((m) => m.text)
+        .join(" | ");
+      const focusSource =
+        profileFocusAreasInput.trim() || convoTextFromChat.trim() || examTopic.trim();
+      const focusAreas = focusSource
+        .split(/[,\n]/)
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
       const userProfile =
@@ -755,6 +778,7 @@ const MainContent: React.FC<MainContentProps> = ({
       setExamTopic("");
       setExamCount(10);
       setProfileFocusAreasInput("");
+      setExamDesignMessages([]);
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "비동기 시험 생성 시작에 실패했습니다.");
     } finally {
@@ -775,6 +799,7 @@ const MainContent: React.FC<MainContentProps> = ({
     profileStrictness,
     profileExplanationDepth,
     profileScopeBoundary,
+    examDesignMessages,
   ]);
 
   const openExamSessionDetail = React.useCallback(async (sessionId: string) => {
@@ -1994,28 +2019,12 @@ const MainContent: React.FC<MainContentProps> = ({
               <button type="button" onClick={() => { if (!submitting) { resetMaterialGenModal(); setMaterialGenModalOpen(false); } }} className="p-1.5 rounded hover:bg-black/10">✕</button>
             </div>
             <div className="px-5 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
-              {/* Step 1: 키워드 입력 */}
+              {/* Step 1: 키워드 입력 (PDF는 완전 선택 사항이므로 UI에서 제거) */}
               {materialGenStep === 1 && (
                 <>
                   <div>
                     <label className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>주제 또는 키워드</label>
                     <input type="text" value={materialKeyword} onChange={(e) => setMaterialKeyword(e.target.value)} placeholder="예: 강화학습 DQN" className={`w-full px-3 py-2 text-sm rounded border ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`} />
-                  </div>
-                  <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>PDF 경로 (선택, 있으면 챕터 분해에 활용)</label>
-                    <input type="text" value={materialPdfPath} onChange={(e) => setMaterialPdfPath(e.target.value)} placeholder="자료 업로드 후 자동 입력되거나 경로를 직접 입력" className={`w-full px-3 py-2 text-sm rounded border ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`} />
-                    {(() => {
-                      const list = selectedLectureId != null ? localMaterials[selectedLectureId] : [];
-                      const withUrl = list?.filter((it) => it.fileUrl) ?? [];
-                      if (withUrl.length <= 1) return null;
-                      return (
-                        <p className={`mt-1 text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                          이 강의의 업로드 자료: {withUrl.map((it) => (
-                            <button key={it.id} type="button" onClick={() => setMaterialPdfPath(it.fileUrl ?? "")} className="ml-1 underline hover:no-underline">{it.title}</button>
-                          ))}
-                        </p>
-                      );
-                    })()}
                   </div>
                 </>
               )}
@@ -2026,7 +2035,10 @@ const MainContent: React.FC<MainContentProps> = ({
                   {materialDraftPlan && (
                     <div className={`space-y-4 text-sm rounded-lg border p-4 max-h-[50vh] overflow-y-auto ${isDarkMode ? "bg-zinc-800/50 border-zinc-600" : "bg-gray-50 border-gray-200"}`}>
                       {/* 프로젝트 개요 */}
-                      {materialDraftPlan.project_meta && typeof materialDraftPlan.project_meta === "object" && (
+                      {Boolean(
+                        materialDraftPlan.project_meta &&
+                          typeof materialDraftPlan.project_meta === "object"
+                      ) && (
                         <div>
                           <h3 className={`font-semibold mb-1.5 ${isDarkMode ? "text-emerald-400" : "text-emerald-700"}`}>📋 프로젝트 개요</h3>
                           <ul className={`space-y-0.5 text-xs ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
@@ -2038,7 +2050,10 @@ const MainContent: React.FC<MainContentProps> = ({
                         </div>
                       )}
                       {/* 작성 스타일 */}
-                      {materialDraftPlan.style_guide && typeof materialDraftPlan.style_guide === "object" && (
+                      {Boolean(
+                        materialDraftPlan.style_guide &&
+                          typeof materialDraftPlan.style_guide === "object"
+                      ) && (
                         <div>
                           <h3 className={`font-semibold mb-1.5 ${isDarkMode ? "text-emerald-400" : "text-emerald-700"}`}>✒️ 작성 스타일</h3>
                           <ul className={`space-y-0.5 text-xs ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
@@ -2124,7 +2139,6 @@ const MainContent: React.FC<MainContentProps> = ({
                     <>
                       <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
                         챕터 내용 생성·검증·최종 문서 생성을 한 번에 실행합니다.
-                        {materialPdfPathUsed && <span className={`block mt-1 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>PDF가 연결되어 활용됩니다.</span>}
                       </p>
                       <button type="button" onClick={handleMaterialPhase3To5Async} disabled={submitting} className="px-4 py-2 text-sm rounded font-medium bg-emerald-600 text-white disabled:opacity-50">{submitting ? "처리 중… (완료될 때까지 잠시 기다려 주세요)" : "Phase 3~5 실행"}</button>
                     </>
@@ -2192,7 +2206,12 @@ const MainContent: React.FC<MainContentProps> = ({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true" onClick={() => !submitting && setExamGenModalOpen(false)}>
           <div className={`w-full max-w-md rounded-xl shadow-xl border ${isDarkMode ? "bg-zinc-900 border-zinc-700" : "bg-white border-gray-200"}`} onClick={(e) => e.stopPropagation()}>
             <div className={`flex justify-between items-center px-5 py-4 border-b ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
-              <h2 className={`text-lg font-semibold ${isDarkMode ? "text-gray-100" : "text-gray-900"}`}>시험 생성</h2>
+              <div>
+                <h2 className={`text-lg font-semibold ${isDarkMode ? "text-gray-100" : "text-gray-900"}`}>시험 생성</h2>
+                <p className={`mt-1 text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                  ① 유형 선택 → ② 에이전트와 프로파일 설정 → ③ 시험 생성 후 응시 및 재응시
+                </p>
+              </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -2210,169 +2229,106 @@ const MainContent: React.FC<MainContentProps> = ({
             </div>
             <div className="px-5 py-4 space-y-4">
               <div>
-                <label className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>시험 유형</label>
+                <label className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>시험 유형 선택</label>
                 <select value={examType} onChange={(e) => setExamType(e.target.value)} className={`w-full px-3 py-2 text-sm rounded border ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`}>
-                  <option value="FLASH_CARD">플래시카드</option>
-                  <option value="OX_PROBLEM">O/X 문제</option>
+                  <option value="FLASH_CARD">플래시카드 · 핵심 용어/개념 암기</option>
+                  <option value="OX_PROBLEM">OX 문제 · 오개념/정오 판별</option>
+                  <option value="FIVE_CHOICE">5지선다 · 객관식 풀이</option>
+                  <option value="SHORT_ANSWER_ESSAY">단답/서술형 · 키워드·논리 서술</option>
+                  <option value="DISCUSSION">토론형 · 특정 주제 토론</option>
                 </select>
+                <p className={`mt-1 text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                  한 번에 한 가지 유형으로 시험 세트를 생성합니다.
+                </p>
               </div>
               <div>
-                <label className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>주제</label>
-                <input type="text" value={examTopic} onChange={(e) => setExamTopic(e.target.value)} placeholder="예: 3주차 강의 내용" className={`w-full px-3 py-2 text-sm rounded border ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`} />
+                <label className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>주제 (이 시험이 다룰 내용)</label>
+                <input
+                  type="text"
+                  value={examTopic}
+                  onChange={(e) => setExamTopic(e.target.value)}
+                  placeholder="예: 3주차 강화학습 DQN 강의 내용 전체 / 업로드한 pdf 1장~10장"
+                  className={`w-full px-3 py-2 text-sm rounded border ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                />
               </div>
               <div>
                 <label className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>문항 수</label>
                 <input type="number" min={1} max={50} value={examCount} onChange={(e) => setExamCount(Number(e.target.value) || 10)} className={`w-full px-3 py-2 text-sm rounded border ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`} />
               </div>
-              <div className="pt-2 border-t border-dashed border-gray-300 dark:border-zinc-700 space-y-3">
-                <p className={`text-xs font-medium ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>시험 생성 프로파일 (선택)</p>
-                <div className="space-y-2">
-                  <label className={`block text-xs font-medium mb-1 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>집중 학습 영역 (콤마로 구분)</label>
-                  <input
-                    type="text"
-                    value={profileFocusAreasInput}
-                    onChange={(e) => setProfileFocusAreasInput(e.target.value)}
-                    placeholder="예: Policy Gradient, Clipping method"
-                    className={`w-full px-3 py-2 text-xs rounded border ${
-                      isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
-                    }`}
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium">목표 이해 수준</label>
-                    <select
-                      value={profileTargetDepth}
-                      onChange={(e) => setProfileTargetDepth(e.target.value as typeof profileTargetDepth)}
-                      className={`w-full px-2 py-1.5 text-xs rounded border ${
-                        isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
-                      }`}
-                    >
-                      <option value="Concept">개념 이해</option>
-                      <option value="Application">응용</option>
-                      <option value="Derivation">유도/증명</option>
-                      <option value="Deep Understanding">심층 이해</option>
-                    </select>
+              <div className="pt-2 border-t border-dashed border-gray-300 dark:border-zinc-700 space-y-2">
+                <p className={`text-xs font-medium ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                  에이전트와 대화를 나누며 학습 집중 포인트와 난이도를 조율해 보세요. (예: "3주차 DQN 내용에서 오개념 위주로 OX 10문제, 난이도는 중상")
+                </p>
+                <div
+                  className={`h-40 rounded-lg border text-xs flex flex-col ${
+                    isDarkMode ? "border-zinc-700 bg-zinc-900/60" : "border-gray-200 bg-gray-50"
+                  }`}
+                >
+                  <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1">
+                    {(examDesignMessages.length ? examDesignMessages : [
+                      {
+                        id: "init",
+                        role: "assistant" as const,
+                        text:
+                          "안녕하세요, 시험 출제 에이전트입니다. 어떤 부분을 중점적으로 평가하고 싶으신가요? (개념 이해 / 응용 / 증명, 난이도, 오답 패턴 등 자유롭게 말씀해 주세요.)",
+                      },
+                    ]).map((m) => (
+                      <div
+                        key={m.id}
+                        className={`max-w-[85%] rounded px-2 py-1 ${
+                          m.role === "assistant"
+                            ? isDarkMode
+                              ? "bg-zinc-800 text-gray-100"
+                              : "bg-white text-gray-900 border border-gray-200"
+                            : isDarkMode
+                            ? "bg-emerald-700/80 text-white ml-auto"
+                            : "bg-emerald-100 text-emerald-900 ml-auto"
+                        }`}
+                      >
+                        {m.text}
+                      </div>
+                    ))}
                   </div>
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium">출제 스타일</label>
-                    <select
-                      value={profileQuestionModality}
-                      onChange={(e) => setProfileQuestionModality(e.target.value as typeof profileQuestionModality)}
-                      className={`w-full px-2 py-1.5 text-xs rounded border ${
-                        isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
+                  <div className="border-t border-zinc-700/50 flex items-center gap-2 px-2 py-1.5">
+                    <input
+                      type="text"
+                      value={examDesignInput}
+                      onChange={(e) => setExamDesignInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          if (!examDesignInput.trim()) return;
+                          const text = examDesignInput.trim();
+                          setExamDesignInput("");
+                          setExamDesignMessages((prev) => [
+                            ...prev,
+                            { id: `u-${Date.now()}`, role: "user", text },
+                          ]);
+                        }
+                      }}
+                      placeholder="에이전트에게 시험 스타일을 설명해주세요."
+                      className={`flex-1 px-2 py-1 text-xs rounded border ${
+                        isDarkMode ? "bg-zinc-900 border-zinc-700 text-white" : "bg-white border-gray-300 text-gray-900"
                       }`}
-                    >
-                      <option value="Mathematical">수식/수리 중심</option>
-                      <option value="Theoretical">개념/이론 중심</option>
-                      <option value="Balance">균형 있게</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium">현재 수준</label>
-                    <select
-                      value={profileProficiencyLevel}
-                      onChange={(e) => setProfileProficiencyLevel(e.target.value as typeof profileProficiencyLevel)}
-                      className={`w-full px-2 py-1.5 text-xs rounded border ${
-                        isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
-                      }`}
-                    >
-                      <option value="Beginner">초급</option>
-                      <option value="Intermediate">중급</option>
-                      <option value="Advanced">고급</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium">오답/취약점 위주</label>
+                    />
                     <button
                       type="button"
-                      onClick={() => setProfileWeaknessFocus((v) => !v)}
-                      className={`w-full px-2 py-1.5 text-xs rounded border text-left ${
-                        profileWeaknessFocus
-                          ? isDarkMode
-                            ? "bg-emerald-700 border-emerald-500 text-white"
-                            : "bg-emerald-600 border-emerald-500 text-white"
-                          : isDarkMode
-                          ? "bg-zinc-800 border-zinc-600 text-gray-200"
-                          : "bg-white border-gray-300 text-gray-800"
+                      onClick={() => {
+                        if (!examDesignInput.trim()) return;
+                        const text = examDesignInput.trim();
+                        setExamDesignInput("");
+                        setExamDesignMessages((prev) => [
+                          ...prev,
+                          { id: `u-${Date.now()}`, role: "user", text },
+                        ]);
+                      }}
+                      className={`px-2 py-1 text-xs rounded font-medium ${
+                        isDarkMode ? "bg-emerald-600 text-white" : "bg-emerald-600 text-white"
                       }`}
                     >
-                      {profileWeaknessFocus ? "예, 취약점 중심으로 출제" : "아니요, 균형 있게 출제"}
+                      전송
                     </button>
                   </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium">언어/용어 스타일</label>
-                    <select
-                      value={profileLanguagePreference}
-                      onChange={(e) => setProfileLanguagePreference(e.target.value as typeof profileLanguagePreference)}
-                      className={`w-full px-2 py-1.5 text-xs rounded border ${
-                        isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
-                      }`}
-                    >
-                      <option value="Korean_with_English_Terms">한글 + 영문 용어</option>
-                      <option value="Korean_with_Korean_Terms">한글 용어 위주</option>
-                      <option value="Only_English">영어만</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium">상황/시나리오 활용</label>
-                    <button
-                      type="button"
-                      onClick={() => setProfileScenarioBased((v) => !v)}
-                      className={`w-full px-2 py-1.5 text-xs rounded border text-left ${
-                        profileScenarioBased
-                          ? isDarkMode
-                            ? "bg-emerald-700 border-emerald-500 text-white"
-                            : "bg-emerald-600 border-emerald-500 text-white"
-                          : isDarkMode
-                          ? "bg-zinc-800 border-zinc-600 text-gray-200"
-                          : "bg-white border-gray-300 text-gray-800"
-                      }`}
-                    >
-                      {profileScenarioBased ? "예, 상황/예시 포함" : "아니요, 정의 위주"}
-                    </button>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium">채점 기준</label>
-                    <select
-                      value={profileStrictness}
-                      onChange={(e) => setProfileStrictness(e.target.value as typeof profileStrictness)}
-                      className={`w-full px-2 py-1.5 text-xs rounded border ${
-                        isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
-                      }`}
-                    >
-                      <option value="Strict">엄격 (키워드 중심)</option>
-                      <option value="Lenient">관대 (맥락 허용)</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="block text-xs font-medium">해설 깊이</label>
-                    <select
-                      value={profileExplanationDepth}
-                      onChange={(e) => setProfileExplanationDepth(e.target.value as typeof profileExplanationDepth)}
-                      className={`w-full px-2 py-1.5 text-xs rounded border ${
-                        isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
-                      }`}
-                    >
-                      <option value="Answer_Only">정답만</option>
-                      <option value="Detailed_with_Examples">예시 포함 상세 해설</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-xs font-medium">지식 범위</label>
-                  <select
-                    value={profileScopeBoundary}
-                    onChange={(e) => setProfileScopeBoundary(e.target.value as typeof profileScopeBoundary)}
-                    className={`w-full px-2 py-1.5 text-xs rounded border ${
-                      isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
-                    }`}
-                  >
-                    <option value="Lecture_Material_Only">강의 자료 내부만 사용</option>
-                    <option value="Allow_External_Knowledge">외부 지식도 허용</option>
-                  </select>
                 </div>
               </div>
             </div>
