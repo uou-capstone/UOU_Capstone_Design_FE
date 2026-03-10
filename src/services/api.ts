@@ -1,6 +1,8 @@
 const BACKEND_URL = 'https://uouaitutor.duckdns.org';
-export const API_BASE_URL = import.meta.env.VITE_API_URL || BACKEND_URL;
-const AI_SERVICE_URL = import.meta.env.VITE_AI_SERVICE_URL || API_BASE_URL;
+// 일부 TS 설정에서는 import.meta.env 타입 선언이 없어 오류가 나므로 any 캐스트로 우회한다.
+const META_ENV = (import.meta as any)?.env ?? {};
+export const API_BASE_URL = META_ENV.VITE_API_URL || BACKEND_URL;
+const AI_SERVICE_URL = META_ENV.VITE_AI_SERVICE_URL || API_BASE_URL;
 
 // API 응답 타입
 export interface ApiResponse<T = any> {
@@ -248,11 +250,14 @@ const apiRequest = async <T>(
   };
 
   try {
-    const finalHeaders: HeadersInit = { ...config.headers };
+    // fetch HeadersInit는 union 타입이라 인덱싱이 어렵기 때문에, 여기서는 단순 객체로 다룬다.
+    const finalHeaders: Record<string, string> = {
+      ...(config.headers as Record<string, string>),
+    };
 
     if (isFormData) {
-      delete (finalHeaders as any)['Content-Type'];
-      delete (finalHeaders as any)['content-type'];
+      delete finalHeaders['Content-Type'];
+      delete finalHeaders['content-type'];
     }
 
     const hasAuthHeader = !!finalHeaders['Authorization'];
@@ -720,17 +725,64 @@ export const lectureApi = {
   // 강의 자료 업로드 (PDF) (선생님)
   uploadMaterial: async (lectureId: number, file: File): Promise<string> => {
     const formData = new FormData();
-    formData.append('file', file);
-    
-    const fileUrl = await apiRequest<string>(`/api/lectures/${lectureId}/materials`, {
-      method: 'POST',
-      body: formData,
-    }, true); // includeAuth = true로 명시
+    formData.append("file", file);
+
+    // 백엔드 응답이 문자열 또는 JSON({ fileUrl, message }) 둘 다 올 수 있다고 가정하고 처리
+    const rawResponse = await apiRequest<unknown>(
+      `/api/lectures/${lectureId}/materials`,
+      {
+        method: "POST",
+        body: formData,
+      },
+      true // includeAuth = true로 명시
+    );
+
+    let fileUrl: string | null = null;
+
+    if (typeof rawResponse === "string") {
+      // 구버전: 바로 URL 또는 경로 문자열 반환
+      fileUrl = rawResponse;
+    } else if (rawResponse && typeof rawResponse === "object") {
+      // 공통 래퍼(ApiResponse<T>) 또는 직접 객체 반환 모두 처리
+      const anyResp = rawResponse as {
+        fileUrl?: unknown;
+        url?: unknown;
+        data?: unknown;
+      };
+
+      // 1차: 최상위에 fileUrl / url 필드가 있는 경우
+      if (typeof anyResp.fileUrl === "string") {
+        fileUrl = anyResp.fileUrl;
+      } else if (typeof anyResp.url === "string") {
+        fileUrl = anyResp.url;
+      }
+
+      // 2차: data 안에 { fileUrl, url } 혹은 문자열이 들어있는 ApiResponse<T> 형태 처리
+      if (!fileUrl && anyResp.data != null) {
+        const data: unknown = anyResp.data;
+        if (typeof data === "string") {
+          fileUrl = data;
+        } else if (typeof data === "object") {
+          const dataObj = data as { fileUrl?: unknown; url?: unknown };
+          if (typeof dataObj.fileUrl === "string") {
+            fileUrl = dataObj.fileUrl;
+          } else if (typeof dataObj.url === "string") {
+            fileUrl = dataObj.url;
+          }
+        }
+      }
+    }
+
+    if (!fileUrl) {
+      // fileUrl을 파싱하지 못한 경우, 미리보기는 건너뛰되 앱이 깨지지는 않도록 빈 문자열 반환
+      console.warn("uploadMaterial: 업로드 응답에서 파일 URL을 찾지 못했습니다.", rawResponse);
+      return "";
+    }
 
     // 백엔드가 상대 경로를 반환하는 경우 절대 URL로 변환
-    if (fileUrl && !/^https?:\/\//i.test(fileUrl)) {
+    if (!/^https?:\/\//i.test(fileUrl)) {
       const baseUrl = API_BASE_URL || BACKEND_URL;
-      if (fileUrl.startsWith('/')) {
+      if (fileUrl.startsWith("/")) {
         return `${baseUrl}${fileUrl}`;
       }
       return `${baseUrl}/${fileUrl}`;
@@ -831,7 +883,7 @@ export interface LectureMaterialResponse {
 export interface MaterialsPhase1Request {
   lectureId: number;
   keyword: string;
-  pdfPath: string;
+  pdfPath?: string;
 }
 
 export interface MaterialsPhase1Response {
@@ -843,7 +895,8 @@ export interface MaterialsPhase1Response {
 
 export interface MaterialsPhase2Request {
   sessionId: number;
-  action: "confirm" | "update";
+  // BE 스펙: action은 "confirm" 또는 "feedback"만 허용
+  action: "confirm" | "feedback";
   feedback?: string;
 }
 
@@ -888,6 +941,23 @@ export interface MaterialsPhase5Response {
   documentUrl?: string;
   progressPercentage: number;
   message?: string;
+}
+
+// 최근 세션 조회 / 세션 복구 응답 (latest-session, recover 공통)
+export interface MaterialsLatestSessionResponse {
+  sessionId: number;
+  lectureId: number;
+  currentPhase: string;
+  progressPercentage: number;
+  draftPlan?: Record<string, unknown>;
+  finalizedBrief?: Record<string, unknown>;
+  chapterContentList?: Record<string, unknown>;
+  verifiedContent?: Record<string, unknown>;
+  finalDocument?: string;
+  documentUrl?: string;
+  errorMessage?: string;
+  // 그 외 추가 필드는 자유 형식
+  [key: string]: unknown;
 }
 
 // Phase 3~5 비동기 실행 (한 번에 실행)
@@ -1033,6 +1103,22 @@ export const materialGenerationApi = {
       method: "POST",
       body: JSON.stringify(payload),
     });
+  },
+
+  // 특정 강의의 최근 세션 조회
+  getLatestSessionForLecture: async (lectureId: number): Promise<MaterialsLatestSessionResponse> => {
+    return apiRequest<MaterialsLatestSessionResponse>(
+      `/api/materials/generation/lectures/${lectureId}/latest-session`,
+      { method: "GET" }
+    );
+  },
+
+  // 세션 복구 (에러 메시지 제거 후 재시도 가능 상태로 변경)
+  recoverSession: async (sessionId: number): Promise<MaterialsLatestSessionResponse> => {
+    return apiRequest<MaterialsLatestSessionResponse>(
+      `/api/materials/generation/${sessionId}/recover`,
+      { method: "POST" }
+    );
   },
 
   /** Phase 3~5 한 번에 비동기 실행. taskId 반환 후 /api/tasks/{taskId}/status 로 진행 조회 */
