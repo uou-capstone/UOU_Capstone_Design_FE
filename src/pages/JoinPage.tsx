@@ -98,7 +98,7 @@ const JoinPage: React.FC = () => {
   // 인증 상태 확인 중이거나 로딩 중
   if (isAuthLoading || isJoining) {
     return (
-      <div className={`min-h-screen flex items-center justify-center ${isDarkMode ? 'bg-slate-900' : 'bg-gray-50'}`}>
+      <div className={`min-h-screen flex items-center justify-center ${isDarkMode ? 'bg-zinc-900' : 'bg-gray-100'}`}>
         <TruckLoader />
       </div>
     );
@@ -110,8 +110,8 @@ const JoinPage: React.FC = () => {
   }
 
   return (
-    <div className={`min-h-screen flex items-center justify-center px-4 ${isDarkMode ? 'bg-slate-900' : 'bg-gray-50'}`}>
-      <div className={`w-full max-w-md p-8 rounded-lg shadow-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+    <div className={`min-h-screen flex items-center justify-center px-4 ${isDarkMode ? 'bg-zinc-900' : 'bg-gray-100'}`}>
+      <div className={`w-full max-w-md p-8 rounded-lg shadow-lg ${isDarkMode ? 'bg-zinc-800' : 'bg-white'}`}>
         <div className="text-center mb-6">
           <h2 className={`text-2xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
             수강 신청
@@ -175,8 +175,8 @@ const JoinPage: React.FC = () => {
                 placeholder="예: 5 또는 ABCD-1234"
                 className={`w-full px-3 py-2 text-sm rounded border ${
                   isDarkMode
-                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
+                    ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-500'
+                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
                 } focus:outline-none focus:ring-2 ${
                   isDarkMode ? 'focus:ring-emerald-500' : 'focus:ring-emerald-500'
                 }`}
