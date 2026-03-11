@@ -21,10 +21,10 @@ const ForgotPasswordPage: React.FC = () => {
 
   return (
     <div className={`min-h-screen flex items-center justify-center transition-colors ${
-      isDarkMode ? 'bg-slate-900' : 'bg-gray-50'
+      isDarkMode ? 'bg-zinc-900' : 'bg-gray-100'
     }`}>
       <div className={`w-full max-w-md p-8 rounded-lg shadow-lg ${
-        isDarkMode ? 'bg-slate-800' : 'bg-white'
+        isDarkMode ? 'bg-zinc-800' : 'bg-white'
       }`}>
         <div className="text-center mb-8">
           <h1 className={`text-3xl font-bold mb-2 ${
@@ -33,7 +33,7 @@ const ForgotPasswordPage: React.FC = () => {
             비밀번호 찾기
           </h1>
           <p className={`text-sm ${
-            isDarkMode ? 'text-slate-400' : 'text-gray-600'
+            isDarkMode ? 'text-gray-400' : 'text-gray-600'
           }`}>
             등록된 이메일로 비밀번호 재설정 링크를 보내드립니다
           </p>
@@ -65,7 +65,7 @@ const ForgotPasswordPage: React.FC = () => {
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label className={`block text-sm font-medium mb-2 ${
-                isDarkMode ? 'text-slate-200' : 'text-gray-700'
+                isDarkMode ? 'text-gray-200' : 'text-gray-700'
               }`}>
                 이메일
               </label>
@@ -76,8 +76,8 @@ const ForgotPasswordPage: React.FC = () => {
                 required
                 className={`w-full px-4 py-2 rounded-lg border ${
                   isDarkMode
-                    ? 'bg-slate-700 border-slate-600 text-white placeholder-slate-400'
-                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-400'
+                    ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-500'
+                    : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
                 } focus:outline-none focus:ring-2 focus:ring-blue-500`}
                 placeholder="example@email.com"
               />

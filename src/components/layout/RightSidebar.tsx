@@ -67,6 +67,12 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const previewObjectUrlRef = useRef<string | null>(null);
   const actionMenuContainerRef = useRef<HTMLDivElement>(null);
   const shouldAbortPollingRef = useRef<boolean>(false);
+  const answeredQuestionIdsRef = useRef<Set<string>>(new Set());
+  const [isAnswerSubmitting, setIsAnswerSubmitting] = useState(false);
+
+  useEffect(() => {
+    answeredQuestionIdsRef.current = new Set();
+  }, [currentLectureId]);
 
   const allowedFileTypes = ['.pdf', '.ppt', '.pptx', '.doc', '.docx'];
   const commonStyles = {
@@ -462,7 +468,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     };
 
     const callNextWithRetry = async (): Promise<StreamNextResponse> => {
-      // 간헐적 500을 짧게 재시도해서 UX를 개선
+      // 400은 재시도하지 않고 메시지 그대로 사용자에게 전달. 500/일시 오류만 재시도.
       const delaysMs = [500, 1000, 2000];
       let lastErr: unknown;
       for (let attempt = 0; attempt < delaysMs.length + 1; attempt++) {
@@ -475,6 +481,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           lastErr = e;
           const msg = e instanceof Error ? e.message : String(e);
           const status = parseHttpStatusFromError(msg);
+          if (status === 400) break;
           const shouldRetry = status === 500 || isKnownTransientStreamError(msg);
           if (!shouldRetry || attempt >= delaysMs.length) break;
           await sleep(delaysMs[attempt]);
@@ -504,6 +511,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         () => {}, // hasMoreStream은 사용하지 않으므로 빈 함수
         loadingMessageId
       );
+      // hasMore === false 또는 status === "COMPLETED" 등 "끝"이면 더 이상 get_next_content 호출하지 않음
+      if (res.hasMore === false || (res.status || "").toUpperCase() === "COMPLETED") {
+        return;
+      }
       
       // 개념 설명 후 자동으로 다음 세그먼트(질문) 가져오기
       if (shouldContinue && !shouldAbortPollingRef.current && currentLectureId) {
@@ -642,9 +653,18 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       return;
     }
 
-    // 질문 대기 시: 사용자의 답변 전송
+    // 질문 대기 시: 사용자의 답변 전송 (같은 ai_question_id는 한 번만 제출)
     if (isStreaming && waitingForAnswer && currentAiQuestionId && currentLectureId) {
       if (!trimmed) return;
+      if (isAnswerSubmitting) return;
+      if (answeredQuestionIdsRef.current.has(currentAiQuestionId)) {
+        setMessages((prev) => [...prev, { id: Date.now(), text: "이미 답변이 처리되었습니다. 다음으로 진행합니다.", isUser: false }]);
+        setWaitingForAnswer(false);
+        setCurrentAiQuestionId(null);
+        void fetchNextSegment();
+        resetInputText();
+        return;
+      }
       const userText = inputText.trim();
       const userMsg: ChatMessage = {
         id: Date.now(),
@@ -653,8 +673,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       };
       setMessages((prev) => [...prev, userMsg]);
       resetInputText();
+      answeredQuestionIdsRef.current.add(currentAiQuestionId);
+      setIsAnswerSubmitting(true);
 
-      // 보조 설명 대기 메시지
       const pendingReply: ChatMessage = {
         id: Date.now() + 1,
         text: "",
@@ -666,7 +687,20 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       streamingApi
         .answer(currentLectureId, { aiQuestionId: currentAiQuestionId, answer: userText })
         .then((res) => {
-          // 보충 설명 메시지
+          const status = (res.status || "").toUpperCase();
+          if (status === "ALREADY_ANSWERED") {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === pendingReply.id
+                  ? { ...m, text: "이미 답변이 처리되었습니다.", isLoading: false }
+                  : m
+              )
+            );
+            setWaitingForAnswer(false);
+            setCurrentAiQuestionId(null);
+            if (res.canContinue) void fetchNextSegment();
+            return;
+          }
           const supplementary = res.supplementary?.trim() || "보충 설명이 제공되지 않았습니다.";
           setMessages((prev) =>
             prev.map((m) =>
@@ -682,12 +716,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           );
           setWaitingForAnswer(false);
           setCurrentAiQuestionId(null);
-          // 이어서 다음 세그먼트가 있으면 자동 진행
-          if (res.canContinue) {
-            void fetchNextSegment();
-          }
+          if (res.canContinue) void fetchNextSegment();
         })
         .catch((err) => {
+          answeredQuestionIdsRef.current.delete(currentAiQuestionId);
           const msg = err instanceof Error ? err.message : "답변 전송 실패";
           setMessages((prev) =>
             prev.map((m) =>
@@ -698,12 +730,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           );
         })
         .finally(() => {
-          // 스크롤을 하단으로 이동
+          setIsAnswerSubmitting(false);
           setTimeout(() => {
             const chatContainer = document.getElementById("chat-messages");
-            if (chatContainer) {
-              chatContainer.scrollTop = chatContainer.scrollHeight;
-            }
+            if (chatContainer) chatContainer.scrollTop = chatContainer.scrollHeight;
           }, 0);
         });
       return;
@@ -1032,6 +1062,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           <textarea
             ref={textareaRef}
             value={inputText}
+            disabled={isAnswerSubmitting}
             onChange={(e) => {
               setInputText(e.target.value);
               // 높이 자동 조절
@@ -1042,13 +1073,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             }}
             onKeyPress={handleKeyPress}
             placeholder={
-              isStreaming
-                ? (waitingForAnswer ? "AI 질문에 대한 답변을 입력하고 Enter" : "Enter로 다음 세그먼트 진행")
-                : hasUploadedMaterial
-                  ? "Enter를 눌러 학습을 시작하세요"
-                  : "파일을 드래그 앤 드롭하고 Enter를 눌러 시작하세요"
+              isAnswerSubmitting
+                ? "답변 처리 중..."
+                : isStreaming
+                  ? (waitingForAnswer ? "AI 질문에 대한 답변을 입력하고 Enter" : "Enter로 다음 세그먼트 진행")
+                  : hasUploadedMaterial
+                    ? "Enter를 눌러 학습을 시작하세요"
+                    : "파일을 드래그 앤 드롭하고 Enter를 눌러 시작하세요"
             }
-            className={`flex-1 p-2 text-sm resize-none bg-transparent border-0 focus:outline-none overflow-y-auto ${
+            className={`flex-1 p-1.5 text-sm resize-none bg-transparent border-0 focus:outline-none overflow-y-auto ${
               isDarkMode
                 ? "text-white placeholder-gray-500"
                 : "text-gray-900 placeholder-gray-400"

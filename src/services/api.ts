@@ -774,6 +774,13 @@ export const lectureApi = {
     return apiRequest<{ status: string; progress?: number; message?: string }>(`/api/lectures/${lectureId}/ai-status`, { method: 'GET' });
   },
 
+  /** 강의 자료 삭제 - DELETE /api/lectures/{lectureId}/materials/{materialId} (BE에서 이 경로로 로그 수신 확인) */
+  deleteMaterial: async (lectureId: number, materialId: number): Promise<void> => {
+    return apiRequest<void>(`/api/lectures/${lectureId}/materials/${materialId}`, {
+      method: 'DELETE',
+    });
+  },
+
   // 강의 자료 업로드 (PDF) (선생님) - POST /api/lectures/{lectureId}/materials, multipart/form-data file
   // 응답: { materialId, displayName, materialType, url, fileUrl } (Swagger 명세)
   uploadMaterial: async (lectureId: number, file: File): Promise<LectureMaterialUploadResult> => {
@@ -1511,6 +1518,12 @@ export const examGenerationApi = {
   getSession: async (examSessionId: number): Promise<ExamSessionDetailResponse> => {
     return aiServiceRequest<ExamSessionDetailResponse>(`/api/exams/generation/${encodeURIComponent(examSessionId)}`, {
       method: 'GET',
+    });
+  },
+  /** [삭제] 시험 세션 삭제. 해당 강의 소유 교사만 삭제 가능. DELETE /api/exams/generation/{examSessionId} */
+  deleteExamSession: async (examSessionId: number): Promise<void> => {
+    return aiServiceRequest<void>(`/api/exams/generation/${encodeURIComponent(examSessionId)}`, {
+      method: 'DELETE',
     });
   },
 };
