@@ -8,12 +8,15 @@ import {
   materialGenerationApi,
   tasksApi,
   examGenerationApi,
+  courseContentsApi,
   getAuthToken,
   API_BASE_URL,
   type Course,
   type CourseDetail,
   type AssessmentSimpleDto,
   type ExamSessionDetailResponse,
+  type ExamUserProfile,
+  type CourseContentsResponse,
 } from "../../services/api";
 import RightSidebar from "./RightSidebar";
 import SettingsPage from "../pages/SettingsPage";
@@ -41,6 +44,36 @@ type CenterItem = {
   assessmentId?: number;
   examSessionId?: string;
 };
+
+type FiveChoiceResultStatus = "Correct" | "Incorrect";
+
+interface FiveChoiceEvaluationItem {
+  questionId: number;
+  resultStatus: FiveChoiceResultStatus;
+  questionContent: string;
+  userResponse: string;
+  relatedTopic?: string;
+  feedbackMessage?: string;
+}
+
+interface FiveChoiceLogData {
+  evaluationItems: FiveChoiceEvaluationItem[];
+}
+
+type ShortAnswerResultStatus = "Correct" | "Incorrect" | "Partial_Correct";
+
+interface ShortAnswerEvaluationItem {
+  questionId: number;
+  resultStatus: ShortAnswerResultStatus;
+  questionContent: string;
+  userResponse: string;
+  relatedTopic?: string;
+  feedbackMessage?: string;
+}
+
+interface ShortAnswerLogData {
+  evaluationItems: ShortAnswerEvaluationItem[];
+}
 
 interface MainContentProps {
   viewMode: ViewMode;
@@ -143,6 +176,28 @@ const MainContent: React.FC<MainContentProps> = ({
   const [examDetailLoading, setExamDetailLoading] = React.useState(false);
   const [examDetailError, setExamDetailError] = React.useState<string | null>(null);
   const [examDetailFlipped, setExamDetailFlipped] = React.useState<Record<number, boolean>>({});
+  const [examAnswerVisible, setExamAnswerVisible] = React.useState<Record<string, boolean>>({});
+  const [fiveChoiceUserAnswers, setFiveChoiceUserAnswers] = React.useState<Record<string, string>>({});
+  const [fiveChoiceLog, setFiveChoiceLog] = React.useState<FiveChoiceLogData | null>(null);
+  const [shortAnswerUserAnswers, setShortAnswerUserAnswers] = React.useState<Record<string, string>>({});
+  const [shortAnswerLog, setShortAnswerLog] = React.useState<ShortAnswerLogData | null>(null);
+  const [examProfile, setExamProfile] = React.useState<ExamUserProfile | null>(null);
+  const [examProfileStatus, setExamProfileStatus] = React.useState<"IDLE" | "INCOMPLETE" | "COMPLETE">("IDLE");
+  const [examProfileLoading, setExamProfileLoading] = React.useState(false);
+  const [lectureResourcesLoading, setLectureResourcesLoading] = React.useState(false);
+  const [bulkEditMode, setBulkEditMode] = React.useState(false);
+  const [bulkSelectedIds, setBulkSelectedIds] = React.useState<Record<string, boolean>>({});
+  const [courseContentsLoaded, setCourseContentsLoaded] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!examGenModalOpen) {
+      setExamProfile(null);
+      setExamProfileStatus("IDLE");
+      setExamProfileLoading(false);
+      setExamDesignMessages([]);
+      setExamDesignInput("");
+    }
+  }, [examGenModalOpen]);
 
   React.useEffect(() => {
     if (!previewFileUrl) {
@@ -332,6 +387,114 @@ const MainContent: React.FC<MainContentProps> = ({
     return merged;
   }, [selectedLectureId, localMaterials, localExams, assessments, sortOrder]);
 
+  // 강의실 진입 시 /api/courses/{courseId}/contents 한 번 호출하여 모든 주차 리소스 로드
+  React.useEffect(() => {
+    if (!courseDetail?.courseId) {
+      setLocalMaterials({});
+      setLocalExams({});
+      setCourseContentsLoaded(false);
+      return;
+    }
+    let cancelled = false;
+    setLectureResourcesLoading(true);
+    setCourseContentsLoaded(false);
+
+    courseContentsApi
+      .getCourseContents(courseDetail.courseId)
+      .then((res: CourseContentsResponse) => {
+        if (cancelled) return;
+        const materialsByLecture: Record<number, CenterItem[]> = {};
+        const examsByLecture: Record<number, CenterItem[]> = {};
+
+        for (const lec of res.lectures || []) {
+          const mats: CenterItem[] = (lec.materials || []).map((m) => ({
+            id: `material-${m.materialId}`,
+            type: "material" as const,
+            title: m.displayName,
+            meta: "자료",
+            createdAt: new Date().toISOString(), // createdAt이 없으면 지금 시각으로 대체
+            fileUrl: m.url,
+          }));
+          const exs: CenterItem[] = (lec.examSessions || []).map((s) => ({
+            id: String(s.examSessionId),
+            type: "exam" as const,
+            title: `${s.examType} · ${s.targetCount}문항`,
+            meta: "시험",
+            createdAt: s.createdAt,
+            examSessionId: String(s.examSessionId),
+          }));
+          if (mats.length > 0) {
+            materialsByLecture[lec.lectureId] = mats;
+          }
+          if (exs.length > 0) {
+            examsByLecture[lec.lectureId] = exs;
+          }
+        }
+
+        setLocalMaterials(materialsByLecture);
+        setLocalExams(examsByLecture);
+        setCourseContentsLoaded(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+      })
+      .finally(() => {
+        if (!cancelled) setLectureResourcesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [courseDetail?.courseId]);
+
+  React.useEffect(() => {
+    // 강의 변경 또는 모드 해제 시 선택 상태 초기화
+    if (!bulkEditMode) {
+      setBulkSelectedIds({});
+    }
+  }, [bulkEditMode, selectedLectureId]);
+
+  const handleToggleBulkSelect = (itemId: string) => {
+    if (!bulkEditMode) return;
+    setBulkSelectedIds((prev) => ({
+      ...prev,
+      [itemId]: !prev[itemId],
+    }));
+  };
+
+  const handleBulkDelete = () => {
+    if (!selectedLectureId) return;
+    const ids = Object.keys(bulkSelectedIds).filter((id) => bulkSelectedIds[id]);
+    if (ids.length === 0) {
+      window.alert("삭제할 카드를 선택해주세요.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `선택한 ${ids.length}개의 자료/시험 카드를 목록에서 삭제하시겠습니까?\n(서버에 업로드된 실제 파일이나 시험 데이터는 그대로 남습니다.)`,
+      )
+    ) {
+      return;
+    }
+
+    setLocalMaterials((prev) => {
+      const list = prev[selectedLectureId] || [];
+      return {
+        ...prev,
+        [selectedLectureId]: list.filter((it) => !bulkSelectedIds[it.id]),
+      };
+    });
+    setLocalExams((prev) => {
+      const list = prev[selectedLectureId] || [];
+      return {
+        ...prev,
+        [selectedLectureId]: list.filter((it) => !bulkSelectedIds[it.id]),
+      };
+    });
+    setBulkSelectedIds({});
+    setBulkEditMode(false);
+  };
+
   const handleDeleteCenterItem = React.useCallback(
     (item: CenterItem) => {
       if (!selectedLectureId) return;
@@ -378,7 +541,7 @@ const MainContent: React.FC<MainContentProps> = ({
     setPreviewFileName(null);
   }, [selectedLectureId]);
 
-  // AI 자료 생성 시 PDF는 선택 사항이므로, 더 이상 자동 입력/강제 사용하지 않는다.
+  // 강의자료 생성 시 PDF는 선택 사항이므로, 더 이상 자동 입력/강제 사용하지 않는다.
 
   const handleUploadSubmit = React.useCallback(async () => {
     if (!selectedLectureId || !uploadFile || !courseDetail?.courseId) return;
@@ -394,6 +557,22 @@ const MainContent: React.FC<MainContentProps> = ({
         createdAt: new Date().toISOString(),
         fileUrl: url,
       };
+
+      // RightSidebar에서 사용하는 형식과 동일하게 로컬 스토리지에 업로드 정보 저장
+      if (url) {
+        try {
+          const key = `lecture_upload_${selectedLectureId}`;
+          const payload = {
+            fileName: uploadFile.name,
+            fileUrl: url,
+            timestamp: Date.now(),
+          };
+          localStorage.setItem(key, JSON.stringify(payload));
+        } catch {
+          // 로컬 스토리지 저장 실패는 치명적이지 않으므로 무시
+        }
+      }
+
       setLocalMaterials((prev) => ({
         ...prev,
         [selectedLectureId]: [...(prev[selectedLectureId] || []), newItem],
@@ -439,6 +618,43 @@ const MainContent: React.FC<MainContentProps> = ({
       setSubmitting(false);
     }
   }, [materialKeyword, selectedLectureId]);
+
+  // 최근 사용한 기획안(세션) 불러오기 - lectureId만으로 해당 강의의 최근 생성 세션 조회
+  const handleLoadLatestMaterialSession = React.useCallback(async () => {
+    if (selectedLectureId == null) {
+      window.alert("강의를 먼저 선택해주세요.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await materialGenerationApi.getLatestSessionForLecture(selectedLectureId);
+      setMaterialSessionId(res.sessionId);
+      if (res.draftPlan) setMaterialDraftPlan(res.draftPlan);
+      const phase = (res.currentPhase || "").toUpperCase();
+      if (phase === "PHASE1" || phase === "PHASE2") {
+        setMaterialGenStep(2);
+      } else if (phase === "PHASE3") {
+        setMaterialGenStep(3);
+      } else if (phase === "PHASE4") {
+        setMaterialChapterSummary(res.chapterContentList ? "챕터 내용 생성됨" : null);
+        setMaterialGenStep(4);
+      } else {
+        // PHASE5 또는 완료
+        if (res.documentUrl) {
+          setMaterialFinalUrl(res.documentUrl);
+          setMaterialCompletedViaAsync(true);
+          setMaterialGenStep(5);
+        } else {
+          setMaterialGenStep(3);
+        }
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "최근 세션 조회에 실패했습니다.";
+      window.alert(msg + (msg.includes("세션") ? "" : " 이 강의에 대한 이전 기획안이 없을 수 있습니다."));
+    } finally {
+      setSubmitting(false);
+    }
+  }, [selectedLectureId]);
 
   const resetMaterialGenModal = React.useCallback(() => {
     setMaterialGenStep(1);
@@ -628,7 +844,7 @@ const MainContent: React.FC<MainContentProps> = ({
     }
     setSubmitting(true);
     try {
-      // 에이전트와의 대화 내용을 기반으로 학습 집중 포인트/난이도 프로파일 구성
+      // 에이전트와의 대화 내용을 기반으로 학습 집중 포인트/난이도 프로파일 구성 (백업용)
       const convoTextFromChat = examDesignMessages
         .filter((m) => m.role === "user")
         .map((m) => m.text)
@@ -639,7 +855,7 @@ const MainContent: React.FC<MainContentProps> = ({
         .split(/[,\n]/)
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
-      const userProfile =
+      const fallbackUserProfile =
         focusAreas.length === 0
           ? undefined
           : {
@@ -662,13 +878,16 @@ const MainContent: React.FC<MainContentProps> = ({
               },
               scopeBoundary: profileScopeBoundary,
             };
+
+      const finalUserProfile =
+        examProfileStatus === "COMPLETE" && examProfile ? examProfile : fallbackUserProfile;
       const res = await examGenerationApi.createExam({
         lectureId: selectedLectureId,
         examType,
         targetCount: examCount,
         lectureContent: examTopic.trim(),
         topic: examTopic.trim(),
-        userProfile,
+        userProfile: finalUserProfile,
       });
       const newItem: CenterItem = {
         id: res.examSessionId,
@@ -731,7 +950,7 @@ const MainContent: React.FC<MainContentProps> = ({
         .split(/[,\n]/)
         .map((s) => s.trim())
         .filter((s) => s.length > 0);
-      const userProfile =
+      const fallbackUserProfile =
         focusAreas.length === 0
           ? undefined
           : {
@@ -754,12 +973,16 @@ const MainContent: React.FC<MainContentProps> = ({
               },
               scopeBoundary: profileScopeBoundary,
             };
+
+      const finalUserProfile =
+        examProfileStatus === "COMPLETE" && examProfile ? examProfile : fallbackUserProfile;
+
       const res = await examGenerationApi.runAsync({
         examType,
         targetCount: examCount,
         lectureContent: examTopic.trim(),
         topic: examTopic.trim(),
-        userProfile,
+        userProfile: finalUserProfile,
       });
       const lines = [
         "비동기 시험 생성이 시작되었습니다.",
@@ -807,6 +1030,12 @@ const MainContent: React.FC<MainContentProps> = ({
     setExamDetail(null);
     setExamDetailError(null);
     setExamDetailLoading(true);
+    setExamDetailFlipped({});
+    setExamAnswerVisible({});
+    setFiveChoiceUserAnswers({});
+    setFiveChoiceLog(null);
+     setShortAnswerUserAnswers({});
+     setShortAnswerLog(null);
     try {
       const numericId = Number(sessionId);
       if (!Number.isFinite(numericId)) {
@@ -814,7 +1043,6 @@ const MainContent: React.FC<MainContentProps> = ({
       }
       const detail = await examGenerationApi.getSession(numericId);
       setExamDetail(detail);
-      setExamDetailFlipped({});
     } catch (e) {
       setExamDetailError(e instanceof Error ? e.message : "시험 세션 정보를 불러오지 못했습니다.");
     } finally {
@@ -845,6 +1073,188 @@ const MainContent: React.FC<MainContentProps> = ({
 
   const handleToggleFlashCard = (id: number) => {
     setExamDetailFlipped((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const toggleExamAnswerVisible = (key: string) => {
+    setExamAnswerVisible((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleFiveChoiceAnswerChange = (problemIndex: number, optionId: string) => {
+    setFiveChoiceUserAnswers((prev) => ({
+      ...prev,
+      [String(problemIndex)]: optionId,
+    }));
+  };
+
+  const handleFiveChoiceGrade = () => {
+    if (!examDetail || !examDetail.fiveChoiceProblems || examDetail.fiveChoiceProblems.length === 0) {
+      return;
+    }
+    const evaluationItems: FiveChoiceEvaluationItem[] = examDetail.fiveChoiceProblems.map((q, idx) => {
+      const key = String(idx);
+      const userChoiceId = fiveChoiceUserAnswers[key];
+      const selectedOption = q.options?.find((opt) => opt.id === userChoiceId) ?? null;
+
+      let resultStatus: FiveChoiceResultStatus = "Incorrect";
+      let userResponse = "No Answer";
+
+      if (selectedOption) {
+        userResponse = `${selectedOption.id}. ${selectedOption.content}`;
+        if (selectedOption.isCorrect) {
+          resultStatus = "Correct";
+        }
+      }
+
+      const relatedTopic = q.intentDiagnosis || q.questionContent;
+      let feedbackMessage: string;
+
+      if (!selectedOption) {
+        feedbackMessage = "답안을 선택하지 않아 개념 이해를 평가하기 어려움.";
+      } else if (resultStatus === "Correct") {
+        feedbackMessage = q.intentDiagnosis
+          ? `정답을 정확히 선택함. ${q.intentDiagnosis}`
+          : "정답을 정확히 선택함.";
+      } else {
+        const intentText = selectedOption.intent || "";
+        const intentPart = intentText ? `선택한 보기의 의도: ${intentText}` : "선택한 보기의 의도가 명시되어 있지 않음.";
+        const diagnosisPart = q.intentDiagnosis
+          ? `정답 근거: ${q.intentDiagnosis}`
+          : "정답 근거는 문제의 출제 의도(intent_diagnosis)를 참고해야 함.";
+        feedbackMessage = `${intentPart} ${diagnosisPart}`;
+      }
+
+      return {
+        questionId: idx + 1,
+        resultStatus,
+        questionContent: q.questionContent,
+        userResponse,
+        relatedTopic,
+        feedbackMessage,
+      };
+    });
+
+    setFiveChoiceLog({ evaluationItems });
+  };
+
+  const sendExamProfileMessage = React.useCallback(
+    async (text: string) => {
+      const trimmedTopic = examTopic.trim();
+      if (!trimmedTopic) {
+        window.alert("먼저 시험 주제를 입력해주세요.");
+        return;
+      }
+      setExamProfileLoading(true);
+      try {
+        const res = await examGenerationApi.generateProfile({
+          lectureContent: trimmedTopic,
+          examType,
+          existingProfile: examProfile ?? undefined,
+          userMessage: text,
+        });
+        if (res.agentMessage) {
+          setExamDesignMessages((prev) => [
+            ...prev,
+            { id: `a-${Date.now()}`, role: "assistant", text: res.agentMessage },
+          ]);
+        }
+        if (res.updatedProfile) {
+          setExamProfile(res.updatedProfile);
+        }
+        if (res.status === "COMPLETE") {
+          setExamProfileStatus("COMPLETE");
+        } else {
+          setExamProfileStatus("INCOMPLETE");
+        }
+      } catch (e) {
+        window.alert(
+          e instanceof Error
+            ? e.message
+            : "프로필 설정 에이전트와의 통신 중 오류가 발생했습니다.",
+        );
+      } finally {
+        setExamProfileLoading(false);
+      }
+    },
+    [examTopic, examType, examProfile],
+  );
+
+  const handleShortAnswerInputChange = (problemIndex: number, value: string) => {
+    setShortAnswerUserAnswers((prev) => ({
+      ...prev,
+      [String(problemIndex)]: value,
+    }));
+  };
+
+  const handleShortAnswerGrade = () => {
+    if (!examDetail || !examDetail.shortAnswerProblems || examDetail.shortAnswerProblems.length === 0) {
+      return;
+    }
+
+    const evaluationItems: ShortAnswerEvaluationItem[] = examDetail.shortAnswerProblems.map((q, idx) => {
+      const key = String(idx);
+      const userResponse = (shortAnswerUserAnswers[key] ?? "").trim();
+
+      const rawKeywords =
+        (Array.isArray((q as any).relatedKeywords) && (q as any).relatedKeywords.length > 0
+          ? (q as any).relatedKeywords
+          : Array.isArray((q as any).keyKeywords)
+          ? (q as any).keyKeywords
+          : []) as string[];
+
+      const normalizedUser = userResponse.toLowerCase();
+      const matchedKeywords = rawKeywords.filter((kw) =>
+        normalizedUser.includes(String(kw).toLowerCase()),
+      );
+
+      let resultStatus: ShortAnswerResultStatus = "Incorrect";
+      if (rawKeywords.length === 0) {
+        resultStatus = userResponse ? "Correct" : "Incorrect";
+      } else if (matchedKeywords.length === rawKeywords.length && rawKeywords.length > 0) {
+        resultStatus = "Correct";
+      } else if (matchedKeywords.length > 0) {
+        resultStatus = "Partial_Correct";
+      }
+
+      const relatedTopic =
+        (q as any).intentDiagnosis ||
+        (q as any).evaluationCriteria ||
+        (q as any).questionContent ||
+        "";
+
+      let feedbackMessage: string;
+      if (!userResponse) {
+        feedbackMessage =
+          "답안을 입력하지 않아 개념 이해를 평가하기 어렵습니다. 강의 자료와 모범 답안을 참고해 핵심 키워드를 포함해 다시 서술해 보세요.";
+      } else if (resultStatus === "Correct") {
+        const base =
+          "핵심 키워드를 잘 포함해 정확하게 서술했습니다. ";
+        const intentText = (q as any).intentDiagnosis || (q as any).evaluationCriteria || "";
+        feedbackMessage = intentText ? `${base}${intentText}` : base;
+      } else if (resultStatus === "Partial_Correct") {
+        const missing = rawKeywords.filter(
+          (kw) => !matchedKeywords.includes(kw),
+        );
+        const missingText =
+          missing.length > 0 ? `누락된 핵심 키워드: ${missing.join(", ")}.` : "";
+        feedbackMessage =
+          "핵심 개념의 일부는 잘 짚었지만, 모범 답안과 비교했을 때 표현이 부족한 부분이 있습니다. " +
+          missingText;
+      } else {
+        feedbackMessage =
+          "모범 답안의 핵심 논리와 키워드가 충분히 반영되지 않았습니다. 강의 자료에서 관련 부분을 다시 읽고, 정의·비교·원인·사례 등을 구조적으로 정리해 보세요.";
+      }
+
+      return {
+        questionId: idx + 1,
+        resultStatus,
+        questionContent: (q as any).questionContent || "",
+        userResponse: userResponse || "No Answer",
+        relatedTopic,
+        feedbackMessage,
+      };
+    });
+
+    setShortAnswerLog({ evaluationItems });
   };
 
   const handleAssessmentSubmit = React.useCallback(async () => {
@@ -1375,8 +1785,8 @@ const MainContent: React.FC<MainContentProps> = ({
           isDarkMode ? "bg-zinc-800" : "bg-white"
         }`}>
           <div className={`flex items-center justify-between gap-3 shrink-0 px-4 py-3 border-b ${
-            isDarkMode ? "border-zinc-700" : "border-gray-200"
-          }`}>
+          isDarkMode ? "border-zinc-700" : "border-gray-200"
+        }`}>
             {currentWeekLabel && (
               <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium ${
                 isDarkMode ? "bg-zinc-700 text-gray-300" : "bg-white border border-gray-200 text-gray-600"
@@ -1385,6 +1795,44 @@ const MainContent: React.FC<MainContentProps> = ({
               </span>
             )}
             <div className="flex items-center gap-2 ml-auto">
+              {isTeacher && (
+                <div className="flex items-center gap-1 mr-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!selectedLectureId) {
+                        window.alert("강의를 먼저 선택해주세요.");
+                        return;
+                      }
+                      setBulkEditMode((v) => !v);
+                      if (bulkEditMode) {
+                        setBulkSelectedIds({});
+                      }
+                    }}
+                    className={`px-2 py-1 text-[11px] rounded border cursor-pointer ${
+                      isDarkMode
+                        ? "bg-zinc-800 border-zinc-600 text-gray-200 hover:bg-zinc-700"
+                        : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100"
+                    }`}
+                  >
+                    {bulkEditMode ? "선택 모드 해제" : "선택 모드"}
+                  </button>
+                  {bulkEditMode && (
+                    <button
+                      type="button"
+                      onClick={handleBulkDelete}
+                      className="px-2 py-1 text-[11px] rounded border border-red-500 text-red-600 cursor-pointer hover:bg-red-50"
+                    >
+                      선택 삭제
+                    </button>
+                  )}
+                </div>
+              )}
+              {lectureResourcesLoading && (
+                <span className="text-[11px] opacity-70">
+                  불러오는 중...
+                </span>
+              )}
               <select
                 value={sortOrder}
                 onChange={(e) => setSortOrder(e.target.value as "recent" | "name" | "type")}
@@ -1403,16 +1851,25 @@ const MainContent: React.FC<MainContentProps> = ({
               <div className="flex items-center justify-center py-12 text-sm opacity-70">목록 불러오는 중...</div>
             ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 auto-rows-fr">
-              {sortedItems.map((item) => (
+              {sortedItems.map((item) => {
+              const selectable = isTeacher && (item.type === "material" || item.type === "exam");
+              const checked = !!bulkSelectedIds[item.id];
+              return (
                 <div key={item.id} className="relative group/card">
                   <button
                     type="button"
-                    onClick={() => handleCardClick(item)}
+                    onClick={() => {
+                      if (bulkEditMode && selectable) {
+                        handleToggleBulkSelect(item.id);
+                      } else {
+                        handleCardClick(item);
+                      }
+                    }}
                     className={`w-full rounded-xl border p-4 min-h-[100px] flex flex-col justify-between transition-colors cursor-pointer text-left ${
                       isDarkMode
                         ? "bg-zinc-800 border-zinc-700 hover:border-zinc-600"
                         : "bg-white border-gray-200 hover:border-gray-300"
-                    }`}
+                    } ${bulkEditMode && selectable && checked ? (isDarkMode ? "ring-2 ring-emerald-500" : "ring-2 ring-emerald-500") : ""}`}
                   >
                     <p className="text-sm font-medium truncate">{item.title}</p>
                     <p className={`text-xs mt-1 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
@@ -1420,7 +1877,21 @@ const MainContent: React.FC<MainContentProps> = ({
                       {item.type === "material" && !item.fileUrl && " · 클릭 시 안내"}
                     </p>
                   </button>
-                  {isTeacher && (item.type === "material" || item.type === "exam") && (
+                  {selectable && bulkEditMode && (
+                    <label
+                      className={`absolute top-1.5 left-1.5 flex items-center justify-center w-5 h-5 rounded ${
+                        isDarkMode ? "bg-zinc-900/80" : "bg-white/90"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => handleToggleBulkSelect(item.id)}
+                        className="w-3 h-3"
+                      />
+                    </label>
+                  )}
+                  {isTeacher && (item.type === "material" || item.type === "exam") && !bulkEditMode && (
                     <button
                       type="button"
                       onClick={() => handleDeleteCenterItem(item)}
@@ -1435,7 +1906,8 @@ const MainContent: React.FC<MainContentProps> = ({
                     </button>
                   )}
                 </div>
-              ))}
+              );
+              })}
               <div className="relative min-h-[100px]" ref={addMenuRef}>
                 <button
                   type="button"
@@ -1470,7 +1942,7 @@ const MainContent: React.FC<MainContentProps> = ({
                         isDarkMode ? "hover:bg-zinc-700 text-gray-200" : "hover:bg-gray-100 text-gray-800"
                       }`}
                     >
-                      AI 자료 생성
+                      강의자료 생성
                     </button>
                     <button
                       type="button"
@@ -2008,13 +2480,13 @@ const MainContent: React.FC<MainContentProps> = ({
         </div>
       )}
 
-      {/* AI 자료 생성 모달 (Phase 1~5 단계형) */}
+      {/* 강의자료 생성 모달 (Phase 1~5 단계형) */}
       {materialGenModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true" onClick={() => { if (!submitting) { resetMaterialGenModal(); setMaterialGenModalOpen(false); } }}>
           <div className={`w-full max-w-lg rounded-xl shadow-xl border ${isDarkMode ? "bg-zinc-900 border-zinc-700" : "bg-white border-gray-200"}`} onClick={(e) => e.stopPropagation()}>
             <div className={`flex justify-between items-center px-5 py-4 border-b ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
               <h2 className={`text-lg font-semibold ${isDarkMode ? "text-gray-100" : "text-gray-900"}`}>
-                AI 자료 생성 {materialGenStep > 1 && `(단계 ${materialGenStep}/5)`}
+                강의자료 생성 {materialGenStep > 1 && `(단계 ${materialGenStep}/5)`}
               </h2>
               <button type="button" onClick={() => { if (!submitting) { resetMaterialGenModal(); setMaterialGenModalOpen(false); } }} className="p-1.5 rounded hover:bg-black/10">✕</button>
             </div>
@@ -2022,8 +2494,19 @@ const MainContent: React.FC<MainContentProps> = ({
               {/* Step 1: 키워드 입력 (PDF는 완전 선택 사항이므로 UI에서 제거) */}
               {materialGenStep === 1 && (
                 <>
-                  <div>
-                    <label className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>주제 또는 키워드</label>
+                  <p className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                    새로 기획안을 만들거나, 이전에 작성 중이던 기획안을 이어서 수정·확정할 수 있습니다.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleLoadLatestMaterialSession}
+                    disabled={submitting}
+                    className={`w-full py-2 px-3 text-sm rounded border ${isDarkMode ? "border-zinc-600 text-gray-200 hover:bg-zinc-800" : "border-gray-300 text-gray-700 hover:bg-gray-100"} disabled:opacity-50`}
+                  >
+                    {submitting ? "불러오는 중…" : "최근 사용한 기획안 불러오기"}
+                  </button>
+                  <div className={`border-t pt-4 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                    <label className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>새 기획안 만들기 — 주제 또는 키워드</label>
                     <input type="text" value={materialKeyword} onChange={(e) => setMaterialKeyword(e.target.value)} placeholder="예: 강화학습 DQN" className={`w-full px-3 py-2 text-sm rounded border ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`} />
                   </div>
                 </>
@@ -2252,8 +2735,44 @@ const MainContent: React.FC<MainContentProps> = ({
                 />
               </div>
               <div>
-                <label className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>문항 수</label>
-                <input type="number" min={1} max={50} value={examCount} onChange={(e) => setExamCount(Number(e.target.value) || 10)} className={`w-full px-3 py-2 text-sm rounded border ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`} />
+                <label className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>
+                  문항 수{" "}
+                  {examType === "FLASH_CARD" && "(플래시카드는 최대 30개)"}
+                  {examType === "FIVE_CHOICE" && "(5지선다는 최대 15개)"}
+                  {examType === "SHORT_ANSWER_ESSAY" && "(단답/서술형은 최대 20개)"}
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  max={
+                    examType === "FLASH_CARD"
+                      ? 30
+                      : examType === "FIVE_CHOICE"
+                      ? 15
+                      : examType === "SHORT_ANSWER_ESSAY"
+                      ? 20
+                      : 50
+                  }
+                  value={examCount}
+                  onChange={(e) =>
+                    setExamCount(() => {
+                      const n = Number(e.target.value);
+                      if (!Number.isFinite(n) || n <= 0) return 10;
+                      const upper =
+                        examType === "FLASH_CARD"
+                          ? 30
+                          : examType === "FIVE_CHOICE"
+                          ? 15
+                          : examType === "SHORT_ANSWER_ESSAY"
+                          ? 20
+                          : 50;
+                      return Math.min(n, upper);
+                    })
+                  }
+                  className={`w-full px-3 py-2 text-sm rounded border ${
+                    isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"
+                  }`}
+                />
               </div>
               <div className="pt-2 border-t border-dashed border-gray-300 dark:border-zinc-700 space-y-2">
                 <p className={`text-xs font-medium ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
@@ -2288,6 +2807,17 @@ const MainContent: React.FC<MainContentProps> = ({
                         {m.text}
                       </div>
                     ))}
+                    {examProfileLoading && (
+                      <div
+                        className={`max-w-[85%] rounded px-2 py-1 mt-1 text-[11px] ${
+                          isDarkMode
+                            ? "bg-zinc-800 text-gray-200"
+                            : "bg-white text-gray-800 border border-gray-200"
+                        }`}
+                      >
+                        프로필을 정리하는 중입니다...
+                      </div>
+                    )}
                   </div>
                   <div className="border-t border-zinc-700/50 flex items-center gap-2 px-2 py-1.5">
                     <input
@@ -2304,6 +2834,7 @@ const MainContent: React.FC<MainContentProps> = ({
                             ...prev,
                             { id: `u-${Date.now()}`, role: "user", text },
                           ]);
+                          void sendExamProfileMessage(text);
                         }
                       }}
                       placeholder="에이전트에게 시험 스타일을 설명해주세요."
@@ -2321,6 +2852,7 @@ const MainContent: React.FC<MainContentProps> = ({
                           ...prev,
                           { id: `u-${Date.now()}`, role: "user", text },
                         ]);
+                        void sendExamProfileMessage(text);
                       }}
                       className={`px-2 py-1 text-xs rounded font-medium ${
                         isDarkMode ? "bg-emerald-600 text-white" : "bg-emerald-600 text-white"
@@ -2354,7 +2886,22 @@ const MainContent: React.FC<MainContentProps> = ({
 
       {/* 시험 세션 상세 모달 */}
       {examDetailSessionId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" role="dialog" aria-modal="true" onClick={() => { if (!examDetailLoading) { setExamDetailSessionId(null); setExamDetail(null); setExamDetailError(null); } }}>
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => {
+            if (!examDetailLoading) {
+              setExamDetailSessionId(null);
+              setExamDetail(null);
+              setExamDetailError(null);
+              setExamDetailFlipped({});
+              setExamAnswerVisible({});
+              setFiveChoiceUserAnswers({});
+              setFiveChoiceLog(null);
+            }
+          }}
+        >
           <div
             className={`w-full max-w-3xl max-h-[80vh] overflow-hidden rounded-xl shadow-xl border ${
               isDarkMode ? "bg-zinc-900 border-zinc-700 text-gray-100" : "bg-white border-gray-200 text-gray-900"
@@ -2371,7 +2918,17 @@ const MainContent: React.FC<MainContentProps> = ({
               </div>
               <button
                 type="button"
-                onClick={() => { if (!examDetailLoading) { setExamDetailSessionId(null); setExamDetail(null); setExamDetailError(null); } }}
+                onClick={() => {
+                  if (!examDetailLoading) {
+                    setExamDetailSessionId(null);
+                    setExamDetail(null);
+                    setExamDetailError(null);
+                    setExamDetailFlipped({});
+                    setExamAnswerVisible({});
+                    setFiveChoiceUserAnswers({});
+                    setFiveChoiceLog(null);
+                  }
+                }}
                 className={`p-1.5 rounded cursor-pointer ${isDarkMode ? "hover:bg-zinc-800" : "hover:bg-gray-100"}`}
               >
                 ✕
@@ -2456,17 +3013,34 @@ const MainContent: React.FC<MainContentProps> = ({
                     <div className="space-y-2">
                       <h3 className="text-sm font-semibold">O/X 문제 ({examDetail.oxProblems.length}개)</h3>
                       <ol className="space-y-2 text-xs list-decimal list-inside">
-                        {examDetail.oxProblems.map((q, idx) => (
-                          <li key={idx} className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
-                            <p className="font-medium mb-1">{q.questionContent}</p>
-                            <p className="text-[11px]">
-                              <span className="font-semibold">정답:</span> {q.correctAnswer}
-                            </p>
-                            {q.explanation && (
-                              <p className="mt-1 text-[11px] opacity-80 whitespace-pre-line">해설: {q.explanation}</p>
-                            )}
-                          </li>
-                        ))}
+                        {examDetail.oxProblems.map((q, idx) => {
+                          const key = `ox-${idx}`;
+                          const show = !!examAnswerVisible[key];
+                          return (
+                            <li key={idx} className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                              <p className="font-medium mb-1">{q.questionContent}</p>
+                              <button
+                                type="button"
+                                onClick={() => toggleExamAnswerVisible(key)}
+                                className={`mt-1 inline-flex items-center px-2 py-1 rounded text-[11px] cursor-pointer ${
+                                  isDarkMode ? "bg-zinc-800 text-gray-200" : "bg-gray-100 text-gray-700"
+                                }`}
+                              >
+                                {show ? "정답/해설 숨기기" : "정답/해설 보기"}
+                              </button>
+                              {show && (
+                                <>
+                                  <p className="mt-1 text-[11px]">
+                                    <span className="font-semibold">정답:</span> {q.correctAnswer}
+                                  </p>
+                                  {q.explanation && (
+                                    <p className="mt-1 text-[11px] opacity-80 whitespace-pre-line">해설: {q.explanation}</p>
+                                  )}
+                                </>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ol>
                     </div>
                   )}
@@ -2474,54 +3048,289 @@ const MainContent: React.FC<MainContentProps> = ({
                     <div className="space-y-2">
                       <h3 className="text-sm font-semibold">5지선다 ({examDetail.fiveChoiceProblems.length}개)</h3>
                       <ol className="space-y-3 text-xs list-decimal list-inside">
-                        {examDetail.fiveChoiceProblems.map((q, idx) => (
-                          <li key={idx} className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
-                            <p className="font-medium mb-1">{q.questionContent}</p>
-                            <ul className="space-y-0.5 mt-1">
-                              {q.options.map((opt) => (
-                                <li key={opt.id}>
-                                  <span className="font-semibold mr-1">{opt.id}.</span>
-                                  <span>{opt.content}</span>
-                                  {opt.isCorrect && <span className="ml-1 text-[10px] text-emerald-500">(정답)</span>}
+                        {examDetail.fiveChoiceProblems.map((q, idx) => {
+                          const key = `mc-${idx}`;
+                          const show = !!examAnswerVisible[key];
+                          return (
+                            <li key={idx} className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                              <p className="font-medium mb-1">{q.questionContent}</p>
+                              <ul className="space-y-0.5 mt-1">
+                                {q.options.map((opt) => (
+                                  <li key={opt.id} className="flex items-start gap-2">
+                                    <label className="inline-flex items-start gap-1 cursor-pointer">
+                                      <input
+                                        type="radio"
+                                        name={`five-choice-${idx}`}
+                                        value={opt.id}
+                                        className="mt-0.5"
+                                        checked={fiveChoiceUserAnswers[String(idx)] === opt.id}
+                                        onChange={() => handleFiveChoiceAnswerChange(idx, opt.id)}
+                                      />
+                                      <span className="text-[11px]">
+                                        <span className="font-semibold mr-1">{opt.id}.</span>
+                                        <span>{opt.content}</span>
+                                        {show && opt.isCorrect && (
+                                          <span className="ml-1 text-[10px] text-emerald-500">(정답)</span>
+                                        )}
+                                      </span>
+                                    </label>
+                                  </li>
+                                ))}
+                              </ul>
+                              <button
+                                type="button"
+                                onClick={() => toggleExamAnswerVisible(key)}
+                                className={`mt-1 inline-flex items-center px-2 py-1 rounded text-[11px] cursor-pointer ${
+                                  isDarkMode ? "bg-zinc-800 text-gray-200" : "bg-gray-100 text-gray-700"
+                                }`}
+                              >
+                                {show ? "정답/해설 숨기기" : "정답/해설 보기"}
+                              </button>
+                              {show && (
+                                <>
+                                  <p className="mt-1 text-[11px]">
+                                    <span className="font-semibold">정답:</span> {q.correctAnswer}
+                                  </p>
+                                  {q.intentDiagnosis && (
+                                    <p className="mt-1 text-[11px] opacity-80 whitespace-pre-line">
+                                      출제 의도: {q.intentDiagnosis}
+                                    </p>
+                                  )}
+                                </>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ol>
+                      <div className="mt-2 flex flex-col gap-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={handleFiveChoiceGrade}
+                            className={`inline-flex items-center px-3 py-1.5 rounded text-[11px] font-medium cursor-pointer ${
+                              isDarkMode ? "bg-emerald-600 text-white" : "bg-emerald-600 text-white"
+                            }`}
+                          >
+                            선택한 답안 채점하기
+                          </button>
+                          <p className="text-[11px] opacity-70">
+                            각 문항에 대해 하나의 선택지를 고른 뒤 채점 버튼을 눌러주세요.
+                          </p>
+                        </div>
+                        {fiveChoiceLog && fiveChoiceLog.evaluationItems.length > 0 && (
+                          <div
+                            className={`mt-2 rounded-lg border p-2 text-[11px] ${
+                              isDarkMode ? "border-zinc-700 bg-zinc-900/60" : "border-gray-200 bg-gray-50"
+                            }`}
+                          >
+                            <p className="font-semibold mb-1">5지선다 채점 결과 및 피드백</p>
+                            <ul className="space-y-1.5">
+                              {fiveChoiceLog.evaluationItems.map((item) => (
+                                <li key={item.questionId} className="border-b last:border-b-0 pb-1 last:pb-0 border-dashed border-gray-300 dark:border-zinc-700">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-medium">
+                                      문항 {item.questionId} —{" "}
+                                      <span
+                                        className={
+                                          item.resultStatus === "Correct"
+                                            ? "text-emerald-500"
+                                            : "text-red-500"
+                                        }
+                                      >
+                                        {item.resultStatus === "Correct" ? "정답" : "오답"}
+                                      </span>
+                                    </span>
+                                    {item.relatedTopic && (
+                                      <span className="text-[10px] opacity-70">
+                                        주제: {item.relatedTopic}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="mt-0.5">
+                                    <span className="font-semibold">선택한 답:</span>{" "}
+                                    {item.userResponse}
+                                  </p>
+                                  {item.feedbackMessage && (
+                                    <p className="mt-0.5 opacity-80 whitespace-pre-line">
+                                      {item.feedbackMessage}
+                                    </p>
+                                  )}
                                 </li>
                               ))}
                             </ul>
-                            <p className="mt-1 text-[11px]">
-                              <span className="font-semibold">정답:</span> {q.correctAnswer}
-                            </p>
-                            {q.intentDiagnosis && (
-                              <p className="mt-1 text-[11px] opacity-80 whitespace-pre-line">
-                                출제 의도: {q.intentDiagnosis}
-                              </p>
-                            )}
-                          </li>
-                        ))}
-                      </ol>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                   {examDetail.shortAnswerProblems && examDetail.shortAnswerProblems.length > 0 && (
                     <div className="space-y-2">
-                      <h3 className="text-sm font-semibold">단답형 / 서술형 ({examDetail.shortAnswerProblems.length}개)</h3>
+                      <h3 className="text-sm font-semibold">
+                        단답형 / 서술형 ({examDetail.shortAnswerProblems.length}개)
+                      </h3>
                       <ol className="space-y-3 text-xs list-decimal list-inside">
-                        {examDetail.shortAnswerProblems.map((q, idx) => (
-                          <li key={idx} className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
-                            <p className="font-medium mb-1">{q.questionContent}</p>
-                            {q.relatedKeywords?.length > 0 && (
-                              <p className="text-[11px] opacity-80">
-                                키워드: {q.relatedKeywords.join(", ")}
-                              </p>
-                            )}
-                            <p className="mt-1 text-[11px]">
-                              <span className="font-semibold">모범 답안:</span> {q.bestAnswer}
-                            </p>
-                            {q.evaluationCriteria && (
-                              <p className="mt-1 text-[11px] opacity-80 whitespace-pre-line">
-                                평가 기준: {q.evaluationCriteria}
-                              </p>
-                            )}
-                          </li>
-                        ))}
+                        {examDetail.shortAnswerProblems.map((q, idx) => {
+                          const key = `sa-${idx}`;
+                          const show = !!examAnswerVisible[key];
+                          const anyKeywords =
+                            (Array.isArray((q as any).relatedKeywords) && (q as any).relatedKeywords.length > 0
+                              ? (q as any).relatedKeywords
+                              : Array.isArray((q as any).keyKeywords)
+                              ? (q as any).keyKeywords
+                              : []) as string[];
+                          const type = (q as any).type as "Short_Keyword" | "Descriptive" | undefined;
+                          const modelAnswer = (q as any).modelAnswer || (q as any).bestAnswer;
+                          const intentText = (q as any).intentDiagnosis || (q as any).evaluationCriteria;
+
+                          return (
+                            <li
+                              key={idx}
+                              className={`rounded-lg border p-2 ${
+                                isDarkMode ? "border-zinc-700" : "border-gray-200"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2 mb-1">
+                                <p className="font-medium flex-1">{q.questionContent}</p>
+                                {type && (
+                                  <span
+                                    className={`px-2 py-0.5 rounded-full text-[10px] shrink-0 ${
+                                      isDarkMode
+                                        ? "bg-zinc-800 text-gray-200 border border-zinc-600"
+                                        : "bg-gray-100 text-gray-700 border border-gray-300"
+                                    }`}
+                                  >
+                                    {type === "Short_Keyword" ? "단답형" : "서술형"}
+                                  </span>
+                                )}
+                              </div>
+                              {anyKeywords.length > 0 && (
+                                <p className="text-[11px] opacity-80">
+                                  핵심 키워드: {anyKeywords.join(", ")}
+                                </p>
+                              )}
+                              {intentText && (
+                                <p className="mt-0.5 text-[11px] opacity-80 whitespace-pre-line">
+                                  출제 의도: {intentText}
+                                </p>
+                              )}
+                              <div className="mt-2">
+                                <label className="block text-[11px] font-semibold mb-1">
+                                  나의 답안
+                                </label>
+                                <textarea
+                                  value={shortAnswerUserAnswers[String(idx)] ?? ""}
+                                  onChange={(e) =>
+                                    handleShortAnswerInputChange(idx, e.target.value)
+                                  }
+                                  className={`w-full rounded border px-2 py-1 text-xs resize-y min-h-[60px] ${
+                                    isDarkMode
+                                      ? "bg-zinc-900 border-zinc-700 text-gray-100"
+                                      : "bg-white border-gray-300 text-gray-900"
+                                  }`}
+                                  placeholder="이 문항에 대한 자신의 답안을 작성해 보세요."
+                                />
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => toggleExamAnswerVisible(key)}
+                                className={`mt-1 inline-flex items-center px-2 py-1 rounded text-[11px] cursor-pointer ${
+                                  isDarkMode
+                                    ? "bg-zinc-800 text-gray-200"
+                                    : "bg-gray-100 text-gray-700"
+                                }`}
+                              >
+                                {show ? "모범 답안/기준 숨기기" : "모범 답안/기준 보기"}
+                              </button>
+                              {show && modelAnswer && (
+                                <>
+                                  <p className="mt-1 text-[11px]">
+                                    <span className="font-semibold">모범 답안:</span>{" "}
+                                    {modelAnswer}
+                                  </p>
+                                  {intentText && (
+                                    <p className="mt-1 text-[11px] opacity-80 whitespace-pre-line">
+                                      평가 기준/의도: {intentText}
+                                    </p>
+                                  )}
+                                </>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ol>
+                      <div className="mt-2 flex flex-col gap-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <button
+                            type="button"
+                            onClick={handleShortAnswerGrade}
+                            className={`inline-flex items-center px-3 py-1.5 rounded text-[11px] font-medium cursor-pointer ${
+                              isDarkMode ? "bg-emerald-600 text-white" : "bg-emerald-600 text-white"
+                            }`}
+                          >
+                            작성한 단답/서술형 채점하기
+                          </button>
+                          <p className="text-[11px] opacity-70">
+                            각 문항에 대해 답안을 작성한 뒤 채점 버튼을 누르면 키워드 기반으로
+                            결과와 피드백을 제공합니다.
+                          </p>
+                        </div>
+                        {shortAnswerLog && shortAnswerLog.evaluationItems.length > 0 && (
+                          <div
+                            className={`mt-2 rounded-lg border p-2 text-[11px] ${
+                              isDarkMode
+                                ? "border-zinc-700 bg-zinc-900/60"
+                                : "border-gray-200 bg-gray-50"
+                            }`}
+                          >
+                            <p className="font-semibold mb-1">
+                              단답/서술형 채점 결과 및 피드백
+                            </p>
+                            <ul className="space-y-1.5">
+                              {shortAnswerLog.evaluationItems.map((item) => (
+                                <li
+                                  key={item.questionId}
+                                  className="border-b last:border-b-0 pb-1 last:pb-0 border-dashed border-gray-300 dark:border-zinc-700"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-medium">
+                                      문항 {item.questionId} —{" "}
+                                      <span
+                                        className={
+                                          item.resultStatus === "Correct"
+                                            ? "text-emerald-500"
+                                            : item.resultStatus === "Partial_Correct"
+                                            ? "text-amber-500"
+                                            : "text-red-500"
+                                        }
+                                      >
+                                        {item.resultStatus === "Correct"
+                                          ? "정답"
+                                          : item.resultStatus === "Partial_Correct"
+                                          ? "부분 정답"
+                                          : "오답"}
+                                      </span>
+                                    </span>
+                                    {item.relatedTopic && (
+                                      <span className="text-[10px] opacity-70">
+                                        주제: {item.relatedTopic}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="mt-0.5">
+                                    <span className="font-semibold">작성한 답안:</span>{" "}
+                                    {item.userResponse}
+                                  </p>
+                                  {item.feedbackMessage && (
+                                    <p className="mt-0.5 opacity-80 whitespace-pre-line">
+                                      {item.feedbackMessage}
+                                    </p>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
                   {examDetail.debateTopics && examDetail.debateTopics.length > 0 && (
