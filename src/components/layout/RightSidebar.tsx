@@ -307,23 +307,21 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     setMessages((prev) => [...prev, uploadMessage]);
 
     try {
-      const fileUrl = await lectureApi.uploadMaterial(targetLectureId!, file);
+      const result = await lectureApi.uploadMaterial(targetLectureId!, file);
+      const { fileUrl, displayName } = result;
+      const displayFileName = displayName ?? file.name;
 
       setHasUploadedMaterial(true);
 
-      if (typeof fileUrl === "string" && isValidHttpUrl(fileUrl)) {
-        // 백엔드에서 실제 URL을 반환한 경우 해당 URL로 업데이트
+      if (typeof fileUrl === "string" && fileUrl.length > 0 && isValidHttpUrl(fileUrl)) {
         revokePreviewUrl();
         setUploadedFileDisplayUrl(fileUrl);
-        onLectureDataChange("", fileUrl, file.name);
-        // 로컬 스토리지에 저장
-        saveUploadToStorage(targetLectureId, file.name, fileUrl);
+        onLectureDataChange("", fileUrl, displayFileName);
+        saveUploadToStorage(targetLectureId, displayFileName, fileUrl);
       } else {
-        // 백엔드가 메시지만 반환한 경우 프리뷰 URL 유지
         setUploadedFileDisplayUrl(previewUrl);
-        onLectureDataChange("", previewUrl, file.name);
-        // 로컬 스토리지에 저장
-        saveUploadToStorage(targetLectureId, file.name, previewUrl);
+        onLectureDataChange("", previewUrl, displayFileName);
+        saveUploadToStorage(targetLectureId, displayFileName, previewUrl);
       }
 
       // 업로드 완료 메시지 추가

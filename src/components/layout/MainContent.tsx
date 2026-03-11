@@ -5,6 +5,7 @@ import {
   courseApi,
   lectureApi,
   assessmentApi,
+  materialApi,
   materialGenerationApi,
   tasksApi,
   examGenerationApi,
@@ -41,6 +42,9 @@ type CenterItem = {
   meta: string;
   createdAt: string;
   fileUrl?: string;
+  materialId?: number;
+  /** 강의자료 생성(Phase 1~5) 세션 ID — DELETE /api/materials/generation/{sessionId} 삭제 시 사용 */
+  generationSessionId?: number;
   assessmentId?: number;
   examSessionId?: string;
 };
@@ -164,10 +168,12 @@ const MainContent: React.FC<MainContentProps> = ({
   const [joinError, setJoinError] = React.useState<string | null>(null);
   const [isJoining, setIsJoining] = React.useState(false);
   const [previewFileUrl, setPreviewFileUrl] = React.useState<string | null>(null);
+  const [previewMaterialId, setPreviewMaterialId] = React.useState<number | null>(null);
   const [previewFileName, setPreviewFileName] = React.useState<string | null>(null);
   const [previewBlobUrl, setPreviewBlobUrl] = React.useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = React.useState(false);
   const [previewLoadError, setPreviewLoadError] = React.useState(false);
+  const [previewErrorMessage, setPreviewErrorMessage] = React.useState<string | null>(null);
   const [previewRetryKey, setPreviewRetryKey] = React.useState(0);
   const actionMenuRef = React.useRef<HTMLDivElement | null>(null);
   // 시험 세션 상세 보기 모달 상태
@@ -199,13 +205,61 @@ const MainContent: React.FC<MainContentProps> = ({
     }
   }, [examGenModalOpen]);
 
+  // materialId로 PDF 미리보기 (GET /api/materials/{materialId}/file)
+  React.useEffect(() => {
+    if (previewMaterialId == null) {
+      return;
+    }
+    setPreviewBlobUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setPreviewLoading(true);
+    setPreviewLoadError(false);
+    setPreviewErrorMessage(null);
+    let objectUrl: string | null = null;
+    const id = previewMaterialId;
+    materialApi
+      .getMaterialFile(id)
+      .then((blob) => {
+        const type = (blob.type || "").toLowerCase();
+        const isHtml = type.includes("text/html") || type.includes("application/xhtml");
+        if (isHtml) {
+          setPreviewLoadError(true);
+          return;
+        }
+        objectUrl = URL.createObjectURL(blob);
+        setPreviewBlobUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return objectUrl;
+        });
+      })
+      .catch((e) => {
+        setPreviewLoadError(true);
+        setPreviewErrorMessage(e instanceof Error ? e.message : null);
+      })
+      .finally(() => setPreviewLoading(false));
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [previewMaterialId, previewRetryKey]);
+
   React.useEffect(() => {
     if (!previewFileUrl) {
-      setPreviewBlobUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
-      });
-      setPreviewLoadError(false);
+      // materialId로 보는 중이면 blob 유지
+      if (previewMaterialId == null) {
+        setPreviewBlobUrl((prev) => {
+          if (prev) URL.revokeObjectURL(prev);
+          return null;
+        });
+        setPreviewLoadError(false);
+        setPreviewErrorMessage(null);
+      }
+      return;
+    }
+
+    // materialId 기반 미리보기일 때는 이 effect 스킵
+    if (previewMaterialId != null) {
       return;
     }
 
@@ -224,6 +278,7 @@ const MainContent: React.FC<MainContentProps> = ({
       if (prev) URL.revokeObjectURL(prev);
       return null;
     });
+    setPreviewErrorMessage(null);
     const token = getAuthToken();
     setPreviewLoading(true);
     setPreviewLoadError(false);
@@ -250,7 +305,13 @@ const MainContent: React.FC<MainContentProps> = ({
       mode: "cors",
     })
       .then((res) => {
-        if (!res.ok) throw new Error("파일을 불러올 수 없습니다.");
+        if (!res.ok) {
+          const status = res.status;
+          if (status === 502 || status === 503 || status === 504) {
+            throw new Error(`서버가 일시적으로 응답하지 않습니다 (${status}). 잠시 후 다시 시도해 주세요.`);
+          }
+          throw new Error(status === 401 ? "접근 권한이 없습니다." : "파일을 불러올 수 없습니다.");
+        }
         return res.blob();
       })
       .then((blob) => {
@@ -267,22 +328,32 @@ const MainContent: React.FC<MainContentProps> = ({
           return objectUrl;
         });
       })
-      .catch(() => setPreviewLoadError(true))
+      .catch((e) => {
+        setPreviewLoadError(true);
+        setPreviewErrorMessage(e instanceof Error ? e.message : null);
+      })
       .finally(() => setPreviewLoading(false));
     return () => {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [previewFileUrl, previewRetryKey]);
+  }, [previewFileUrl, previewMaterialId, previewRetryKey]);
 
   const handleOpenPreviewInNewTab = React.useCallback(async () => {
+    if (previewMaterialId != null) {
+      try {
+        const blob = await materialApi.getMaterialFile(previewMaterialId);
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank", "noopener");
+      } catch (e) {
+        window.alert(e instanceof Error ? e.message : "미리보기를 열 수 없습니다.");
+      }
+      return;
+    }
     if (!previewFileUrl) return;
-
-    // 방어: 문자열이 아닌 경우 안전하게 종료
     if (typeof previewFileUrl !== "string") {
       window.alert("파일 경로를 불러오지 못했습니다.");
       return;
     }
-
     const token = getAuthToken();
     const apiOrigin = API_BASE_URL ? new URL(API_BASE_URL).origin : "";
     const isDevOrigin = typeof window !== "undefined" && window.location.hostname === "localhost";
@@ -312,7 +383,7 @@ const MainContent: React.FC<MainContentProps> = ({
     } catch {
       window.open(previewFileUrl, "_blank", "noopener");
     }
-  }, [previewFileUrl]);
+  }, [previewFileUrl, previewMaterialId]);
 
   React.useEffect(() => {
     if (openCourseMenuId === null) {
@@ -414,6 +485,7 @@ const MainContent: React.FC<MainContentProps> = ({
             meta: "자료",
             createdAt: new Date().toISOString(), // createdAt이 없으면 지금 시각으로 대체
             fileUrl: m.url,
+            materialId: m.materialId,
           }));
           const exs: CenterItem[] = (lec.examSessions || []).map((s) => ({
             id: String(s.examSessionId),
@@ -447,6 +519,40 @@ const MainContent: React.FC<MainContentProps> = ({
     };
   }, [courseDetail?.courseId]);
 
+  // 삭제 후 서버 목록과 동기화 (다시 불러오기)
+  const refetchCourseContents = React.useCallback(
+    (courseId: number) => {
+      courseContentsApi.getCourseContents(courseId).then((res: CourseContentsResponse) => {
+        const materialsByLecture: Record<number, CenterItem[]> = {};
+        const examsByLecture: Record<number, CenterItem[]> = {};
+        for (const lec of res.lectures || []) {
+          const mats: CenterItem[] = (lec.materials || []).map((m) => ({
+            id: `material-${m.materialId}`,
+            type: "material" as const,
+            title: m.displayName,
+            meta: "자료",
+            createdAt: new Date().toISOString(),
+            fileUrl: m.url,
+            materialId: m.materialId,
+          }));
+          const exs: CenterItem[] = (lec.examSessions || []).map((s) => ({
+            id: String(s.examSessionId),
+            type: "exam" as const,
+            title: `${s.examType} · ${s.targetCount}문항`,
+            meta: "시험",
+            createdAt: s.createdAt,
+            examSessionId: String(s.examSessionId),
+          }));
+          if (mats.length > 0) materialsByLecture[lec.lectureId] = mats;
+          if (exs.length > 0) examsByLecture[lec.lectureId] = exs;
+        }
+        setLocalMaterials((prev) => ({ ...prev, ...materialsByLecture }));
+        setLocalExams((prev) => ({ ...prev, ...examsByLecture }));
+      }).catch(() => {});
+    },
+    []
+  );
+
   React.useEffect(() => {
     // 강의 변경 또는 모드 해제 시 선택 상태 초기화
     if (!bulkEditMode) {
@@ -462,7 +568,7 @@ const MainContent: React.FC<MainContentProps> = ({
     }));
   };
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = async () => {
     if (!selectedLectureId) return;
     const ids = Object.keys(bulkSelectedIds).filter((id) => bulkSelectedIds[id]);
     if (ids.length === 0) {
@@ -471,10 +577,27 @@ const MainContent: React.FC<MainContentProps> = ({
     }
     if (
       !window.confirm(
-        `선택한 ${ids.length}개의 자료/시험 카드를 목록에서 삭제하시겠습니까?\n(서버에 업로드된 실제 파일이나 시험 데이터는 그대로 남습니다.)`,
+        `선택한 ${ids.length}개의 자료/시험을 삭제하시겠습니까?\n(자료는 서버에서도 삭제됩니다.)`,
       )
     ) {
       return;
+    }
+
+    const materialList = localMaterials[selectedLectureId] || [];
+    const selectedMats = materialList.filter((it) => bulkSelectedIds[it.id]);
+
+    const materialDeletePromises = selectedMats.map((m) =>
+      m.materialId != null
+        ? materialApi.deleteMaterial(m.materialId!)
+        : m.generationSessionId != null
+        ? materialGenerationApi.deleteSession(m.generationSessionId!)
+        : Promise.resolve()
+    );
+    const settled = await Promise.allSettled(materialDeletePromises);
+    const failed = settled.filter((r) => r.status === "rejected");
+    if (failed.length > 0) {
+      const msg = (failed[0] as PromiseRejectedResult).reason;
+      window.alert(`일부 자료 삭제 실패: ${msg instanceof Error ? msg.message : String(msg)}`);
     }
 
     setLocalMaterials((prev) => {
@@ -493,20 +616,31 @@ const MainContent: React.FC<MainContentProps> = ({
     });
     setBulkSelectedIds({});
     setBulkEditMode(false);
+    if (courseDetail?.courseId) refetchCourseContents(courseDetail.courseId);
   };
 
   const handleDeleteCenterItem = React.useCallback(
-    (item: CenterItem) => {
+    async (item: CenterItem) => {
       if (!selectedLectureId) return;
       const baseMessage =
         item.type === "material"
-          ? "이 자료 카드를 목록에서 삭제하시겠습니까?\n(서버에 업로드된 PDF 파일은 그대로 남습니다.)"
+          ? "이 자료를 삭제하시겠습니까?\n(서버에서도 삭제됩니다.)"
           : item.type === "exam"
           ? "이 시험 카드를 목록에서 삭제하시겠습니까?\n(필요하면 다시 생성할 수 있습니다.)"
           : "이 항목을 삭제하시겠습니까?";
       if (!window.confirm(baseMessage)) return;
 
       if (item.type === "material") {
+        try {
+          if (item.materialId != null) {
+            await materialApi.deleteMaterial(item.materialId);
+          } else if (item.generationSessionId != null) {
+            await materialGenerationApi.deleteSession(item.generationSessionId);
+          }
+        } catch (e) {
+          window.alert(e instanceof Error ? e.message : "삭제에 실패했습니다.");
+          return;
+        }
         setLocalMaterials((prev) => {
           const list = prev[selectedLectureId] || [];
           return {
@@ -514,6 +648,7 @@ const MainContent: React.FC<MainContentProps> = ({
             [selectedLectureId]: list.filter((it) => it.id !== item.id),
           };
         });
+        if (courseDetail?.courseId) refetchCourseContents(courseDetail.courseId);
       } else if (item.type === "exam") {
         setLocalExams((prev) => {
           const list = prev[selectedLectureId] || [];
@@ -526,7 +661,7 @@ const MainContent: React.FC<MainContentProps> = ({
         window.alert("이 항목은 아직 삭제 기능이 연결되지 않았습니다.");
       }
     },
-    [selectedLectureId]
+    [selectedLectureId, courseDetail?.courseId, refetchCourseContents]
   );
 
   React.useEffect(() => {
@@ -538,6 +673,7 @@ const MainContent: React.FC<MainContentProps> = ({
 
   React.useEffect(() => {
     setPreviewFileUrl(null);
+    setPreviewMaterialId(null);
     setPreviewFileName(null);
   }, [selectedLectureId]);
 
@@ -547,24 +683,26 @@ const MainContent: React.FC<MainContentProps> = ({
     if (!selectedLectureId || !uploadFile || !courseDetail?.courseId) return;
     setSubmitting(true);
     try {
-      const fileUrl = await lectureApi.uploadMaterial(selectedLectureId, uploadFile);
-      const url = fileUrl || undefined;
+      const result = await lectureApi.uploadMaterial(selectedLectureId, uploadFile);
+      const { materialId: resMaterialId, fileUrl: url, displayName: resDisplayName } = result;
+      const title = resDisplayName ?? uploadFile.name;
       const newItem: CenterItem = {
-        id: `material-${Date.now()}`,
+        id: resMaterialId != null ? `material-${resMaterialId}` : `material-${Date.now()}`,
         type: "material",
-        title: uploadFile.name,
+        title,
         meta: "자료",
         createdAt: new Date().toISOString(),
-        fileUrl: url,
+        fileUrl: url || undefined,
+        materialId: resMaterialId,
       };
 
-      // RightSidebar에서 사용하는 형식과 동일하게 로컬 스토리지에 업로드 정보 저장
       if (url) {
         try {
           const key = `lecture_upload_${selectedLectureId}`;
           const payload = {
-            fileName: uploadFile.name,
+            fileName: title,
             fileUrl: url,
+            materialId: resMaterialId,
             timestamp: Date.now(),
           };
           localStorage.setItem(key, JSON.stringify(payload));
@@ -578,9 +716,15 @@ const MainContent: React.FC<MainContentProps> = ({
         [selectedLectureId]: [...(prev[selectedLectureId] || []), newItem],
       }));
       setUploadFile(null);
-      if (url) {
+      // Swagger 명세: 응답의 materialId로 GET /api/materials/{materialId}/file 미리보기 사용
+      if (resMaterialId != null) {
+        setPreviewMaterialId(resMaterialId);
+        setPreviewFileUrl(null);
+        setPreviewFileName(title);
+      } else if (url) {
         setPreviewFileUrl(url);
-        setPreviewFileName(uploadFile.name);
+        setPreviewMaterialId(null);
+        setPreviewFileName(title);
       }
       // 업로드 후에는 모달만 닫고, 강의 콘텐츠 생성은 채팅(/generate)에서 수행
       setUploadModalOpen(false);
@@ -678,7 +822,16 @@ const MainContent: React.FC<MainContentProps> = ({
       if (res.draftPlan) setMaterialDraftPlan(res.draftPlan);
       setMaterialGenStep(3);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "기획안 확정에 실패했습니다.");
+      const msg = e instanceof Error ? e.message : "기획안 확정에 실패했습니다.";
+      if (msg.includes("Phase 1 완료 후에만")) {
+        window.alert(
+          "이 세션은 서버에서 Phase 2 진행이 허용되지 않습니다.\n\n" +
+            "‘최근 사용한 기획안 불러오기’로 불러온 세션은 BE에서 Phase 1 완료로 인식하지 않을 수 있습니다.\n\n" +
+            "해결: 1단계로 돌아가 주제/키워드를 입력한 뒤 [기획안 생성]으로 새로 만든 뒤 확정해 주세요."
+        );
+      } else {
+        window.alert(msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -698,7 +851,16 @@ const MainContent: React.FC<MainContentProps> = ({
       setMaterialPhase2Feedback("");
       setMaterialPhase2UpdateMode(false);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : "기획안 수정에 실패했습니다.");
+      const msg = e instanceof Error ? e.message : "기획안 수정에 실패했습니다.";
+      if (msg.includes("Phase 1 완료 후에만")) {
+        window.alert(
+          "이 세션은 서버에서 Phase 2 진행이 허용되지 않습니다.\n\n" +
+            "'최근 사용한 기획안 불러오기'로 불러온 세션은 BE에서 Phase 1 완료로 인식하지 않을 수 있습니다.\n\n" +
+            "해결: 1단계로 돌아가 주제/키워드를 입력한 뒤 [기획안 생성]으로 새로 만든 뒤 수정 요청해 주세요."
+        );
+      } else {
+        window.alert(msg);
+      }
     } finally {
       setSubmitting(false);
     }
@@ -738,6 +900,7 @@ const MainContent: React.FC<MainContentProps> = ({
               meta: "자료",
               createdAt: new Date().toISOString(),
               fileUrl: docUrl,
+              generationSessionId: materialSessionId,
             };
             if (selectedLectureId) {
               setLocalMaterials((prev) => ({
@@ -825,6 +988,7 @@ const MainContent: React.FC<MainContentProps> = ({
       meta: "자료",
       createdAt: new Date().toISOString(),
       fileUrl: materialFinalUrl ?? undefined,
+      generationSessionId: materialSessionId ?? undefined,
     };
     if (selectedLectureId) {
       setLocalMaterials((prev) => ({
@@ -1281,8 +1445,15 @@ const MainContent: React.FC<MainContentProps> = ({
   }, [courseDetail?.courseId, assessmentTitle, assessmentType, assessmentDueDate]);
 
   const handleCardClick = React.useCallback((item: CenterItem) => {
+    if (item.materialId != null) {
+      setPreviewMaterialId(item.materialId);
+      setPreviewFileUrl(null);
+      setPreviewFileName(item.title || null);
+      return;
+    }
     if (item.fileUrl) {
       setPreviewFileUrl(item.fileUrl);
+      setPreviewMaterialId(null);
       setPreviewFileName(item.title || null);
       return;
     }
@@ -1688,8 +1859,8 @@ const MainContent: React.FC<MainContentProps> = ({
         : `${selectedLecture.weekNumber}주차`
       : null;
 
-    // 업로드한 자료 미리보기 (좌: 미리보기 | 우: 채팅)
-    if (previewFileUrl) {
+    // 업로드한 자료 미리보기 (좌: 미리보기 | 우: 채팅) — fileUrl 또는 materialId로 표시
+    if (previewFileUrl || previewMaterialId != null) {
       return (
         <div className="flex flex-col h-full">
           <div className={`flex items-center justify-between gap-3 shrink-0 px-4 py-2 border-b ${
@@ -1698,7 +1869,7 @@ const MainContent: React.FC<MainContentProps> = ({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => { setPreviewFileUrl(null); setPreviewFileName(null); }}
+                onClick={() => { setPreviewFileUrl(null); setPreviewMaterialId(null); setPreviewFileName(null); }}
                 className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer ${
                   isDarkMode ? "text-gray-200 hover:bg-zinc-700" : "text-gray-700 hover:bg-gray-100"
                 }`}
@@ -1725,10 +1896,13 @@ const MainContent: React.FC<MainContentProps> = ({
               ) : previewLoadError ? (
                 <div className={`flex-1 flex flex-col items-center justify-center p-6 text-center ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
                   <p className="text-sm mb-2">미리보기를 불러오지 못했습니다.</p>
+                  {previewErrorMessage && (
+                    <p className="text-xs mb-2 opacity-90 max-w-sm">{previewErrorMessage}</p>
+                  )}
                   <p className="text-xs mb-6 opacity-80">잠시 후 다시 시도해주세요.</p>
                   <button
                     type="button"
-                    onClick={() => { setPreviewLoadError(false); setPreviewRetryKey((k) => k + 1); }}
+                    onClick={() => { setPreviewLoadError(false); setPreviewErrorMessage(null); setPreviewRetryKey((k) => k + 1); }}
                     className={`inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold cursor-pointer ${
                       isDarkMode ? "bg-emerald-600 hover:bg-emerald-500 text-white" : "bg-emerald-600 hover:bg-emerald-700 text-white"
                     }`}

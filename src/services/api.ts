@@ -77,6 +77,13 @@ export interface LectureMaterial {
   url: string;
 }
 
+/** POST /api/lectures/{lectureId}/materials 응답 (materialId, fileUrl/url, displayName 등) */
+export interface LectureMaterialUploadResult {
+  materialId?: number;
+  fileUrl: string;
+  displayName?: string;
+}
+
 // 강의실 전체 n주차별 리소스 조회 응답 (/api/courses/{courseId}/contents)
 export interface CourseContentsLectureMaterial {
   materialId: number;
@@ -452,8 +459,13 @@ const apiRequest = async <T>(
 
     const contentType = response.headers.get('content-type');
     if (contentType && contentType.includes('application/json')) {
-      const data = await response.json();
-      return data;
+      try {
+        const data = await response.json();
+        return data;
+      } catch {
+        // 빈 본문 등으로 JSON 파싱 실패 시 (DELETE 200 등)
+        return {} as T;
+      }
     } else {
       const text = await response.text();
       return text as T;
@@ -762,73 +774,82 @@ export const lectureApi = {
     return apiRequest<{ status: string; progress?: number; message?: string }>(`/api/lectures/${lectureId}/ai-status`, { method: 'GET' });
   },
 
-  // 강의 자료 업로드 (PDF) (선생님)
-  uploadMaterial: async (lectureId: number, file: File): Promise<string> => {
+  // 강의 자료 업로드 (PDF) (선생님) - POST /api/lectures/{lectureId}/materials, multipart/form-data file
+  // 응답: { materialId, displayName, materialType, url, fileUrl } (Swagger 명세)
+  uploadMaterial: async (lectureId: number, file: File): Promise<LectureMaterialUploadResult> => {
     const formData = new FormData();
     formData.append("file", file);
 
-    // 백엔드 응답이 문자열 또는 JSON({ fileUrl, message }) 둘 다 올 수 있다고 가정하고 처리
     const rawResponse = await apiRequest<unknown>(
       `/api/lectures/${lectureId}/materials`,
       {
         method: "POST",
         body: formData,
       },
-      true // includeAuth = true로 명시
+      true
     );
 
+    let materialId: number | undefined;
     let fileUrl: string | null = null;
+    let displayName: string | undefined;
 
     if (typeof rawResponse === "string") {
-      // 구버전: 바로 URL 또는 경로 문자열 반환
       fileUrl = rawResponse;
     } else if (rawResponse && typeof rawResponse === "object") {
-      // 공통 래퍼(ApiResponse<T>) 또는 직접 객체 반환 모두 처리
       const anyResp = rawResponse as {
+        materialId?: unknown;
         fileUrl?: unknown;
         url?: unknown;
+        displayName?: unknown;
         data?: unknown;
       };
 
-      // 1차: 최상위에 fileUrl / url 필드가 있는 경우
+      if (typeof anyResp.materialId === "number") {
+        materialId = anyResp.materialId;
+      }
+      if (typeof anyResp.displayName === "string") {
+        displayName = anyResp.displayName;
+      }
       if (typeof anyResp.fileUrl === "string") {
         fileUrl = anyResp.fileUrl;
       } else if (typeof anyResp.url === "string") {
         fileUrl = anyResp.url;
       }
 
-      // 2차: data 안에 { fileUrl, url } 혹은 문자열이 들어있는 ApiResponse<T> 형태 처리
       if (!fileUrl && anyResp.data != null) {
-        const data: unknown = anyResp.data;
+        const data = anyResp.data as Record<string, unknown> | string;
         if (typeof data === "string") {
           fileUrl = data;
-        } else if (typeof data === "object") {
-          const dataObj = data as { fileUrl?: unknown; url?: unknown };
-          if (typeof dataObj.fileUrl === "string") {
-            fileUrl = dataObj.fileUrl;
-          } else if (typeof dataObj.url === "string") {
-            fileUrl = dataObj.url;
+        } else if (data && typeof data === "object") {
+          if (typeof (data as { materialId?: unknown }).materialId === "number") {
+            materialId = (data as { materialId: number }).materialId;
+          }
+          if (typeof (data as { displayName?: unknown }).displayName === "string") {
+            displayName = (data as { displayName: string }).displayName;
+          }
+          const urlVal = (data as { fileUrl?: unknown; url?: unknown }).fileUrl ?? (data as { url?: unknown }).url;
+          if (typeof urlVal === "string") {
+            fileUrl = urlVal;
           }
         }
       }
     }
 
-    if (!fileUrl) {
-      // fileUrl을 파싱하지 못한 경우, 미리보기는 건너뛰되 앱이 깨지지는 않도록 빈 문자열 반환
-      console.warn("uploadMaterial: 업로드 응답에서 파일 URL을 찾지 못했습니다.", rawResponse);
-      return "";
+    if (!fileUrl && materialId == null) {
+      console.warn("uploadMaterial: 업로드 응답에서 fileUrl/materialId를 찾지 못했습니다.", rawResponse);
+      return { materialId: undefined, fileUrl: "", displayName: displayName ?? file.name };
     }
 
-    // 백엔드가 상대 경로를 반환하는 경우 절대 URL로 변환
-    if (!/^https?:\/\//i.test(fileUrl)) {
+    if (fileUrl && !/^https?:\/\//i.test(fileUrl)) {
       const baseUrl = API_BASE_URL || BACKEND_URL;
-      if (fileUrl.startsWith("/")) {
-        return `${baseUrl}${fileUrl}`;
-      }
-      return `${baseUrl}/${fileUrl}`;
+      fileUrl = fileUrl.startsWith("/") ? `${baseUrl}${fileUrl}` : `${baseUrl}/${fileUrl}`;
     }
 
-    return fileUrl;
+    return {
+      materialId,
+      fileUrl: fileUrl ?? "",
+      displayName: displayName ?? file.name,
+    };
   },
 };
 
@@ -838,6 +859,52 @@ export const materialApi = {
     return apiRequest<void>(`/api/materials/${materialId}`, {
       method: 'DELETE',
     });
+  },
+
+  /** 강의 자료(PDF) 다운로드/미리보기 - application/pdf 바이트 반환, 인증 필요 */
+  getMaterialFile: async (materialId: number): Promise<Blob> => {
+    const isDevHost =
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    const endpoint = `/api/materials/${materialId}/file`;
+    const baseUrl = API_BASE_URL || BACKEND_URL;
+    const url = isDevHost && endpoint.startsWith('/api')
+      ? endpoint
+      : `${baseUrl}${endpoint}`;
+    const token = getAuthToken();
+    const doFetch = (targetUrl: string) =>
+      fetch(targetUrl, {
+        method: 'GET',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'omit',
+        mode: 'cors',
+      });
+
+    let res = await doFetch(url);
+
+    // 개발 환경: 프록시 경유 시 502면 백엔드 직접 URL로 한 번 재시도
+    if (!res.ok && res.status === 502 && isDevHost && url === endpoint) {
+      const directUrl = `${baseUrl}${endpoint}`;
+      res = await doFetch(directUrl);
+    }
+
+    if (!res.ok) {
+      const status = res.status;
+      if (status === 401) {
+        throw new Error('접근 권한이 없습니다.');
+      }
+      if (status === 502 || status === 503 || status === 504) {
+        const hint = isDevHost
+          ? ` 백엔드(${baseUrl})가 켜져 있는지 확인해 주세요.`
+          : '';
+        throw new Error(
+          `서버가 일시적으로 응답하지 않습니다 (${status}). 잠시 후 다시 시도해 주세요.${hint}`
+        );
+      }
+      const text = await res.text();
+      throw new Error(text || `파일을 불러올 수 없습니다. (${status})`);
+    }
+    return res.blob();
   },
 };
 
@@ -1167,6 +1234,16 @@ export const materialGenerationApi = {
       method: "POST",
       body: JSON.stringify(payload),
     });
+  },
+
+  /** [삭제] 생성 세션 전체 삭제 (Phase 1~5). 해당 강의 소유 교사만 삭제 가능 */
+  deleteSession: async (sessionId: number): Promise<void> => {
+    return apiRequest<void>(`/api/materials/generation/${sessionId}`, { method: "DELETE" });
+  },
+
+  /** [삭제] Phase 5 산출물(최종 문서)만 삭제. 세션은 유지, Phase 4 상태로 되돌아감 */
+  deleteSessionDocument: async (sessionId: number): Promise<void> => {
+    return apiRequest<void>(`/api/materials/generation/${sessionId}/document`, { method: "DELETE" });
   },
 };
 
