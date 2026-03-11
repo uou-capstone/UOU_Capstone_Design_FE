@@ -77,6 +77,37 @@ export interface LectureMaterial {
   url: string;
 }
 
+// 강의실 전체 n주차별 리소스 조회 응답 (/api/courses/{courseId}/contents)
+export interface CourseContentsLectureMaterial {
+  materialId: number;
+  displayName: string;
+  materialType: string;
+  filePath: string;
+  url: string;
+}
+
+export interface CourseContentsLectureExamSession {
+  examSessionId: number;
+  examType: string;
+  status: string;
+  targetCount: number;
+  createdAt: string;
+}
+
+export interface CourseContentsLecture {
+  lectureId: number;
+  title: string;
+  weekNumber: number;
+  materials: CourseContentsLectureMaterial[];
+  examSessions: CourseContentsLectureExamSession[];
+}
+
+export interface CourseContentsResponse {
+  courseId: number;
+  courseTitle: string;
+  lectures: CourseContentsLecture[];
+}
+
 export interface Inquiry {
   inquiryText: string;
 }
@@ -671,6 +702,15 @@ export const courseApi = {
   },
 };
 
+// 강의실 전체 n주차별 리소스 조회 API
+export const courseContentsApi = {
+  getCourseContents: async (courseId: number): Promise<CourseContentsResponse> => {
+    return apiRequest<CourseContentsResponse>(`/api/courses/${encodeURIComponent(courseId)}/contents`, {
+      method: 'GET',
+    });
+  },
+};
+
 // 강의 API
 export const lectureApi = {
   // 강의 생성 (선생님)
@@ -1257,6 +1297,21 @@ export interface ExamGenerationAsyncResponse {
   statusUrl?: string;
 }
 
+// 시험 사전 프로필 대화 요청/응답 (/api/exams/generation/profile)
+export interface ExamProfileGenerationRequest {
+  lectureContent: string;
+  examType?: string;
+  existingProfile?: ExamUserProfile;
+  userMessage?: string;
+}
+
+export interface ExamProfileGenerationResponse {
+  status: string; // "INCOMPLETE" | "COMPLETE" 등
+  agentMessage: string;
+  missingInfo?: string[];
+  updatedProfile?: ExamUserProfile;
+}
+
 // 시험 세션 상세 조회 응답 (/api/exams/generation/{examSessionId})
 export interface ExamFlashCard {
   categoryTag: string;
@@ -1361,6 +1416,12 @@ export const examGenerationApi = {
   },
   runAsync: async (payload: ExamGenerationAsyncRequest): Promise<ExamGenerationAsyncResponse> => {
     return aiServiceRequest<ExamGenerationAsyncResponse>('/api/exams/generation/async', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+  generateProfile: async (payload: ExamProfileGenerationRequest): Promise<ExamProfileGenerationResponse> => {
+    return aiServiceRequest<ExamProfileGenerationResponse>('/api/exams/generation/profile', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
