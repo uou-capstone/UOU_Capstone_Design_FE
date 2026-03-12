@@ -175,6 +175,7 @@ const MainContent: React.FC<MainContentProps> = ({
   const [previewLoadError, setPreviewLoadError] = React.useState(false);
   const [previewErrorMessage, setPreviewErrorMessage] = React.useState<string | null>(null);
   const [previewRetryKey, setPreviewRetryKey] = React.useState(0);
+  const [rightSidebarWidth, setRightSidebarWidth] = React.useState(480);
   const actionMenuRef = React.useRef<HTMLDivElement | null>(null);
   // 시험 세션 상세 보기 모달 상태
   const [examDetailSessionId, setExamDetailSessionId] = React.useState<string | null>(null);
@@ -694,6 +695,26 @@ const MainContent: React.FC<MainContentProps> = ({
     setPreviewMaterialId(null);
     setPreviewFileName(null);
   }, [selectedLectureId]);
+
+  const handleRightSidebarResizeStart = React.useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = rightSidebarWidth;
+    const onMove = (ev: MouseEvent) => {
+      const delta = startX - ev.clientX;
+      setRightSidebarWidth(Math.min(800, Math.max(320, startWidth + delta)));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [rightSidebarWidth]);
 
   // 강의자료 생성 시 PDF는 선택 사항이므로, 더 이상 자동 입력/강제 사용하지 않는다.
 
@@ -1523,9 +1544,10 @@ const MainContent: React.FC<MainContentProps> = ({
     }
 
     try {
+      const description = courseModalDescription.trim();
       const course = await courseApi.createCourse({
         title: courseModalTitle.trim(),
-        description: courseModalDescription.trim() || '',
+        description: description || '설명 없음',
       });
 
       // 자동으로 OT 강의 생성
@@ -1957,9 +1979,22 @@ const MainContent: React.FC<MainContentProps> = ({
                 </object>
               ) : null}
             </div>
+            {/* 채팅창 리사이즈 핸들 */}
+            <div
+              role="separator"
+              aria-label="채팅창 너비 조절"
+              onMouseDown={handleRightSidebarResizeStart}
+              className={`shrink-0 w-1 cursor-col-resize flex items-center justify-center group hover:bg-emerald-500/30 transition-colors ${
+                isDarkMode ? "bg-zinc-700" : "bg-gray-200"
+              }`}
+            >
+              <div className={`w-0.5 h-8 rounded-full opacity-0 group-hover:opacity-100 transition-opacity ${
+                isDarkMode ? "bg-zinc-400" : "bg-gray-500"
+              }`} />
+            </div>
             {/* 우: 채팅(스트리밍 기반) */}
             <RightSidebar
-              width={360}
+              width={rightSidebarWidth}
               lectureId={selectedLectureId ?? undefined}
               courseId={courseDetail.courseId}
               viewMode="course-detail"
@@ -2096,20 +2131,6 @@ const MainContent: React.FC<MainContentProps> = ({
                         className="w-3 h-3"
                       />
                     </label>
-                  )}
-                  {isTeacher && (item.type === "material" || item.type === "exam") && !bulkEditMode && (
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteCenterItem(item)}
-                      className={`absolute top-1.5 right-1.5 p-1 rounded-full opacity-0 group-hover/card:opacity-100 transition-opacity text-xs ${
-                        isDarkMode
-                          ? "bg-zinc-900/80 text-red-300 hover:bg-red-900/60"
-                          : "bg-white/90 text-red-500 hover:bg-red-50"
-                      }`}
-                      title="이 카드 삭제"
-                    >
-                      ✕
-                    </button>
                   )}
                 </div>
               );

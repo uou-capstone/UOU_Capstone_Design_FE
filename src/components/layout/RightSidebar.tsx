@@ -957,14 +957,19 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     <span>{message.file.name}</span>
                   </div>
                 ) : message.markdown ? (
-                  <div>
+                  <div className="min-w-0 break-words">
                     <div className="mb-2 font-semibold">{message.text}</div>
                     <div
-                      className={`prose prose-sm max-w-none ${
+                      className={`prose prose-sm max-w-none [&_strong]:font-bold [&_strong]:text-inherit ${
                         isDarkMode ? "prose-invert" : ""
                       }`}
                     >
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+                        }}
+                      >
                         {message.markdown}
                       </ReactMarkdown>
                     </div>
