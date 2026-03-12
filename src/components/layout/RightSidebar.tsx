@@ -10,6 +10,8 @@ import {
   type CourseDetail,
   streamingApi,
   type StreamNextResponse,
+  learningActivityApi,
+  type RemedialStep,
 } from "../../services/api";
 
 interface ChatMessage {
@@ -23,6 +25,35 @@ interface ChatMessage {
 
 type ViewMode = "course-list" | "course-detail";
 
+/** 시험 만들기 모드일 때 오른쪽 패널에 표시할 프로필/생성 관련 props */
+export interface RightSidebarExamProps {
+  examMode: boolean;
+  onExamModeChange: (value: boolean) => void;
+  isTeacher: boolean;
+  examType: string;
+  setExamType: (value: string) => void;
+  examTopic: string;
+  setExamTopic: (value: string) => void;
+  examCount: number;
+  setExamCount: (value: number) => void;
+  examDesignMessages: Array<{ id: string; role: "user" | "assistant"; text: string }>;
+  setExamDesignMessages: React.Dispatch<React.SetStateAction<Array<{ id: string; role: "user" | "assistant"; text: string }>>>;
+  examDesignInput: string;
+  setExamDesignInput: (value: string) => void;
+  examProfileLoading: boolean;
+  sendExamProfileMessage: (text: string) => Promise<void>;
+  /** 백그라운드 비동기 시험 생성 (페이지 이탈/새로고침/로그아웃 후에도 서버에서 계속 진행) */
+  onCreateExam: () => void;
+  submitting: boolean;
+  onRecoverSession: () => void;
+  recoverOpen: boolean;
+  recoverSelectedId: string;
+  setRecoverSelectedId: (value: string) => void;
+  recoverExams: Array<{ id: string; title: string; examSessionId?: string }>;
+  onRecoverSubmit: () => void;
+  setRecoverOpen: (value: boolean) => void;
+}
+
 interface RightSidebarProps {
   onLectureDataChange: (markdown: string, fileUrl: string, fileName: string) => void;
   width?: number;
@@ -30,6 +61,8 @@ interface RightSidebarProps {
   courseId?: number;
   viewMode: ViewMode;
   courseDetail?: CourseDetail | null;
+  /** 강의 상세에서 시험 만들기 시 오른쪽 패널에 프로필 설정 UI 표시 */
+  examProps?: RightSidebarExamProps | null;
 }
 
 const RightSidebar: React.FC<RightSidebarProps> = ({
@@ -39,6 +72,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   courseId,
   viewMode,
   courseDetail,
+  examProps,
 }) => {
   const { isDarkMode } = useTheme();
   const { isAuthenticated } = useAuth();
@@ -684,39 +718,56 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       };
       setMessages((prev) => [...prev, pendingReply]);
 
-      streamingApi
-        .answer(currentLectureId, { aiQuestionId: currentAiQuestionId, answer: userText })
+      learningActivityApi
+        .answerInquiry({ aiQuestionId: currentAiQuestionId, answerText: userText })
         .then((res) => {
           const status = (res.status || "").toUpperCase();
-          if (status === "ALREADY_ANSWERED") {
+          const explanation = res.explanation ?? "";
+          const steps = res.steps ?? [];
+
+          if (status === "GOOD") {
+            const displayExplanation = explanation.trim() || "해설 없음";
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === pendingReply.id
-                  ? { ...m, text: "이미 답변이 처리되었습니다.", isLoading: false }
+                  ? {
+                      ...m,
+                      text: "정답",
+                      markdown: displayExplanation,
+                      isLoading: false,
+                    }
                   : m
               )
             );
-            setWaitingForAnswer(false);
-            setCurrentAiQuestionId(null);
-            if (res.canContinue) void fetchNextSegment();
-            return;
+          } else {
+            const parts: string[] = [];
+            if (explanation.trim()) parts.push(`**해설**\n${explanation.trim()}`);
+            if (steps.length > 0) {
+              parts.push(
+                "**하위 개념 학습**",
+                ...steps.map(
+                  (s: RemedialStep, i: number) =>
+                    `\n### ${i + 1}. ${(s.concept || "").trim() || "개념"}\n${(s.explanation || "").trim() || ""}\n${(s.question || "").trim() ? `*추가 질문:* ${s.question.trim()}` : ""}`
+                )
+              );
+            }
+            const markdown = parts.length > 0 ? parts.join("\n\n") : "오답입니다. 보충 설명이 제공되지 않았습니다.";
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === pendingReply.id
+                  ? {
+                      ...m,
+                      text: "오답 · 보충 학습",
+                      markdown,
+                      isLoading: false,
+                    }
+                  : m
+              )
+            );
           }
-          const supplementary = res.supplementary?.trim() || "보충 설명이 제공되지 않았습니다.";
-          setMessages((prev) =>
-            prev.map((m) =>
-              m.id === pendingReply.id
-                ? {
-                    ...m,
-                    text: "보충 설명",
-                    markdown: supplementary,
-                    isLoading: false,
-                  }
-                : m
-            )
-          );
           setWaitingForAnswer(false);
           setCurrentAiQuestionId(null);
-          if (res.canContinue) void fetchNextSegment();
+          void fetchNextSegment();
         })
         .catch((err) => {
           answeredQuestionIdsRef.current.delete(currentAiQuestionId);
@@ -874,10 +925,185 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         </div>
       )}
 
+      {/* 강의 학습 | 시험 만들기 탭 (교사 + 강의 상세 + examProps 있을 때) */}
+      {examProps && viewMode === "course-detail" && examProps.isTeacher && (
+        <div className={`shrink-0 flex border-b ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+          <button
+            type="button"
+            onClick={() => examProps.onExamModeChange(false)}
+            className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
+              !examProps.examMode
+                ? isDarkMode
+                  ? "bg-zinc-700 text-white"
+                  : "bg-gray-100 text-gray-900"
+                : isDarkMode
+                ? "text-gray-300 hover:bg-zinc-800"
+                : "text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            강의 학습
+          </button>
+          <button
+            type="button"
+            onClick={() => examProps.onExamModeChange(true)}
+            className={`flex-1 py-2.5 text-sm font-medium transition-colors ${
+              examProps.examMode
+                ? isDarkMode
+                  ? "bg-zinc-700 text-white"
+                  : "bg-gray-100 text-gray-900"
+                : isDarkMode
+                ? "text-gray-300 hover:bg-zinc-800"
+                : "text-gray-600 hover:bg-gray-50"
+            }`}
+          >
+            시험 만들기
+          </button>
+        </div>
+      )}
+
+      {/* 시험 만들기 모드: 프로필 설정(유형/주제/문항 수) + /api/exams/generation/profile 채팅 */}
+      {examProps?.examMode ? (
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className={`shrink-0 px-3 py-2 border-b ${isDarkMode ? "border-zinc-700" : "border-gray-200"} flex items-center justify-between gap-2 flex-wrap`}>
+            <span className={`text-sm font-medium ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}>시험 만들기</span>
+            <button
+              type="button"
+              onClick={examProps.onRecoverSession}
+              className={`text-xs px-2 py-1 rounded border cursor-pointer ${
+                isDarkMode ? "border-zinc-600 text-gray-200 hover:bg-zinc-700" : "border-gray-300 text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              세션 복구
+            </button>
+          </div>
+          {examProps.recoverOpen && (
+            <div className={`shrink-0 flex items-center gap-2 px-3 py-2 border-b ${isDarkMode ? "border-zinc-700 bg-zinc-800/50" : "border-gray-200 bg-gray-50"}`}>
+              <span className={`text-xs ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>복구할 시험:</span>
+              <select
+                value={examProps.recoverSelectedId}
+                onChange={(e) => examProps.setRecoverSelectedId(e.target.value)}
+                className={`text-xs px-2 py-1 rounded border flex-1 max-w-[180px] ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+              >
+                {examProps.recoverExams.map((e) => (
+                  <option key={e.id} value={e.examSessionId ?? ""}>
+                    {e.title}
+                  </option>
+                ))}
+              </select>
+              <button type="button" onClick={examProps.onRecoverSubmit} className="text-xs px-2 py-1 rounded bg-emerald-600 text-white cursor-pointer">복구 실행</button>
+              <button type="button" onClick={() => examProps.setRecoverOpen(false)} className="text-xs px-2 py-1 rounded border border-gray-400 text-gray-600 hover:bg-gray-200 cursor-pointer">취소</button>
+            </div>
+          )}
+          <div className="shrink-0 px-3 py-2 space-y-2">
+            <div className="flex gap-2">
+              <div className="w-1/2">
+                <label className={`block text-xs font-medium mb-0.5 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>시험 유형</label>
+                <select value={examProps.examType} onChange={(e) => examProps.setExamType(e.target.value)} className={`w-full px-2 py-1.5 text-sm rounded border ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`}>
+                  <option value="FLASH_CARD">플래시카드</option>
+                  <option value="OX_PROBLEM">OX 문제</option>
+                  <option value="FIVE_CHOICE">5지선다</option>
+                  <option value="SHORT_ANSWER_ESSAY">단답/서술형</option>
+                  <option value="DISCUSSION">토론형</option>
+                </select>
+              </div>
+              <div className="w-1/2">
+                <label className={`block text-xs font-medium mb-0.5 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>문항 수</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={examProps.examType === "FLASH_CARD" ? 30 : examProps.examType === "FIVE_CHOICE" ? 15 : examProps.examType === "SHORT_ANSWER_ESSAY" ? 20 : 50}
+                  value={examProps.examCount}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (!Number.isFinite(n) || n <= 0) examProps.setExamCount(10);
+                    else {
+                      const upper = examProps.examType === "FLASH_CARD" ? 30 : examProps.examType === "FIVE_CHOICE" ? 15 : examProps.examType === "SHORT_ANSWER_ESSAY" ? 20 : 50;
+                      examProps.setExamCount(Math.min(n, upper));
+                    }
+                  }}
+                  className={`w-full px-2 py-1.5 text-sm rounded border ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                />
+              </div>
+            </div>
+            <div>
+              <label className={`block text-xs font-medium mb-0.5 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>주제</label>
+              <textarea
+                rows={2}
+                value={examProps.examTopic}
+                onChange={(e) => examProps.setExamTopic(e.target.value)}
+                placeholder="이 시험이 다룰 내용"
+                className={`w-full px-2 py-1.5 text-sm rounded border resize-none ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+              />
+            </div>
+          </div>
+          <div className={`flex-1 min-h-0 flex flex-col rounded-lg border text-xs ${isDarkMode ? "border-zinc-700 bg-zinc-900/60" : "border-gray-200 bg-gray-50"}`}>
+              <div className="flex-1 min-h-0 overflow-y-auto px-2 py-1.5 space-y-1">
+                {(examProps.examDesignMessages.length ? examProps.examDesignMessages : [
+                  { id: "init", role: "assistant" as const, text: "안녕하세요, 시험 출제 에이전트입니다. 어떤 부분을 중점적으로 평가하고 싶으신가요? (개념 이해 / 응용 / 증명, 난이도, 오답 패턴 등 자유롭게 말씀해 주세요.)" },
+                ]).map((m) => (
+                  <div
+                    key={m.id}
+                    className={`max-w-[85%] rounded px-2 py-1 ${
+                      m.role === "assistant"
+                        ? isDarkMode ? "bg-zinc-800 text-gray-100" : "bg-white text-gray-900 border border-gray-200"
+                        : isDarkMode ? "bg-emerald-700/80 text-white ml-auto" : "bg-emerald-100 text-emerald-900 ml-auto"
+                    }`}
+                  >
+                    {m.text}
+                  </div>
+                ))}
+                {examProps.examProfileLoading && (
+                  <div className={`max-w-[85%] rounded px-2 py-1 mt-1 text-[11px] ${isDarkMode ? "bg-zinc-800 text-gray-200" : "bg-white text-gray-800 border border-gray-200"}`}>
+                    프로필을 정리하는 중...
+                  </div>
+                )}
+              </div>
+              <div className={`border-t flex items-center gap-2 px-2 py-1.5 ${isDarkMode ? "border-zinc-700/50" : "border-gray-200"}`}>
+                <input
+                  type="text"
+                  value={examProps.examDesignInput}
+                  onChange={(e) => examProps.setExamDesignInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (!examProps.examDesignInput.trim()) return;
+                      const text = examProps.examDesignInput.trim();
+                      examProps.setExamDesignInput("");
+                      examProps.setExamDesignMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text }]);
+                      void examProps.sendExamProfileMessage(text);
+                    }
+                  }}
+                  placeholder="에이전트에게 시험 스타일을 설명해주세요."
+                  className={`flex-1 px-2 py-1 text-xs rounded border ${isDarkMode ? "bg-zinc-900 border-zinc-700 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!examProps.examDesignInput.trim()) return;
+                    const text = examProps.examDesignInput.trim();
+                    examProps.setExamDesignInput("");
+                    examProps.setExamDesignMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", text }]);
+                    void examProps.sendExamProfileMessage(text);
+                  }}
+                  className="px-2 py-1 text-xs rounded font-medium bg-emerald-600 text-white cursor-pointer"
+                >
+                  전송
+                </button>
+              </div>
+            </div>
+          <div className={`shrink-0 px-3 py-2 border-t flex justify-end gap-2 flex-wrap ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+            <button type="button" onClick={() => examProps.onExamModeChange(false)} className={`px-3 py-1.5 text-sm rounded ${isDarkMode ? "bg-zinc-800 text-gray-200" : "bg-gray-100 text-gray-700"}`}>취소</button>
+            <button type="button" onClick={examProps.onCreateExam} disabled={examProps.submitting || !examProps.examTopic.trim()} className="px-3 py-1.5 text-sm rounded font-medium bg-emerald-600 text-white disabled:opacity-50 cursor-pointer">
+              {examProps.submitting ? "생성 시작 중..." : "시험 생성"}
+            </button>
+          </div>
+        </div>
+      ) : (
+      <>
       {/* 채팅 메시지 영역 */}
       <div
         id="chat-messages"
-        className={`flex-1 overflow-y-auto p-1.5 space-y-2 ${
+        className={`flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-1.5 space-y-2 ${
           isDarkMode ? "bg-zinc-800" : "bg-white"
         }`}
         style={{
@@ -905,12 +1131,12 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             return (
               <div
                 key={message.id}
-                className={`flex ${message.isUser ? "justify-end" : "justify-start"} ${
+                className={`flex min-w-0 ${message.isUser ? "justify-end" : "justify-start"} ${
                   isConsecutiveAgent ? "-mt-1" : ""
                 }`}
               >
                 <div
-                  className={`${bubbleWidth} px-3 py-2 ${commonStyles?.rounded ?? "rounded-lg"} text-sm border ${
+                  className={`${bubbleWidth} min-w-0 overflow-hidden break-words px-3 py-2 ${commonStyles?.rounded ?? "rounded-lg"} text-sm border ${
                     message.isUser
                       ? isDarkMode
                         ? "bg-emerald-500/85 text-white border-emerald-400/40"
@@ -957,10 +1183,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     <span>{message.file.name}</span>
                   </div>
                 ) : message.markdown ? (
-                  <div className="min-w-0 break-words">
-                    <div className="mb-2 font-semibold">{message.text}</div>
+                  <div className="min-w-0 overflow-hidden break-words">
+                    <div className="mb-2 font-semibold break-words">{message.text}</div>
                     <div
-                      className={`prose prose-sm max-w-none [&_strong]:font-bold [&_strong]:text-inherit ${
+                      className={`prose prose-sm max-w-none overflow-hidden break-words [&_strong]:font-bold [&_strong]:text-inherit [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words ${
                         isDarkMode ? "prose-invert" : ""
                       }`}
                     >
@@ -975,7 +1201,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     </div>
                   </div>
                 ) : (
-                  message.text
+                  <span className="block min-w-0 overflow-hidden break-words">{message.text}</span>
                 )}
               </div>
             </div>
@@ -995,74 +1221,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             ? "bg-zinc-800 border-zinc-700"
             : "bg-white border-gray-300"
         }`}>
-          {/* 파일 업로드 버튼 (+ 버튼) - 강의 상세 페이지에서만 표시 */}
-          {viewMode === "course-detail" && (
-            <>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept={allowedFileTypes.join(',')}
-                onChange={handleFileSelect}
-                className="hidden"
-                id="file-upload"
-                disabled={isUploading}
-              />
-              <div
-                ref={actionMenuContainerRef}
-                className="relative flex-shrink-0 ml-1.5"
-              >
-                <button
-                  onClick={handleToggleActionMenu}
-                  type="button"
-                  className={`p-1.5 flex items-center justify-center rounded-lg transition-all cursor-pointer ${
-                    isDarkMode
-                      ? "text-gray-400 hover:text-gray-300 hover:bg-zinc-700"
-                      : "text-gray-500 hover:text-zinc-700 hover:bg-zinc-200"
-                  } ${isActionMenuOpen ? (isDarkMode ? "bg-zinc-800 text-white" : "bg-gray-200 text-gray-800") : ""}`}
-                  title="작업 선택"
-                >
-                  <svg
-                    width="20"
-                    height="20"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                  </svg>
-                </button>
-
-                {isActionMenuOpen && (
-                  <div
-                    className={`absolute bottom-full left-0 mb-2 w-48 rounded-xl shadow-lg overflow-hidden border ${
-                      isDarkMode
-                        ? "bg-zinc-900 border-zinc-800 text-gray-200"
-                        : "bg-white border-gray-200 text-gray-800"
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={handleSelectFileUpload}
-                      disabled={isUploading}
-                      className={`w-full px-4 py-2 text-sm flex items-center gap-2 transition-colors ${
-                        isUploading
-                          ? "cursor-not-allowed opacity-60"
-                          : `cursor-pointer ${isDarkMode ? "hover:bg-zinc-700" : "hover:bg-zinc-200"}`
-                      }`}
-                    >
-                      <span>📎</span>
-                      <span>파일 업로드</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-
           {/* 텍스트 입력창 */}
           <textarea
             ref={textareaRef}
@@ -1120,6 +1278,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           )}
         </div>
       </div>
+      </>
+      )}
     </aside>
     </>
   );
