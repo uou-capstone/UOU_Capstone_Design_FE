@@ -478,12 +478,13 @@ const MainContent: React.FC<MainContentProps> = ({
 
     courseContentsApi
       .getCourseContents(courseDetail.courseId)
-      .then((res: CourseContentsResponse) => {
+      .then(async (res: CourseContentsResponse) => {
         if (cancelled) return;
         const materialsByLecture: Record<number, CenterItem[]> = {};
         const examsByLecture: Record<number, CenterItem[]> = {};
+        const lectures = res.lectures || [];
 
-        for (const lec of res.lectures || []) {
+        for (const lec of lectures) {
           const mats: CenterItem[] = (lec.materials || []).map((m) => ({
             id: `material-${m.materialId}`,
             type: "material" as const,
@@ -509,6 +510,37 @@ const MainContent: React.FC<MainContentProps> = ({
           }
         }
 
+        // BE가 contents에 생성 완료 자료를 안 넣어줄 수 있음 → 강의별 최근 세션에 문서 있으면 목록에 추가
+        const sessionResults = await Promise.allSettled(
+          lectures.map((lec) => materialGenerationApi.getLatestSessionForLecture(lec.lectureId))
+        );
+        for (let i = 0; i < lectures.length; i++) {
+          const lec = lectures[i];
+          const settled = sessionResults[i];
+          if (settled?.status !== "fulfilled" || !settled.value) continue;
+          const docUrl =
+            (settled.value as { documentUrl?: string; finalDocument?: string }).documentUrl ??
+            (settled.value as { documentUrl?: string; finalDocument?: string }).finalDocument;
+          if (typeof docUrl !== "string" || !docUrl) continue;
+          const existing = materialsByLecture[lec.lectureId] ?? [];
+          const alreadyHas = existing.some((m) => m.fileUrl === docUrl);
+          if (!alreadyHas) {
+            const sessionId = (settled.value as { sessionId: number }).sessionId;
+            materialsByLecture[lec.lectureId] = [
+              ...existing,
+              {
+                id: `material-session-${sessionId}`,
+                type: "material" as const,
+                title: "AI 생성 자료 (문서)",
+                meta: "자료",
+                createdAt: new Date().toISOString(),
+                fileUrl: docUrl,
+                generationSessionId: sessionId,
+              },
+            ];
+          }
+        }
+
         setLocalMaterials(materialsByLecture);
         setLocalExams(examsByLecture);
         setCourseContentsLoaded(true);
@@ -525,13 +557,14 @@ const MainContent: React.FC<MainContentProps> = ({
     };
   }, [courseDetail?.courseId]);
 
-  // 삭제 후 서버 목록과 동기화 (다시 불러오기)
+  // 삭제 후 서버 목록과 동기화 (다시 불러오기). 생성 완료 자료는 contents에 없어도 latest-session으로 보완.
   const refetchCourseContents = React.useCallback(
     (courseId: number) => {
-      courseContentsApi.getCourseContents(courseId).then((res: CourseContentsResponse) => {
+      courseContentsApi.getCourseContents(courseId).then(async (res: CourseContentsResponse) => {
         const materialsByLecture: Record<number, CenterItem[]> = {};
         const examsByLecture: Record<number, CenterItem[]> = {};
-        for (const lec of res.lectures || []) {
+        const lectures = res.lectures || [];
+        for (const lec of lectures) {
           const mats: CenterItem[] = (lec.materials || []).map((m) => ({
             id: `material-${m.materialId}`,
             type: "material" as const,
@@ -551,6 +584,35 @@ const MainContent: React.FC<MainContentProps> = ({
           }));
           if (mats.length > 0) materialsByLecture[lec.lectureId] = mats;
           if (exs.length > 0) examsByLecture[lec.lectureId] = exs;
+        }
+        const sessionResults = await Promise.allSettled(
+          lectures.map((lec) => materialGenerationApi.getLatestSessionForLecture(lec.lectureId))
+        );
+        for (let i = 0; i < lectures.length; i++) {
+          const lec = lectures[i];
+          const settled = sessionResults[i];
+          if (settled?.status !== "fulfilled" || !settled.value) continue;
+          const docUrl =
+            (settled.value as { documentUrl?: string; finalDocument?: string }).documentUrl ??
+            (settled.value as { documentUrl?: string; finalDocument?: string }).finalDocument;
+          if (typeof docUrl !== "string" || !docUrl) continue;
+          const existing = materialsByLecture[lec.lectureId] ?? [];
+          const alreadyHas = existing.some((m) => m.fileUrl === docUrl);
+          if (!alreadyHas) {
+            const sessionId = (settled.value as { sessionId: number }).sessionId;
+            materialsByLecture[lec.lectureId] = [
+              ...existing,
+              {
+                id: `material-session-${sessionId}`,
+                type: "material" as const,
+                title: "AI 생성 자료 (문서)",
+                meta: "자료",
+                createdAt: new Date().toISOString(),
+                fileUrl: docUrl,
+                generationSessionId: sessionId,
+              },
+            ];
+          }
         }
         setLocalMaterials((prev) => ({ ...prev, ...materialsByLecture }));
         setLocalExams((prev) => ({ ...prev, ...examsByLecture }));
