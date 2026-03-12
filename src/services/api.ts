@@ -485,8 +485,12 @@ const apiRequest = async <T>(
       return text as T;
     }
   } catch (error) {
-    if (error instanceof TypeError && (error.message === 'Failed to fetch' || error.message.includes('fetch'))) {
-      throw new Error(`네트워크 연결 실패: ${url}`);
+    const msg = error instanceof Error ? error.message : String(error);
+    if (error instanceof TypeError && (msg === 'Failed to fetch' || msg.includes('fetch'))) {
+      throw new Error('네트워크 연결 실패. 백엔드 서버가 켜져 있는지 확인해주세요.');
+    }
+    if (msg.includes('ERR_EMPTY_RESPONSE') || msg.includes('EMPTY_RESPONSE')) {
+      throw new Error('서버에서 응답이 없습니다. 백엔드 서버 상태와 프록시 설정을 확인해주세요.');
     }
     throw error;
   }
@@ -1532,8 +1536,27 @@ export interface ExamSessionDetailResponse {
   fiveChoiceProblems: ExamFiveChoiceProblem[];
   shortAnswerProblems: ExamShortAnswerProblem[];
   debateTopics: ExamDebateTopic[];
-  usedProfile: ExamUsedProfile;
+  usedProfile?: ExamUsedProfile;
   totalCount: number;
+}
+
+/** BE가 snake_case로 보낼 수 있으므로 camelCase로 정규화 */
+function normalizeExamSessionDetail(raw: Record<string, unknown>): ExamSessionDetailResponse {
+  const arr = (key: string, alt: string) => {
+    const v = raw[key] ?? raw[alt];
+    return Array.isArray(v) ? v : [];
+  };
+  return {
+    examSessionId: Number(raw.examSessionId ?? raw.exam_session_id ?? 0),
+    examType: String(raw.examType ?? raw.exam_type ?? ''),
+    flashCards: arr('flashCards', 'flash_cards') as ExamFlashCard[],
+    oxProblems: arr('oxProblems', 'ox_problems') as ExamOxProblem[],
+    fiveChoiceProblems: arr('fiveChoiceProblems', 'five_choice_problems') as ExamFiveChoiceProblem[],
+    shortAnswerProblems: arr('shortAnswerProblems', 'short_answer_problems') as ExamShortAnswerProblem[],
+    debateTopics: arr('debateTopics', 'debate_topics') as ExamDebateTopic[],
+    usedProfile: (raw.usedProfile ?? raw.used_profile) as ExamUsedProfile | undefined,
+    totalCount: Number(raw.totalCount ?? raw.total_count ?? 0),
+  };
 }
 
 // 시험 세션 복구 응답 (/api/exams/generation/{examSessionId}/recover) - Swagger가 key/value 임의 맵을 사용
@@ -1580,9 +1603,10 @@ export const examGenerationApi = {
     });
   },
   getSession: async (examSessionId: number): Promise<ExamSessionDetailResponse> => {
-    return apiRequest<ExamSessionDetailResponse>(`/api/exams/generation/${encodeURIComponent(examSessionId)}`, {
+    const raw = await apiRequest<Record<string, unknown>>(`/api/exams/generation/${encodeURIComponent(examSessionId)}`, {
       method: 'GET',
     });
+    return normalizeExamSessionDetail(raw as Record<string, unknown>);
   },
   /** [삭제] 시험 세션 삭제. 해당 강의 소유 교사만 삭제 가능. DELETE /api/exams/generation/{examSessionId} */
   deleteExamSession: async (examSessionId: number): Promise<void> => {

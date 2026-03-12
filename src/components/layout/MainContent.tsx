@@ -1,4 +1,6 @@
 import React from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
 import {
@@ -172,6 +174,8 @@ const MainContent: React.FC<MainContentProps> = ({
   const [previewMaterialId, setPreviewMaterialId] = React.useState<number | null>(null);
   const [previewFileName, setPreviewFileName] = React.useState<string | null>(null);
   const [previewBlobUrl, setPreviewBlobUrl] = React.useState<string | null>(null);
+  /** AI 강의자료 생성 문서는 MD로 불러와 마크다운 뷰로 표시 */
+  const [previewMarkdownContent, setPreviewMarkdownContent] = React.useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = React.useState(false);
   const [previewLoadError, setPreviewLoadError] = React.useState(false);
   const [previewErrorMessage, setPreviewErrorMessage] = React.useState<string | null>(null);
@@ -195,7 +199,18 @@ const MainContent: React.FC<MainContentProps> = ({
   const [lectureResourcesLoading, setLectureResourcesLoading] = React.useState(false);
   const [bulkEditMode, setBulkEditMode] = React.useState(false);
   const [bulkSelectedIds, setBulkSelectedIds] = React.useState<Record<string, boolean>>({});
+  /** 강의실 목록에서 삭제 모드(강의 삭제와 동일 UI) */
+  const [courseListBulkEditMode, setCourseListBulkEditMode] = React.useState(false);
+  const [bulkSelectedCourseIds, setBulkSelectedCourseIds] = React.useState<Record<number, boolean>>({});
+  const [courseListSortOrder, setCourseListSortOrder] = React.useState<"recent" | "name">("recent");
   const [courseContentsLoaded, setCourseContentsLoaded] = React.useState(false);
+
+  const sortedCourses = React.useMemo(() => {
+    const list = [...courses];
+    if (courseListSortOrder === "recent") list.sort((a, b) => b.courseId - a.courseId);
+    if (courseListSortOrder === "name") list.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+    return list;
+  }, [courses, courseListSortOrder]);
   const [examRecoverOpen, setExamRecoverOpen] = React.useState(false);
   const [examRecoverSelectedId, setExamRecoverSelectedId] = React.useState("");
 
@@ -258,6 +273,7 @@ const MainContent: React.FC<MainContentProps> = ({
           if (prev) URL.revokeObjectURL(prev);
           return null;
         });
+        setPreviewMarkdownContent(null);
         setPreviewLoadError(false);
         setPreviewErrorMessage(null);
       }
@@ -275,6 +291,7 @@ const MainContent: React.FC<MainContentProps> = ({
         if (prev) URL.revokeObjectURL(prev);
         return null;
       });
+      setPreviewMarkdownContent(null);
       setPreviewLoadError(true);
       setPreviewLoading(false);
       return;
@@ -284,6 +301,7 @@ const MainContent: React.FC<MainContentProps> = ({
       if (prev) URL.revokeObjectURL(prev);
       return null;
     });
+    setPreviewMarkdownContent(null);
     setPreviewErrorMessage(null);
     const token = getAuthToken();
     setPreviewLoading(true);
@@ -295,7 +313,6 @@ const MainContent: React.FC<MainContentProps> = ({
     try {
       const baseForParse = API_BASE_URL || "https://uouaitutor.duckdns.org";
       const u = previewFileUrl.startsWith("http") ? new URL(previewFileUrl) : new URL(previewFileUrl, baseForParse);
-      // localhost(개발)에서는 path만 쓰면 Vite 서버로 요청 가서 404 발생 → 항상 API 전체 URL로 요청
       if (isSameOrigin) {
         fetchUrl = u.pathname + u.search;
       } else {
@@ -304,13 +321,17 @@ const MainContent: React.FC<MainContentProps> = ({
     } catch {
       fetchUrl = previewFileUrl.startsWith("/") ? (API_BASE_URL || "") + previewFileUrl : previewFileUrl;
     }
+    // AI 강의자료 생성 문서: /api/materials/generation/{id}/document → MD로 받아 마크다운 뷰로 표시
+    const isGeneratedDocument =
+      /\/api\/materials\/generation\/\d+\/document/.test(previewFileUrl) ||
+      (fetchUrl && /\/api\/materials\/generation\/\d+\/document/.test(fetchUrl));
     fetch(fetchUrl, {
       method: "GET",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       credentials: "omit",
       mode: "cors",
     })
-      .then((res) => {
+      .then(async (res) => {
         if (!res.ok) {
           const status = res.status;
           if (status === 502 || status === 503 || status === 504) {
@@ -318,9 +339,12 @@ const MainContent: React.FC<MainContentProps> = ({
           }
           throw new Error(status === 401 ? "접근 권한이 없습니다." : "파일을 불러올 수 없습니다.");
         }
-        return res.blob();
-      })
-      .then((blob) => {
+        if (isGeneratedDocument) {
+          const text = await res.text();
+          setPreviewMarkdownContent(text);
+          return;
+        }
+        const blob = await res.blob();
         const type = (blob.type || "").toLowerCase();
         const isHtml = type.includes("text/html") || type.includes("application/xhtml");
         if (isHtml) {
@@ -518,14 +542,35 @@ const MainContent: React.FC<MainContentProps> = ({
           const lec = lectures[i];
           const settled = sessionResults[i];
           if (settled?.status !== "fulfilled" || !settled.value) continue;
-          const docUrl =
-            (settled.value as { documentUrl?: string; finalDocument?: string }).documentUrl ??
-            (settled.value as { documentUrl?: string; finalDocument?: string }).finalDocument;
+          const raw = settled.value as Record<string, unknown>;
+          const sessionId = typeof raw.sessionId === "number" ? raw.sessionId : null;
+          if (sessionId == null) continue;
+          let docUrl =
+            typeof raw.documentUrl === "string"
+              ? raw.documentUrl
+              : typeof raw.finalDocument === "string"
+                ? raw.finalDocument
+                : typeof (raw.document as Record<string, unknown>)?.url === "string"
+                  ? (raw.document as { url: string }).url
+                  : null;
+          if (!docUrl) {
+            try {
+              const docRes = await materialGenerationApi.getDocument(sessionId);
+              const d = docRes as Record<string, unknown>;
+              docUrl =
+                typeof d.documentUrl === "string"
+                  ? d.documentUrl
+                  : typeof d.url === "string"
+                    ? d.url
+                    : null;
+            } catch {
+              /* getDocument 404 등 실패 시 목록에 넣지 않음(Phase 5 미완료 세션) */
+            }
+          }
           if (typeof docUrl !== "string" || !docUrl) continue;
           const existing = materialsByLecture[lec.lectureId] ?? [];
           const alreadyHas = existing.some((m) => m.fileUrl === docUrl);
           if (!alreadyHas) {
-            const sessionId = (settled.value as { sessionId: number }).sessionId;
             materialsByLecture[lec.lectureId] = [
               ...existing,
               {
@@ -592,14 +637,35 @@ const MainContent: React.FC<MainContentProps> = ({
           const lec = lectures[i];
           const settled = sessionResults[i];
           if (settled?.status !== "fulfilled" || !settled.value) continue;
-          const docUrl =
-            (settled.value as { documentUrl?: string; finalDocument?: string }).documentUrl ??
-            (settled.value as { documentUrl?: string; finalDocument?: string }).finalDocument;
+          const raw = settled.value as Record<string, unknown>;
+          const sessionId = typeof raw.sessionId === "number" ? raw.sessionId : null;
+          if (sessionId == null) continue;
+          let docUrl =
+            typeof raw.documentUrl === "string"
+              ? raw.documentUrl
+              : typeof raw.finalDocument === "string"
+                ? raw.finalDocument
+                : typeof (raw.document as Record<string, unknown>)?.url === "string"
+                  ? (raw.document as { url: string }).url
+                  : null;
+          if (!docUrl) {
+            try {
+              const docRes = await materialGenerationApi.getDocument(sessionId);
+              const d = docRes as Record<string, unknown>;
+              docUrl =
+                typeof d.documentUrl === "string"
+                  ? d.documentUrl
+                  : typeof d.url === "string"
+                    ? d.url
+                    : null;
+            } catch {
+              /* getDocument 404 등 실패 시 스킵(Phase 5 미완료 세션) */
+            }
+          }
           if (typeof docUrl !== "string" || !docUrl) continue;
           const existing = materialsByLecture[lec.lectureId] ?? [];
           const alreadyHas = existing.some((m) => m.fileUrl === docUrl);
           if (!alreadyHas) {
-            const sessionId = (settled.value as { sessionId: number }).sessionId;
             materialsByLecture[lec.lectureId] = [
               ...existing,
               {
@@ -985,7 +1051,14 @@ const MainContent: React.FC<MainContentProps> = ({
       const pollMs = 2500;
       const maxAttempts = 720; // 30분
       for (let i = 0; i < maxAttempts; i++) {
-        const statusRes = await tasksApi.getStatus(taskId);
+        let statusRes: { status?: string; documentUrl?: string; message?: string };
+        try {
+          statusRes = await tasksApi.getStatus(taskId);
+        } catch (pollErr) {
+          // Proxy/백엔드 일시 오류(ECONNRESET, 500 등) 시 대기 후 다음 폴링에서 재시도
+          await new Promise((r) => setTimeout(r, pollMs));
+          continue;
+        }
         const s = (statusRes.status || "").toUpperCase();
         if (s === "COMPLETED" || s === "DONE" || s === "SUCCESS") {
           let docUrl = statusRes.documentUrl ?? null;
@@ -1518,6 +1591,35 @@ const MainContent: React.FC<MainContentProps> = ({
     setOpenCourseMenuId(null);
   };
 
+  const handleToggleCourseBulkSelect = (courseId: number) => {
+    setBulkSelectedCourseIds((prev) => ({ ...prev, [courseId]: !prev[courseId] }));
+  };
+
+  const handleCourseListBulkDelete = React.useCallback(async () => {
+    const ids = Object.keys(bulkSelectedCourseIds)
+      .map(Number)
+      .filter((id) => bulkSelectedCourseIds[id]);
+    if (ids.length === 0) {
+      window.alert("삭제할 강의실을 선택해주세요.");
+      return;
+    }
+    const ok = window.confirm(
+      `선택한 ${ids.length}개의 강의실을 삭제하시겠습니까?\n(삭제된 강의실은 복구할 수 없습니다.)`
+    );
+    if (!ok) return;
+    const toDelete = courses.filter((c) => ids.includes(c.courseId));
+    for (const course of toDelete) {
+      try {
+        onDeleteCourse?.(course);
+      } catch (e) {
+        window.alert(e instanceof Error ? e.message : "강의실 삭제에 실패했습니다.");
+      }
+    }
+    setBulkSelectedCourseIds({});
+    setCourseListBulkEditMode(false);
+    setOpenCourseMenuId(null);
+  }, [bulkSelectedCourseIds, courses, onDeleteCourse]);
+
   const handleCreateCourse = async () => {
     if (!courseModalTitle.trim()) {
       window.alert("강의실 제목을 입력해주세요.");
@@ -1656,31 +1758,103 @@ const MainContent: React.FC<MainContentProps> = ({
     }
 
     return (
-      <div className="space-y-6">
+      <div className="flex flex-col gap-1.5 h-full">
+        <div className={`flex-1 flex flex-col min-h-0 rounded-xl overflow-hidden ${
+          isDarkMode ? "bg-zinc-800" : "bg-white"
+        }`}>
+          <div className={`flex items-center justify-between gap-3 shrink-0 px-4 pt-0 pb-3 border-b ${
+            isDarkMode ? "border-zinc-700" : "border-gray-200"
+          }`}>
+            <div className="flex items-center gap-2 ml-auto">
+              {isTeacher && (
+                <div className="flex items-center gap-1 mr-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCourseListBulkEditMode((v) => !v);
+                      if (courseListBulkEditMode) setBulkSelectedCourseIds({});
+                      setOpenCourseMenuId(null);
+                    }}
+                    className={`px-2 py-1 text-[11px] rounded border cursor-pointer ${
+                      isDarkMode
+                        ? "bg-zinc-800 border-zinc-600 text-gray-200 hover:bg-zinc-700"
+                        : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100"
+                    }`}
+                  >
+                    {courseListBulkEditMode ? "삭제 취소" : "삭제"}
+                  </button>
+                  {courseListBulkEditMode && (
+                    <button
+                      type="button"
+                      onClick={() => void handleCourseListBulkDelete()}
+                      className="px-2 py-1 text-[11px] rounded border border-red-500 text-red-600 cursor-pointer hover:bg-red-50 dark:text-red-400 dark:border-red-500 dark:hover:bg-red-500/10"
+                    >
+                      선택 삭제
+                    </button>
+                  )}
+                </div>
+              )}
+              <select
+                value={courseListSortOrder}
+                onChange={(e) => setCourseListSortOrder(e.target.value as "recent" | "name")}
+                className={`text-[11px] px-2 py-1 rounded border cursor-pointer ${
+                  isDarkMode ? "bg-zinc-800 border-zinc-600 text-gray-200" : "bg-white border-gray-200 text-gray-700"
+                }`}
+              >
+                <option value="recent">최신순</option>
+                <option value="name">이름순</option>
+              </select>
+            </div>
+          </div>
+          <div className={`flex-1 overflow-y-auto p-4 ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 gap-4">
-          {courses.map((course) => (
+          {sortedCourses.map((course) => {
+            const checked = !!bulkSelectedCourseIds[course.courseId];
+            return (
             <div
               key={course.courseId}
               role="button"
               tabIndex={0}
-              onClick={() => handleCourseSelect(course.courseId)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
+              onClick={() => {
+                if (courseListBulkEditMode) {
+                  handleToggleCourseBulkSelect(course.courseId);
+                } else {
                   handleCourseSelect(course.courseId);
                 }
               }}
-              className={`text-left p-5 rounded-xl border shadow-sm transition-all flex flex-col h-32 cursor-pointer focus:outline-none ${
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  if (courseListBulkEditMode) handleToggleCourseBulkSelect(course.courseId);
+                  else handleCourseSelect(course.courseId);
+                }
+              }}
+              className={`text-left p-5 rounded-xl border shadow-sm transition-all flex flex-col h-32 cursor-pointer focus:outline-none relative ${
                 isDarkMode
                   ? "bg-zinc-900 border-zinc-700 hover:border-zinc-500 hover:shadow-zinc-500/30"
                   : "bg-white border-gray-200 hover:border-emerald-500/40 hover:shadow-emerald-500/20"
-              } focus:ring-2 ${
+              } ${courseListBulkEditMode && checked ? (isDarkMode ? "ring-2 ring-emerald-500" : "ring-2 ring-emerald-500") : ""} focus:ring-2 ${
                 isDarkMode ? "focus:ring-zinc-500/60 focus:ring-offset-zinc-900" : "focus:ring-emerald-500/60 focus:ring-offset-white"
               }`}
             >
+              {courseListBulkEditMode && (
+                <label
+                  className="absolute top-2 left-2 flex items-center justify-center w-5 h-5 rounded z-10 cursor-pointer"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => handleToggleCourseBulkSelect(course.courseId)}
+                    className="w-3 h-3"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                </label>
+              )}
               <div className="flex flex-col h-full">
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <h3 className="text-base font-semibold line-clamp-2 flex-1">{course.title}</h3>
+                  {!courseListBulkEditMode && (
                   <div className="relative flex-shrink-0">
                     <button
                       type="button"
@@ -1719,7 +1893,7 @@ const MainContent: React.FC<MainContentProps> = ({
                             setOpenCourseMenuId(null);
                             onEditCourse?.(course);
                           }}
-                          className={`w-full text-left px-3 py-2 text-xs transition-colors rounded-t-lg cursor-pointer ${
+                          className={`w-full text-left px-3 py-2 text-xs transition-colors rounded-lg cursor-pointer ${
                             isDarkMode
                               ? "text-gray-200 hover:bg-zinc-700"
                               : "text-gray-700 hover:bg-zinc-200"
@@ -1728,25 +1902,10 @@ const MainContent: React.FC<MainContentProps> = ({
                         >
                           강의실 수정
                         </button>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setOpenCourseMenuId(null);
-                            onDeleteCourse?.(course);
-                          }}
-                          className={`w-full text-left px-3 py-2 text-xs transition-colors rounded-b-lg cursor-pointer ${
-                            isDarkMode
-                              ? "text-red-300 hover:text-red-200 hover:bg-zinc-700"
-                              : "text-red-600 hover:bg-zinc-200"
-                          }`}
-                          role="menuitem"
-                        >
-                          강의실 삭제
-                        </button>
                       </div>
                     )}
                   </div>
+                  )}
                 </div>
                 {course.description && (
                   <p
@@ -1759,7 +1918,8 @@ const MainContent: React.FC<MainContentProps> = ({
                 )}
               </div>
             </div>
-          ))}
+          );
+          })}
           {isTeacher && (
             <button
               type="button"
@@ -1773,6 +1933,8 @@ const MainContent: React.FC<MainContentProps> = ({
               <span className="text-2xl font-light leading-none">+</span>
             </button>
           )}
+        </div>
+          </div>
         </div>
       </div>
     );
@@ -1888,7 +2050,7 @@ const MainContent: React.FC<MainContentProps> = ({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => { setPreviewFileUrl(null); setPreviewMaterialId(null); setPreviewFileName(null); }}
+                onClick={() => { setPreviewFileUrl(null); setPreviewMaterialId(null); setPreviewFileName(null); setPreviewMarkdownContent(null); }}
                 className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium cursor-pointer ${
                   isDarkMode ? "text-gray-200 hover:bg-zinc-700" : "text-gray-700 hover:bg-gray-100"
                 }`}
@@ -1899,7 +2061,7 @@ const MainContent: React.FC<MainContentProps> = ({
                 목록으로
               </button>
               {previewFileName && (
-                <span className={`text-sm truncate max-w-[200px] ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+                <span className={`text-sm break-words min-w-0 flex-1 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`} title={previewFileName}>
                   {previewFileName}
                 </span>
               )}
@@ -1928,6 +2090,14 @@ const MainContent: React.FC<MainContentProps> = ({
                   >
                     다시 시도
                   </button>
+                </div>
+              ) : previewMarkdownContent != null ? (
+                <div className={`flex-1 min-h-0 overflow-auto p-6 ${isDarkMode ? "text-gray-200" : "text-gray-900"}`}>
+                  <article className="prose max-w-none dark:prose-invert [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {previewMarkdownContent}
+                    </ReactMarkdown>
+                  </article>
                 </div>
               ) : previewBlobUrl ? (
                 <object
@@ -2053,7 +2223,7 @@ const MainContent: React.FC<MainContentProps> = ({
                     <button
                       type="button"
                       onClick={handleBulkDelete}
-                      className="px-2 py-1 text-[11px] rounded border border-red-500 text-red-600 cursor-pointer hover:bg-red-50"
+                      className="px-2 py-1 text-[11px] rounded border border-red-500 text-red-600 cursor-pointer hover:bg-red-50 dark:text-red-400 dark:border-red-500 dark:hover:bg-red-500/10"
                     >
                       선택 삭제
                     </button>
@@ -2068,7 +2238,7 @@ const MainContent: React.FC<MainContentProps> = ({
               <select
                 value={sortOrder}
                 onChange={(e) => setSortOrder(e.target.value as "recent" | "name" | "type")}
-                className={`text-xs px-2 py-1.5 rounded border cursor-pointer ${
+                className={`text-[11px] px-2 py-1 rounded border cursor-pointer ${
                   isDarkMode ? "bg-zinc-800 border-zinc-600 text-gray-200" : "bg-white border-gray-200 text-gray-700"
                 }`}
               >
@@ -2971,6 +3141,22 @@ const MainContent: React.FC<MainContentProps> = ({
                       </div>
                     </div>
                   )}
+                  {(() => {
+                    const hasAny =
+                      (examDetail.flashCards?.length ?? 0) > 0 ||
+                      (examDetail.oxProblems?.length ?? 0) > 0 ||
+                      (examDetail.fiveChoiceProblems?.length ?? 0) > 0 ||
+                      (examDetail.shortAnswerProblems?.length ?? 0) > 0 ||
+                      (examDetail.debateTopics?.length ?? 0) > 0;
+                    if (!hasAny) {
+                      return (
+                        <p className={`text-sm py-4 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                          표시할 문항이 없습니다. 시험을 비동기로 생성했다면 아직 생성 중일 수 있어요. 잠시 후 목록에서 다시 클릭하거나 새로고침해 보세요.
+                        </p>
+                      );
+                    }
+                    return null;
+                  })()}
                   {examDetail.flashCards && examDetail.flashCards.length > 0 && (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
