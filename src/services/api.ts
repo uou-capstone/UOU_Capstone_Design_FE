@@ -1042,9 +1042,11 @@ export interface MaterialsPhase2Request {
   feedback?: string;
 }
 
+/** Phase 2 응답: draftPlan(기본), updatedPlan(수정 요청 후 갱신된 기획안), finalizedBrief(확정 시) */
 export interface MaterialsPhase2Response {
   sessionId: number;
   draftPlan?: Record<string, unknown>;
+  updatedPlan?: Record<string, unknown>;
   finalizedBrief?: Record<string, unknown>;
   progressPercentage: number;
   message?: string;
@@ -1279,6 +1281,38 @@ export const materialGenerationApi = {
   /** [삭제] Phase 5 산출물(최종 문서)만 삭제. 세션은 유지, Phase 4 상태로 되돌아감 */
   deleteSessionDocument: async (sessionId: number): Promise<void> => {
     return apiRequest<void>(`/api/materials/generation/${sessionId}/document`, { method: "DELETE" });
+  },
+
+  /** [미구현→추가] 최종 문서 다운로드/조회. 완료된 세션의 문서 URL 또는 메타 정보 반환 */
+  getDocument: async (sessionId: number): Promise<{ documentUrl?: string; url?: string; [key: string]: unknown }> => {
+    return apiRequest<{ documentUrl?: string; url?: string; [key: string]: unknown }>(
+      `/api/materials/generation/${sessionId}/document`,
+      { method: "GET" }
+    );
+  },
+
+  /** [미구현→추가] 생성 상태 조회 (세션 단위) */
+  getSessionStatus: async (sessionId: number): Promise<{ status: string; documentUrl?: string; progressPercentage?: number; message?: string; [key: string]: unknown }> => {
+    return apiRequest(
+      `/api/materials/generation/${sessionId}/status`,
+      { method: "GET" }
+    );
+  },
+
+  /** [미구현→추가] 실시간 진행 상황 조회 */
+  getProgress: async (sessionId: number): Promise<{ progressPercentage?: number; message?: string; [key: string]: unknown }> => {
+    return apiRequest(
+      `/api/materials/generation/${sessionId}/progress`,
+      { method: "GET" }
+    );
+  },
+
+  /** [미구현→추가] Phase 3~5 삭제 후 기획안(Phase 2)으로 되돌리기 */
+  rollbackToPhase2: async (sessionId: number): Promise<{ sessionId: number; [key: string]: unknown }> => {
+    return apiRequest(
+      `/api/materials/generation/${sessionId}/rollback-to-phase2`,
+      { method: "POST" }
+    );
   },
 };
 

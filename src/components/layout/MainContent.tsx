@@ -887,7 +887,9 @@ const MainContent: React.FC<MainContentProps> = ({
         action: "feedback",
         feedback: materialPhase2Feedback.trim() || undefined,
       });
-      if (res.draftPlan) setMaterialDraftPlan(res.draftPlan);
+      // 수정 요청 후에는 updatedPlan, 없으면 draftPlan으로 화면 갱신
+      const nextPlan = res.updatedPlan ?? res.draftPlan;
+      if (nextPlan) setMaterialDraftPlan(nextPlan);
       setMaterialPhase2Feedback("");
       setMaterialPhase2UpdateMode(false);
     } catch (e) {
@@ -924,14 +926,20 @@ const MainContent: React.FC<MainContentProps> = ({
         const statusRes = await tasksApi.getStatus(taskId);
         const s = (statusRes.status || "").toUpperCase();
         if (s === "COMPLETED" || s === "DONE" || s === "SUCCESS") {
-          const docUrl = statusRes.documentUrl ?? null;
-          // documentUrl이 있을 때만 5단계로 이동 (아직 결과가 안 나온 상태에서 최종문서 생성 버튼 노출 방지)
+          let docUrl = statusRes.documentUrl ?? null;
+          if (!docUrl) {
+            try {
+              const docRes = await materialGenerationApi.getDocument(materialSessionId);
+              docUrl = docRes.documentUrl ?? (docRes as { url?: string }).url ?? null;
+            } catch {
+              // getDocument 실패 시 무시, 아래 refetch로 목록만 갱신
+            }
+          }
+          setMaterialAsyncTaskId(null);
+          setMaterialCompletedViaAsync(true);
           if (docUrl) {
             setMaterialFinalUrl(docUrl);
             setMaterialGenStep(5);
-            setMaterialCompletedViaAsync(true);
-            setMaterialAsyncTaskId(null);
-            // 닫은 상태에서도 완료 시 목록에 자동 추가
             const title = materialKeyword.trim() || "AI 자료";
             const newItem: CenterItem = {
               id: `material-${materialSessionId}-${Date.now()}`,
@@ -948,9 +956,10 @@ const MainContent: React.FC<MainContentProps> = ({
                 [selectedLectureId]: [...(prev[selectedLectureId] || []), newItem],
               }));
             }
-            return;
           }
-          // COMPLETED인데 documentUrl 없으면 계속 폴링 (백엔드가 늦게 채울 수 있음)
+          // 완료 시 서버 목록 갱신 → BE에 등록된 강의자료(MD)가 목록에 표시되도록
+          if (courseDetail?.courseId) refetchCourseContents(courseDetail.courseId);
+          return;
         }
         if (s === "FAILED" || s === "ERROR") {
           window.alert(statusRes.message || "Phase 3~5 처리에 실패했습니다.");
@@ -967,7 +976,7 @@ const MainContent: React.FC<MainContentProps> = ({
     } finally {
       setSubmitting(false);
     }
-  }, [materialSessionId, materialKeyword, selectedLectureId]);
+  }, [materialSessionId, materialKeyword, selectedLectureId, courseDetail?.courseId, refetchCourseContents]);
 
   const handleMaterialPhase3 = React.useCallback(async () => {
     if (materialSessionId == null) return;
