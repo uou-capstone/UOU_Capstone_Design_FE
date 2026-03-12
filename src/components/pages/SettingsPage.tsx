@@ -158,7 +158,7 @@ const SettingsPage: React.FC = () => {
           </h2>
           <div className="space-y-4">
               {/* 프로필 사진 */}
-              <div className="flex flex-col items-center gap-3">
+              <div className="flex flex-col items-center gap-3 w-full">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -197,6 +197,8 @@ const SettingsPage: React.FC = () => {
                 />
               </div>
 
+              {/* 개인정보 입력창 — 너비 절반 */}
+              <div className="max-w-[50%] space-y-4">
               {/* 이메일 (수정 불가) */}
               <div>
                 <label className={`block text-sm font-medium mb-2 ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
@@ -267,6 +269,7 @@ const SettingsPage: React.FC = () => {
                   } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-emerald-500"}`}
                 />
               </div>
+              </div>
             </div>
         </section>
 
@@ -280,8 +283,8 @@ const SettingsPage: React.FC = () => {
             보안 설정
           </h2>
           <div className="space-y-4">
-            {/* 비밀번호 변경 */}
-            <div className="space-y-3">
+            {/* 비밀번호 변경 — 너비 절반 */}
+            <div className="max-w-[50%] space-y-3">
               <h3 className={`text-sm font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
                 비밀번호 변경
               </h3>
@@ -362,8 +365,8 @@ const SettingsPage: React.FC = () => {
               </div>
             </div>
 
-            {/* 회원 탈퇴 */}
-            <div className="pt-4 border-t border-dashed border-gray-200 dark:border-zinc-700">
+            {/* 회원 탈퇴 — 너비 절반 */}
+            <div className="pt-4 border-t border-dashed border-gray-200 dark:border-zinc-700 max-w-[50%]">
               <div className="space-y-2">
                 <h3 className={`text-sm font-medium ${isDarkMode ? "text-red-300" : "text-red-600"}`}>
                   회원 탈퇴

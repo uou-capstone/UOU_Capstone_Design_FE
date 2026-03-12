@@ -119,8 +119,22 @@ export interface Inquiry {
   inquiryText: string;
 }
 
+/** 이전: answerText 단일 필드. 이후: status + explanation + steps (POST /api/inquiries/answer 응답) */
 export interface InquiryResponse {
   answerText: string;
+}
+
+/** POST /api/inquiries/answer 응답 — AI 강의 질문에 대한 학생 답변 피드백 */
+export interface RemedialStep {
+  concept: string;
+  explanation: string;
+  question: string;
+}
+
+export interface InquiryAnswerResponse {
+  status: 'GOOD' | 'BAD';
+  explanation: string | null;
+  steps: RemedialStep[] | null;
 }
 
 export interface QuizQuestion {
@@ -915,6 +929,12 @@ export const materialApi = {
   },
 };
 
+/** AI 강의 질문 답변 요청 (POST /api/inquiries/answer) */
+export interface InquiryAnswerRequest {
+  aiQuestionId: string;
+  answerText: string;
+}
+
 // 학습활동 API
 export const learningActivityApi = {
   // 손들 질문 제출 (학생)
@@ -922,6 +942,14 @@ export const learningActivityApi = {
     return apiRequest<InquiryResponse>(`/api/lectures/${lectureId}/inquiries`, {
       method: 'POST',
       body: JSON.stringify(inquiry),
+    });
+  },
+
+  /** AI 강의 질문에 학생 답변 후 정답/오답·해설·하위 개념 질문 수신 (POST /api/inquiries/answer) */
+  answerInquiry: async (payload: InquiryAnswerRequest): Promise<InquiryAnswerResponse> => {
+    return apiRequest<InquiryAnswerResponse>('/api/inquiries/answer', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     });
   },
 
@@ -1367,6 +1395,7 @@ export interface ExamGenerationResponse {
 
 // 시험 생성 비동기 요청/응답 (Swagger: /api/exams/generation/async)
 export interface ExamGenerationAsyncRequest {
+  lectureId: number;
   examType: string;
   targetCount: number;
   lectureContent: string;
@@ -1491,38 +1520,39 @@ function buildExamGenerationBody(payload: ExamGenerationRequest): string {
   return JSON.stringify(body);
 }
 
+/** 시험 생성/조회/삭제는 메인 백엔드와 동일 URL 사용(apiRequest). 로컬 개발 시 프록시로 BE 로그 확인 가능 */
 export const examGenerationApi = {
   createExam: async (payload: ExamGenerationRequest): Promise<ExamGenerationResponse> => {
-    return aiServiceRequest<ExamGenerationResponse>('/api/exams/generation', {
+    return apiRequest<ExamGenerationResponse>('/api/exams/generation', {
       method: 'POST',
       body: buildExamGenerationBody(payload),
     });
   },
   runAsync: async (payload: ExamGenerationAsyncRequest): Promise<ExamGenerationAsyncResponse> => {
-    return aiServiceRequest<ExamGenerationAsyncResponse>('/api/exams/generation/async', {
+    return apiRequest<ExamGenerationAsyncResponse>('/api/exams/generation/async', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
   generateProfile: async (payload: ExamProfileGenerationRequest): Promise<ExamProfileGenerationResponse> => {
-    return aiServiceRequest<ExamProfileGenerationResponse>('/api/exams/generation/profile', {
+    return apiRequest<ExamProfileGenerationResponse>('/api/exams/generation/profile', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   },
   recoverSession: async (examSessionId: number): Promise<ExamSessionRecoverResponse> => {
-    return aiServiceRequest<ExamSessionRecoverResponse>(`/api/exams/generation/${encodeURIComponent(examSessionId)}/recover`, {
+    return apiRequest<ExamSessionRecoverResponse>(`/api/exams/generation/${encodeURIComponent(examSessionId)}/recover`, {
       method: 'POST',
     });
   },
   getSession: async (examSessionId: number): Promise<ExamSessionDetailResponse> => {
-    return aiServiceRequest<ExamSessionDetailResponse>(`/api/exams/generation/${encodeURIComponent(examSessionId)}`, {
+    return apiRequest<ExamSessionDetailResponse>(`/api/exams/generation/${encodeURIComponent(examSessionId)}`, {
       method: 'GET',
     });
   },
   /** [삭제] 시험 세션 삭제. 해당 강의 소유 교사만 삭제 가능. DELETE /api/exams/generation/{examSessionId} */
   deleteExamSession: async (examSessionId: number): Promise<void> => {
-    return aiServiceRequest<void>(`/api/exams/generation/${encodeURIComponent(examSessionId)}`, {
+    return apiRequest<void>(`/api/exams/generation/${encodeURIComponent(examSessionId)}`, {
       method: 'DELETE',
     });
   },
