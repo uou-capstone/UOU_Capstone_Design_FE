@@ -1002,8 +1002,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   <option value="FLASH_CARD">플래시카드</option>
                   <option value="OX_PROBLEM">OX 문제</option>
                   <option value="FIVE_CHOICE">5지선다</option>
-                  <option value="SHORT_ANSWER_ESSAY">단답/서술형</option>
-                  <option value="DISCUSSION">토론형</option>
+                  <option value="SHORT_ANSWER">단답/서술형</option>
+                  <option value="DEBATE">토론형</option>
                 </select>
               </div>
               <div className="w-1/2">
@@ -1011,13 +1011,13 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 <input
                   type="number"
                   min={1}
-                  max={examProps.examType === "FLASH_CARD" ? 30 : examProps.examType === "FIVE_CHOICE" ? 15 : examProps.examType === "SHORT_ANSWER_ESSAY" ? 20 : 50}
+                  max={examProps.examType === "FLASH_CARD" ? 30 : examProps.examType === "FIVE_CHOICE" ? 15 : examProps.examType === "SHORT_ANSWER" ? 20 : 50}
                   value={examProps.examCount}
                   onChange={(e) => {
                     const n = Number(e.target.value);
                     if (!Number.isFinite(n) || n <= 0) examProps.setExamCount(10);
                     else {
-                      const upper = examProps.examType === "FLASH_CARD" ? 30 : examProps.examType === "FIVE_CHOICE" ? 15 : examProps.examType === "SHORT_ANSWER_ESSAY" ? 20 : 50;
+                      const upper = examProps.examType === "FLASH_CARD" ? 30 : examProps.examType === "FIVE_CHOICE" ? 15 : examProps.examType === "SHORT_ANSWER" ? 20 : 50;
                       examProps.setExamCount(Math.min(n, upper));
                     }
                   }}
