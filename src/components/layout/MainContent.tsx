@@ -554,16 +554,24 @@ const MainContent: React.FC<MainContentProps> = ({
         const examsByLecture: Record<number, CenterItem[]> = {};
         const lectures = res.lectures || [];
 
+        // BE가 materials[].url에 마크다운 본문을 넣은 경우: fileUrl로 두면 다른 기기/캐시에서 fetch 시도 → finalDocument로만 넣어 fetch 방지
+        const urlLooksLikeMarkdown = (url: string | undefined) =>
+          typeof url === "string" &&
+          (url.startsWith("#") || url.includes("###") || url.includes("## ") || url.length > 250);
         for (const lec of lectures) {
-          const mats: CenterItem[] = (lec.materials || []).map((m) => ({
-            id: `material-${m.materialId}`,
-            type: "material" as const,
-            title: m.displayName,
-            meta: "자료",
-            createdAt: new Date().toISOString(), // createdAt이 없으면 지금 시각으로 대체
-            fileUrl: m.url,
-            materialId: m.materialId,
-          }));
+          const mats: CenterItem[] = (lec.materials || []).map((m) => {
+            const isMarkdown = urlLooksLikeMarkdown(m.url);
+            return {
+              id: `material-${m.materialId}`,
+              type: "material" as const,
+              title: m.displayName,
+              meta: "자료",
+              createdAt: new Date().toISOString(), // createdAt이 없으면 지금 시각으로 대체
+              fileUrl: isMarkdown ? undefined : m.url,
+              finalDocument: isMarkdown ? m.url : undefined,
+              materialId: m.materialId,
+            };
+          });
           const exs: CenterItem[] = (lec.examSessions || []).map((s) => ({
             id: String(s.examSessionId),
             type: "exam" as const,
@@ -658,16 +666,23 @@ const MainContent: React.FC<MainContentProps> = ({
         const materialsByLecture: Record<number, CenterItem[]> = {};
         const examsByLecture: Record<number, CenterItem[]> = {};
         const lectures = res.lectures || [];
+        const urlLooksLikeMarkdown = (url: string | undefined) =>
+          typeof url === "string" &&
+          (url.startsWith("#") || url.includes("###") || url.includes("## ") || url.length > 250);
         for (const lec of lectures) {
-          const mats: CenterItem[] = (lec.materials || []).map((m) => ({
-            id: `material-${m.materialId}`,
-            type: "material" as const,
-            title: m.displayName,
-            meta: "자료",
-            createdAt: new Date().toISOString(),
-            fileUrl: m.url,
-            materialId: m.materialId,
-          }));
+          const mats: CenterItem[] = (lec.materials || []).map((m) => {
+            const isMarkdown = urlLooksLikeMarkdown(m.url);
+            return {
+              id: `material-${m.materialId}`,
+              type: "material" as const,
+              title: m.displayName,
+              meta: "자료",
+              createdAt: new Date().toISOString(),
+              fileUrl: isMarkdown ? undefined : m.url,
+              finalDocument: isMarkdown ? m.url : undefined,
+              materialId: m.materialId,
+            };
+          });
           const exs: CenterItem[] = (lec.examSessions || []).map((s) => ({
             id: String(s.examSessionId),
             type: "exam" as const,
