@@ -47,6 +47,8 @@ type CenterItem = {
   materialId?: number;
   /** 강의자료 생성(Phase 1~5) 세션 ID — DELETE /api/materials/generation/{sessionId} 삭제 시 사용 */
   generationSessionId?: number;
+  /** latest-session 응답의 finalDocument(마크다운 본문). 있으면 fetch 없이 이 값만 표시 */
+  finalDocument?: string;
   assessmentId?: number;
   examSessionId?: string;
 };
@@ -139,8 +141,14 @@ const MainContent: React.FC<MainContentProps> = ({
   const [materialChapterSummary, setMaterialChapterSummary] = React.useState<string | null>(null);
   const [materialVerifiedSummary, setMaterialVerifiedSummary] = React.useState<string | null>(null);
   const [materialFinalUrl, setMaterialFinalUrl] = React.useState<string | null>(null);
+  /** 화면에 띄울 문서 본문 — latest-session/status/phase5의 finalDocument만 사용 */
+  const [materialFinalDocument, setMaterialFinalDocument] = React.useState<string | null>(null);
   const [materialAsyncTaskId, setMaterialAsyncTaskId] = React.useState<string | null>(null);
   const [materialCompletedViaAsync, setMaterialCompletedViaAsync] = React.useState(false);
+  /** Phase 5 스트리밍: 실시간 렌더링용 내용·진행 메시지 */
+  const [streamedMaterialContent, setStreamedMaterialContent] = React.useState("");
+  const [streamedMaterialProgress, setStreamedMaterialProgress] = React.useState("");
+  const materialStreamAbortRef = React.useRef<(() => void) | null>(null);
   const [examType, setExamType] = React.useState("FLASH_CARD");
   const [examTopic, setExamTopic] = React.useState("");
   const [examCount, setExamCount] = React.useState(10);
@@ -294,6 +302,44 @@ const MainContent: React.FC<MainContentProps> = ({
       setPreviewMarkdownContent(null);
       setPreviewLoadError(true);
       setPreviewLoading(false);
+      return;
+    }
+
+    // 백엔드가 fileUrl에 마크다운 본문(finalDocument)을 넣어둔 경우: fetch하지 않고 바로 렌더링
+    const looksLikeUrl =
+      previewFileUrl.startsWith("http://") ||
+      previewFileUrl.startsWith("https://") ||
+      previewFileUrl.startsWith("/");
+    // URL 전체에서 마크다운 패턴 검사 (https://도메인/###%201.%20... 은 pathname이 '/'만 나와서 path만 보면 놓침)
+    const urlHasMarkdownPattern =
+      previewFileUrl.includes("###") ||
+      previewFileUrl.includes("%23%23%23") ||
+      previewFileUrl.includes("## ") ||
+      previewFileUrl.includes("%20%EC%9E%90%EB%A3%8C") ||
+      previewFileUrl.length > 400;
+    const pathPart = previewFileUrl.startsWith("http") ? (() => { try { return new URL(previewFileUrl).pathname; } catch { return previewFileUrl; } })() : previewFileUrl;
+    const pathLooksLikeMarkdown = /^\/?#{1,6}(\s|%20)|^\/?[\d.]+\s.*자료구조|\.md$/i.test(pathPart) || pathPart.length > 200;
+    const isLikelyMarkdownInPath = urlHasMarkdownPattern || pathLooksLikeMarkdown;
+    if (!looksLikeUrl || isLikelyMarkdownInPath) {
+      let rawContent: string = previewFileUrl;
+      if (isLikelyMarkdownInPath && previewFileUrl.startsWith("http")) {
+        try {
+          const u = new URL(previewFileUrl);
+          const afterDomain = u.pathname.slice(1) + (u.hash ? u.hash.slice(1) : "");
+          const decoded = decodeURIComponent(afterDomain || previewFileUrl);
+          rawContent = previewFileUrl.includes("/###") && decoded.startsWith(" ") ? "###" + decoded : decoded;
+        } catch {
+          rawContent = previewFileUrl;
+        }
+      }
+      setPreviewBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setPreviewMarkdownContent(rawContent);
+      setPreviewLoading(false);
+      setPreviewLoadError(false);
+      setPreviewErrorMessage(null);
       return;
     }
 
@@ -545,14 +591,13 @@ const MainContent: React.FC<MainContentProps> = ({
           const raw = settled.value as Record<string, unknown>;
           const sessionId = typeof raw.sessionId === "number" ? raw.sessionId : null;
           if (sessionId == null) continue;
-          let docUrl =
-            typeof raw.documentUrl === "string"
-              ? raw.documentUrl
-              : typeof raw.finalDocument === "string"
-                ? raw.finalDocument
-                : typeof (raw.document as Record<string, unknown>)?.url === "string"
-                  ? (raw.document as { url: string }).url
-                  : null;
+          // 표시용: 반드시 finalDocument(마크다운 본문)만 사용. documentUrl은 다운로드/API용.
+          const finalDoc = typeof raw.finalDocument === "string" && raw.finalDocument ? raw.finalDocument : undefined;
+          let docUrl: string | null =
+            typeof raw.documentUrl === "string" && raw.documentUrl ? raw.documentUrl
+              : typeof (raw.document as Record<string, unknown>)?.url === "string"
+                ? (raw.document as { url: string }).url
+                : null;
           if (!docUrl) {
             try {
               const docRes = await materialGenerationApi.getDocument(sessionId);
@@ -564,12 +609,15 @@ const MainContent: React.FC<MainContentProps> = ({
                     ? d.url
                     : null;
             } catch {
-              /* getDocument 404 등 실패 시 목록에 넣지 않음(Phase 5 미완료 세션) */
+              /* getDocument 404 등 실패 시 finalDocument 있으면 목록에 추가 */
             }
           }
-          if (typeof docUrl !== "string" || !docUrl) continue;
+          // 세션이 있고 (실제 URL 있음 또는 finalDocument 있음) 이면 목록에 추가
+          const hasDoc = (typeof docUrl === "string" && docUrl.length > 0) || finalDoc;
+          if (!hasDoc) continue;
           const existing = materialsByLecture[lec.lectureId] ?? [];
-          const alreadyHas = existing.some((m) => m.fileUrl === docUrl);
+          const documentApiUrl = `/api/materials/generation/${sessionId}/document`;
+          const alreadyHas = existing.some((m) => m.generationSessionId === sessionId || m.fileUrl === documentApiUrl);
           if (!alreadyHas) {
             materialsByLecture[lec.lectureId] = [
               ...existing,
@@ -579,8 +627,9 @@ const MainContent: React.FC<MainContentProps> = ({
                 title: "AI 생성 자료 (문서)",
                 meta: "자료",
                 createdAt: new Date().toISOString(),
-                fileUrl: docUrl,
+                fileUrl: documentApiUrl,
                 generationSessionId: sessionId,
+                finalDocument: finalDoc,
               },
             ];
           }
@@ -640,14 +689,12 @@ const MainContent: React.FC<MainContentProps> = ({
           const raw = settled.value as Record<string, unknown>;
           const sessionId = typeof raw.sessionId === "number" ? raw.sessionId : null;
           if (sessionId == null) continue;
-          let docUrl =
-            typeof raw.documentUrl === "string"
-              ? raw.documentUrl
-              : typeof raw.finalDocument === "string"
-                ? raw.finalDocument
-                : typeof (raw.document as Record<string, unknown>)?.url === "string"
-                  ? (raw.document as { url: string }).url
-                  : null;
+          const finalDoc = typeof raw.finalDocument === "string" && raw.finalDocument ? raw.finalDocument : undefined;
+          let docUrl: string | null =
+            typeof raw.documentUrl === "string" && raw.documentUrl ? raw.documentUrl
+              : typeof (raw.document as Record<string, unknown>)?.url === "string"
+                ? (raw.document as { url: string }).url
+                : null;
           if (!docUrl) {
             try {
               const docRes = await materialGenerationApi.getDocument(sessionId);
@@ -659,12 +706,14 @@ const MainContent: React.FC<MainContentProps> = ({
                     ? d.url
                     : null;
             } catch {
-              /* getDocument 404 등 실패 시 스킵(Phase 5 미완료 세션) */
+              /* getDocument 404 등 실패 시 finalDocument 있으면 추가 */
             }
           }
-          if (typeof docUrl !== "string" || !docUrl) continue;
+          const hasDoc = (typeof docUrl === "string" && docUrl.length > 0) || finalDoc;
+          if (!hasDoc) continue;
           const existing = materialsByLecture[lec.lectureId] ?? [];
-          const alreadyHas = existing.some((m) => m.fileUrl === docUrl);
+          const documentApiUrl = `/api/materials/generation/${sessionId}/document`;
+          const alreadyHas = existing.some((m) => m.generationSessionId === sessionId || m.fileUrl === documentApiUrl);
           if (!alreadyHas) {
             materialsByLecture[lec.lectureId] = [
               ...existing,
@@ -674,8 +723,9 @@ const MainContent: React.FC<MainContentProps> = ({
                 title: "AI 생성 자료 (문서)",
                 meta: "자료",
                 createdAt: new Date().toISOString(),
-                fileUrl: docUrl,
+                fileUrl: documentApiUrl,
                 generationSessionId: sessionId,
+                finalDocument: finalDoc,
               },
             ];
           }
@@ -951,9 +1001,16 @@ const MainContent: React.FC<MainContentProps> = ({
         setMaterialChapterSummary(res.chapterContentList ? "챕터 내용 생성됨" : null);
         setMaterialGenStep(4);
       } else {
-        // PHASE5 또는 완료
-        if (res.documentUrl) {
+        // PHASE5 또는 완료: 화면에는 반드시 finalDocument만 사용. documentUrl은 다운로드/링크용.
+        if (typeof res.finalDocument === "string" && res.finalDocument) {
+          setMaterialFinalDocument(res.finalDocument);
+          setMaterialCompletedViaAsync(true);
+          setMaterialGenStep(5);
+          if (typeof res.documentUrl === "string" && res.documentUrl) setMaterialFinalUrl(res.documentUrl);
+          else setMaterialFinalUrl(null);
+        } else if (typeof res.documentUrl === "string" && res.documentUrl) {
           setMaterialFinalUrl(res.documentUrl);
+          setMaterialFinalDocument(null);
           setMaterialCompletedViaAsync(true);
           setMaterialGenStep(5);
         } else {
@@ -969,6 +1026,10 @@ const MainContent: React.FC<MainContentProps> = ({
   }, [selectedLectureId]);
 
   const resetMaterialGenModal = React.useCallback(() => {
+    materialStreamAbortRef.current?.();
+    materialStreamAbortRef.current = null;
+    setStreamedMaterialContent("");
+    setStreamedMaterialProgress("");
     setMaterialGenStep(1);
     setMaterialSessionId(null);
     setMaterialDraftPlan(null);
@@ -977,6 +1038,7 @@ const MainContent: React.FC<MainContentProps> = ({
     setMaterialChapterSummary(null);
     setMaterialVerifiedSummary(null);
     setMaterialFinalUrl(null);
+    setMaterialFinalDocument(null);
     setMaterialKeyword("");
     setMaterialAsyncTaskId(null);
     setMaterialCompletedViaAsync(false);
@@ -1036,26 +1098,56 @@ const MainContent: React.FC<MainContentProps> = ({
     }
   }, [materialSessionId, materialPhase2Feedback]);
 
+  const applyMaterialCompletion = React.useCallback(
+    (docUrl: string | null, finalDocument?: string | null) => {
+      setMaterialAsyncTaskId(null);
+      setMaterialCompletedViaAsync(true);
+      setStreamedMaterialContent("");
+      setStreamedMaterialProgress("");
+      if (finalDocument != null) setMaterialFinalDocument(finalDocument);
+      if (docUrl) {
+        setMaterialFinalUrl(docUrl);
+        setMaterialGenStep(5);
+        const title = materialKeyword.trim() || "AI 자료";
+        const newItem: CenterItem = {
+          id: `material-${materialSessionId!}-${Date.now()}`,
+          type: "material",
+          title: `${title} (문서)`,
+          meta: "자료",
+          createdAt: new Date().toISOString(),
+          fileUrl: docUrl,
+          generationSessionId: materialSessionId!,
+          finalDocument: typeof finalDocument === "string" && finalDocument ? finalDocument : undefined,
+        };
+        if (selectedLectureId) {
+          setLocalMaterials((prev) => ({
+            ...prev,
+            [selectedLectureId]: [...(prev[selectedLectureId] || []), newItem],
+          }));
+        }
+      }
+      if (courseDetail?.courseId) refetchCourseContents(courseDetail.courseId);
+      setSubmitting(false);
+    },
+    [materialSessionId, materialKeyword, selectedLectureId, courseDetail?.courseId, refetchCourseContents]
+  );
+
   const handleMaterialPhase3To5Async = React.useCallback(async () => {
     if (materialSessionId == null) return;
     setSubmitting(true);
     setMaterialAsyncTaskId(null);
-    try {
-      const res = await materialGenerationApi.runAsync({ sessionId: materialSessionId });
-      const taskId = res.taskId;
-      if (!taskId) {
-        window.alert(res.message || "작업 ID를 받지 못했습니다.");
-        return;
-      }
+    setStreamedMaterialContent("");
+    setStreamedMaterialProgress("작업 시작 중…");
+
+    const pollUntilDone = async (taskId: string) => {
       setMaterialAsyncTaskId(taskId);
-      const pollMs = 2500;
-      const maxAttempts = 720; // 30분
+      const pollMs = 5000;
+      const maxAttempts = 360;
       for (let i = 0; i < maxAttempts; i++) {
         let statusRes: { status?: string; documentUrl?: string; message?: string };
         try {
           statusRes = await tasksApi.getStatus(taskId);
-        } catch (pollErr) {
-          // Proxy/백엔드 일시 오류(ECONNRESET, 500 등) 시 대기 후 다음 폴링에서 재시도
+        } catch {
           await new Promise((r) => setTimeout(r, pollMs));
           continue;
         }
@@ -1067,51 +1159,76 @@ const MainContent: React.FC<MainContentProps> = ({
               const docRes = await materialGenerationApi.getDocument(materialSessionId);
               docUrl = docRes.documentUrl ?? (docRes as { url?: string }).url ?? null;
             } catch {
-              // getDocument 실패 시 무시, 아래 refetch로 목록만 갱신
+              /* ignore */
             }
           }
-          setMaterialAsyncTaskId(null);
-          setMaterialCompletedViaAsync(true);
-          if (docUrl) {
-            setMaterialFinalUrl(docUrl);
-            setMaterialGenStep(5);
-            const title = materialKeyword.trim() || "AI 자료";
-            const newItem: CenterItem = {
-              id: `material-${materialSessionId}-${Date.now()}`,
-              type: "material",
-              title: `${title} (문서)`,
-              meta: "자료",
-              createdAt: new Date().toISOString(),
-              fileUrl: docUrl,
-              generationSessionId: materialSessionId,
-            };
-            if (selectedLectureId) {
-              setLocalMaterials((prev) => ({
-                ...prev,
-                [selectedLectureId]: [...(prev[selectedLectureId] || []), newItem],
-              }));
-            }
-          }
-          // 완료 시 서버 목록 갱신 → BE에 등록된 강의자료(MD)가 목록에 표시되도록
-          if (courseDetail?.courseId) refetchCourseContents(courseDetail.courseId);
+          applyMaterialCompletion(docUrl);
           return;
         }
         if (s === "FAILED" || s === "ERROR") {
           window.alert(statusRes.message || "Phase 3~5 처리에 실패했습니다.");
           setMaterialAsyncTaskId(null);
+          setSubmitting(false);
           return;
         }
         await new Promise((r) => setTimeout(r, pollMs));
       }
       window.alert("처리 시간이 초과되었습니다. 잠시 후 작업 상태를 확인해 주세요.");
       setMaterialAsyncTaskId(null);
+      setSubmitting(false);
+    };
+
+    try {
+      const res = await materialGenerationApi.runAsync({ sessionId: materialSessionId });
+      const taskId = res.taskId;
+      if (!taskId) {
+        window.alert(res.message || "작업 ID를 받지 못했습니다.");
+        setSubmitting(false);
+        return;
+      }
+      setMaterialAsyncTaskId(taskId);
+      setStreamedMaterialProgress("스트림 연결 중…");
+
+      materialStreamAbortRef.current = materialGenerationApi.streamPhase(
+        materialSessionId,
+        5,
+        {
+          onProgress: (data) => {
+            if (data.progressPercentage != null) setStreamedMaterialProgress(`${data.progressPercentage}%`);
+            else if (data.message) setStreamedMaterialProgress(data.message);
+            else if (data.currentPhase) setStreamedMaterialProgress(data.currentPhase);
+          },
+          onContent: (chunk) => {
+            setStreamedMaterialContent((prev) => prev + chunk);
+          },
+          onDone: (data) => {
+            materialStreamAbortRef.current = null;
+            if (typeof data.finalDocument === "string" && data.finalDocument) {
+              setMaterialFinalDocument(data.finalDocument);
+            } else {
+              setMaterialFinalDocument(null);
+            }
+            let docUrl: string | null = null;
+            if (typeof data.finalDocument === "string" && data.finalDocument) {
+              docUrl = URL.createObjectURL(new Blob([data.finalDocument], { type: "text/markdown; charset=UTF-8" }));
+            } else if (typeof data.documentUrl === "string" && data.documentUrl) {
+              docUrl = data.documentUrl;
+            }
+            applyMaterialCompletion(docUrl, data.finalDocument);
+          },
+          onError: (err) => {
+            materialStreamAbortRef.current = null;
+            setStreamedMaterialProgress("스트림 종료. 상태 확인 중…");
+            window.alert(err.message || "스트림 연결에 실패했습니다. 상태 폴링으로 진행합니다.");
+            pollUntilDone(taskId);
+          },
+        }
+      );
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "Phase 3~5 실행에 실패했습니다.");
-      setMaterialAsyncTaskId(null);
-    } finally {
       setSubmitting(false);
     }
-  }, [materialSessionId, materialKeyword, selectedLectureId, courseDetail?.courseId, refetchCourseContents]);
+  }, [materialSessionId, applyMaterialCompletion]);
 
   const handleMaterialPhase3 = React.useCallback(async () => {
     if (materialSessionId == null) return;
@@ -1147,10 +1264,18 @@ const MainContent: React.FC<MainContentProps> = ({
     if (materialSessionId == null) return;
     setSubmitting(true);
     try {
-      const res = await materialGenerationApi.phase5({ sessionId: materialSessionId });
-      // 백엔드가 documentUrl 또는 finalDocument(문서 URL)를 내려줄 수 있으므로 둘 다 지원
-      const url = (res as any).documentUrl ?? (res as any).finalDocument ?? null;
-      setMaterialFinalUrl(typeof url === "string" && url.length > 0 ? url : null);
+      const res = await materialGenerationApi.phase5({ sessionId: materialSessionId }) as { documentUrl?: string; finalDocument?: string };
+      // 화면에 띄울 값은 반드시 finalDocument. documentUrl은 다운로드/링크용.
+      if (typeof res.finalDocument === "string" && res.finalDocument) {
+        setMaterialFinalDocument(res.finalDocument);
+        setMaterialFinalUrl(typeof res.documentUrl === "string" && res.documentUrl ? res.documentUrl : null);
+      } else if (typeof res.documentUrl === "string" && res.documentUrl) {
+        setMaterialFinalUrl(res.documentUrl);
+        setMaterialFinalDocument(null);
+      } else {
+        setMaterialFinalUrl(null);
+        setMaterialFinalDocument(null);
+      }
     } catch (e) {
       window.alert(e instanceof Error ? e.message : "최종 문서 생성에 실패했습니다.");
     } finally {
@@ -1168,11 +1293,12 @@ const MainContent: React.FC<MainContentProps> = ({
     const newItem: CenterItem = {
       id: `material-${materialSessionId ?? Date.now()}`,
       type: "material",
-      title: materialFinalUrl ? `${title} (문서)` : title,
+      title: (materialFinalUrl || materialFinalDocument) ? `${title} (문서)` : title,
       meta: "자료",
       createdAt: new Date().toISOString(),
       fileUrl: materialFinalUrl ?? undefined,
       generationSessionId: materialSessionId ?? undefined,
+      finalDocument: materialFinalDocument ?? undefined,
     };
     if (selectedLectureId) {
       setLocalMaterials((prev) => ({
@@ -1182,7 +1308,7 @@ const MainContent: React.FC<MainContentProps> = ({
     }
     resetMaterialGenModal();
     setMaterialGenModalOpen(false);
-  }, [materialKeyword, materialSessionId, materialFinalUrl, selectedLectureId, resetMaterialGenModal, materialCompletedViaAsync]);
+  }, [materialKeyword, materialSessionId, materialFinalUrl, materialFinalDocument, selectedLectureId, resetMaterialGenModal, materialCompletedViaAsync]);
 
   const handleExamGenAsyncSubmit = React.useCallback(async () => {
     if (!examTopic.trim()) return;
@@ -1551,10 +1677,29 @@ const MainContent: React.FC<MainContentProps> = ({
     }
   }, [courseDetail?.courseId, assessmentTitle, assessmentType, assessmentDueDate]);
 
+  /** AI 생성 자료 상세: sessionId로 document API URL 반환 (상대 경로 → 프록시/동일 origin에서 동작) */
+  const getMaterialDocumentPreviewUrl = React.useCallback((sessionId: number) => {
+    return `/api/materials/generation/${sessionId}/document`;
+  }, []);
+
   const handleCardClick = React.useCallback((item: CenterItem) => {
     if (item.materialId != null) {
       setPreviewMaterialId(item.materialId);
       setPreviewFileUrl(null);
+      setPreviewFileName(item.title || null);
+      return;
+    }
+    // AI 생성 자료: finalDocument(마크다운 본문)가 있으면 fetch 없이 그대로 표시
+    if (typeof item.finalDocument === "string" && item.finalDocument) {
+      setPreviewFileUrl(item.finalDocument);
+      setPreviewMaterialId(null);
+      setPreviewFileName(item.title || null);
+      return;
+    }
+    // sessionId만 있으면 document API URL로 미리보기
+    if (item.generationSessionId != null) {
+      setPreviewFileUrl(getMaterialDocumentPreviewUrl(item.generationSessionId));
+      setPreviewMaterialId(null);
       setPreviewFileName(item.title || null);
       return;
     }
@@ -1580,7 +1725,7 @@ const MainContent: React.FC<MainContentProps> = ({
     if (item.examSessionId) {
       void openExamSessionDetail(item.examSessionId);
     }
-  }, [openExamSessionDetail]);
+  }, [openExamSessionDetail, getMaterialDocumentPreviewUrl]);
 
   const toggleCourseMenu = (courseId: number) => {
     setOpenCourseMenuId((prev) => (prev === courseId ? null : courseId));
@@ -2989,6 +3134,19 @@ const MainContent: React.FC<MainContentProps> = ({
                   {submitting && materialAsyncTaskId ? (
                     <>
                       <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>챕터·검증·최종 문서를 생성하고 있습니다.</p>
+                      {streamedMaterialProgress && (
+                        <p className={`text-xs font-medium ${isDarkMode ? "text-emerald-400" : "text-emerald-700"}`}>{streamedMaterialProgress}</p>
+                      )}
+                      {(streamedMaterialContent.length > 0) && (
+                        <div className={`rounded-lg border overflow-hidden max-h-48 min-h-[8rem] flex flex-col ${isDarkMode ? "bg-zinc-800 border-zinc-600" : "bg-gray-50 border-gray-200"}`}>
+                          <p className={`shrink-0 px-3 py-1.5 text-xs font-medium ${isDarkMode ? "text-gray-400 bg-zinc-800" : "text-gray-500 bg-gray-100"}`}>실시간 미리보기</p>
+                          <div className={`flex-1 min-h-0 overflow-y-auto p-3 text-sm ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}>
+                            <article className="prose prose-sm max-w-none dark:prose-invert [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words">
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamedMaterialContent}</ReactMarkdown>
+                            </article>
+                          </div>
+                        </div>
+                      )}
                       <p className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>아래 [닫기]를 누르면 모달만 닫히고, 작업은 백그라운드에서 계속됩니다. 완료되면 목록에 자동으로 추가됩니다.</p>
                       <div className="flex gap-2">
                         <button type="button" onClick={() => setMaterialGenModalOpen(false)} className={`px-4 py-2 text-sm rounded font-medium ${isDarkMode ? "bg-zinc-700 text-gray-200" : "bg-gray-200 text-gray-800"}`}>닫고 다른 작업하기</button>
@@ -3014,16 +3172,16 @@ const MainContent: React.FC<MainContentProps> = ({
                 </div>
               )}
 
-              {/* Step 5: 최종 문서 생성 및 완료 */}
+              {/* Step 5: 최종 문서 생성 및 완료 — 화면에는 반드시 finalDocument만 사용 */}
               {materialGenStep === 5 && (
                 <div className="space-y-3">
                   {materialVerifiedSummary && <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>{materialVerifiedSummary}</p>}
-                  {materialFinalUrl == null ? (
+                  {materialFinalDocument == null && materialFinalUrl == null ? (
                     <>
                       {materialCompletedViaAsync ? (
                         <>
                           <p className={`text-sm ${isDarkMode ? "text-amber-300" : "text-amber-700"}`}>문서 링크가 아직 반영되지 않았을 수 있습니다.</p>
-                          <p className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>백엔드에서 완료 후 documentUrl을 내려주면 여기서 보입니다. 잠시 후 목록에서 확인하거나 닫아 주세요.</p>
+                          <p className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>백엔드에서 완료 후 finalDocument/documentUrl을 내려주면 여기서 보입니다. 잠시 후 목록에서 확인하거나 닫아 주세요.</p>
                           <button type="button" onClick={() => { resetMaterialGenModal(); setMaterialGenModalOpen(false); }} className={`px-4 py-2 text-sm rounded ${isDarkMode ? "bg-zinc-700 text-gray-200" : "bg-gray-200 text-gray-800"}`}>닫기</button>
                         </>
                       ) : (
@@ -3036,6 +3194,13 @@ const MainContent: React.FC<MainContentProps> = ({
                   ) : (
                     <>
                       <p className={`text-sm ${isDarkMode ? "text-green-300" : "text-green-700"}`}>문서 생성이 완료되었습니다.</p>
+                      {materialFinalDocument && (
+                        <div className={`rounded border overflow-auto max-h-48 p-3 text-left ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-gray-200" : "bg-gray-50 border-gray-200 text-gray-900"}`}>
+                          <article className="prose prose-sm max-w-none dark:prose-invert [&_pre]:max-w-full [&_pre]:overflow-x-auto">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{materialFinalDocument}</ReactMarkdown>
+                          </article>
+                        </div>
+                      )}
                       {materialFinalUrl && (
                         <p className="text-sm">
                           <a href={materialFinalUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-600 underline">문서 보기/다운로드</a>
