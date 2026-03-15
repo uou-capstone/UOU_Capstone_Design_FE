@@ -1318,6 +1318,98 @@ export const materialGenerationApi = {
       { method: "POST" }
     );
   },
+
+  /**
+   * Phase N 스트리밍 (GET /api/materials/generation/phaseN/stream?sessionId=...)
+   * SSE 또는 청크 스트림으로 진행률·내용을 실시간 수신. 인증 필요.
+   */
+  streamPhase: (
+    sessionId: number,
+    phase: 1 | 2 | 3 | 4 | 5,
+    callbacks: {
+      onProgress?: (data: { progressPercentage?: number; message?: string; currentPhase?: string }) => void;
+      onContent?: (chunk: string) => void;
+      onDone?: (data: { finalDocument?: string; documentUrl?: string }) => void;
+      onError?: (err: Error) => void;
+    }
+  ): (() => void) => {
+    const endpoint = `/api/materials/generation/phase${phase}/stream?sessionId=${encodeURIComponent(sessionId)}`;
+    const isDevHost =
+      typeof window !== "undefined" &&
+      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+    const shouldUseViteProxy = isDevHost && endpoint.startsWith("/api");
+    const url = shouldUseViteProxy ? endpoint : (API_BASE_URL ? `${API_BASE_URL}${endpoint}` : endpoint);
+    const token = getAuthToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+
+    let cancelled = false;
+    const abortController = new AbortController();
+
+    (async () => {
+      try {
+        const res = await fetch(url, { method: "GET", headers, mode: "cors", credentials: "omit", signal: abortController.signal });
+        if (!res.ok) {
+          callbacks.onError?.(new Error(`스트림 요청 실패: ${res.status}`));
+          return;
+        }
+        const contentType = (res.headers.get("Content-Type") || "").toLowerCase();
+        const isSSE = contentType.includes("text/event-stream");
+        const reader = res.body?.getReader();
+        if (!reader) {
+          callbacks.onError?.(new Error("스트림 본문을 읽을 수 없습니다."));
+          return;
+        }
+        const decoder = new TextDecoder();
+        let buffer = "";
+        while (!cancelled) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          if (isSSE) {
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+            let eventData = "";
+            for (const line of lines) {
+              if (line.startsWith("data:")) {
+                try {
+                  eventData = line.slice(5).trim();
+                  const data = eventData ? (JSON.parse(eventData) as Record<string, unknown>) : {};
+                  if (data.finalDocument != null || data.documentUrl != null) {
+                    callbacks.onDone?.({
+                      finalDocument: typeof data.finalDocument === "string" ? data.finalDocument : undefined,
+                      documentUrl: typeof data.documentUrl === "string" ? data.documentUrl : undefined,
+                    });
+                  } else if (data.progressPercentage != null || data.message != null || data.currentPhase != null) {
+                    callbacks.onProgress?.({
+                      progressPercentage: typeof data.progressPercentage === "number" ? data.progressPercentage : undefined,
+                      message: typeof data.message === "string" ? data.message : undefined,
+                      currentPhase: typeof data.currentPhase === "string" ? data.currentPhase : undefined,
+                    });
+                  } else if (typeof data.chunk === "string") {
+                    callbacks.onContent?.(data.chunk);
+                  }
+                } catch {
+                  /* ignore parse error for non-JSON lines */
+                }
+              }
+            }
+          } else {
+            callbacks.onContent?.(buffer);
+            buffer = "";
+          }
+        }
+        if (buffer.trim() && !isSSE) callbacks.onContent?.(buffer);
+      } catch (e) {
+        if (!cancelled && e instanceof Error && e.name !== "AbortError") callbacks.onError?.(e);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      abortController.abort();
+    };
+  },
 };
 
 export const tasksApi = {
