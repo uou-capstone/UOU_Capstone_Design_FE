@@ -76,14 +76,12 @@ const ProfileMenu: React.FC = () => {
     navigate("/login");
   };
 
-  // 라이트/다크 동일: 다크 톤 (#2D2D2D, Set up profile #454545, 푸터 #252525)
-  const dropdownBg = "bg-[#2D2D2D]";
-  const dropdownBorder = "border-[#404040]";
-  const textPrimary = "text-white";
-  const textMuted = "text-[#9CA3AF]";
-  const hoverBg = "hover:bg-[#3D3D3D]";
-  const buttonMutedBg = "bg-[#454545]";
-  const badgeBg = "bg-[#3D3D3D] text-white";
+  // Mobbin 스타일 유사 글래스모픽 토큰
+  const textPrimary = "text-glass-text-primary";
+  const textMuted = "text-glass-text-secondary";
+  const hoverRow = "hover:bg-glass-background-primary-hover";
+  const secondaryBg = "bg-glass-background-secondary";
+  const badgeBg = "bg-glass-background-unique-badge text-glass-text-primary";
 
   return (
     <>
@@ -117,7 +115,7 @@ const ProfileMenu: React.FC = () => {
         createPortal(
           <div
             data-profile-menu-dropdown
-            className={`fixed z-[9999] rounded-[10px] shadow-xl border ${dropdownBorder} ${dropdownBg} overflow-hidden`}
+            className="fixed z-[9999] flex flex-col items-stretch rounded-2xl w-[240px] bg-glass-background-primary text-glass-text-primary glass shadow-glass backdrop-blur-glass select-none overflow-hidden"
             style={{
               width: DROPDOWN_WIDTH,
               top: position.top,
@@ -126,30 +124,56 @@ const ProfileMenu: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             {/* 상단: 사용자 정보 + Set up profile */}
-            <div className="px-4 pt-4 pb-3">
-              <p className={`font-bold ${textPrimary}`}>
-                {user?.fullName ?? "Guest"}
-              </p>
-              <p className={`text-sm mt-0.5 ${textMuted}`}>
-                {user?.email ?? ""}
-              </p>
-              <button
-                type="button"
-                onClick={() => closeAndNavigate("/settings")}
-                className={`mt-3 w-full py-2 rounded-full text-sm font-medium ${buttonMutedBg} ${textPrimary} hover:opacity-90 transition-opacity`}
-              >
-                Set up profile
-              </button>
+            <div className="flex flex-col gap-y-[10px] px-[10px] pt-8 pb-4">
+              <div className="flex flex-col">
+                <div className={`truncate text-sm font-semibold ${textPrimary}`}>
+                  {user?.fullName ?? "Guest"}
+                </div>
+                <div className={`truncate text-xs ${textMuted}`}>
+                  {user?.email ?? ""}
+                </div>
+              </div>
+              <div className="flex flex-col">
+                <button
+                  type="button"
+                  onClick={() => closeAndNavigate("/settings")}
+                  className={`relative rounded-full flex items-center justify-center h-9 text-xs font-semibold px-3 ${secondaryBg} ${textPrimary} hover:bg-glass-background-secondary-hover focus-visible:ring-4 focus-visible:ring-[hsl(var(--blue-60)/50%)] cursor-pointer transition-colors`}
+                >
+                  <span className="truncate">Set up profile</span>
+                </button>
+              </div>
             </div>
 
-            {/* 메뉴 항목 */}
-            <div className="py-0">
-              <MenuItem icon={<PlusIcon />} label="Request content" onClick={() => closeAndNavigate("/")} hoverBg={hoverBg} textPrimary={textPrimary} />
-              <MenuItem icon={<SettingsIcon />} label="Settings" onClick={() => closeAndNavigate("/settings")} hoverBg={hoverBg} textPrimary={textPrimary} />
-              {/* Theme: 3-way toggle */}
-              <div className="px-4 py-3 flex items-center justify-between gap-3">
-                <span className={`text-sm ${textPrimary}`}>Theme</span>
-                <div className="flex rounded-lg overflow-hidden bg-[#404040]">
+            {/* 메뉴 그룹 */}
+            <div className="border-t border-glass-border-divider" />
+            <div className="flex flex-col items-stretch p-4 gap-1">
+              <MenuItem
+                icon={<PlusIcon />}
+                label="Request content"
+                onClick={() => closeAndNavigate("/")}
+                rowClass={hoverRow}
+                textPrimary={textPrimary}
+              />
+            </div>
+
+            <div className="h-px bg-glass-border-divider" />
+            <div className="flex flex-col items-stretch p-4 gap-1">
+              <MenuItem
+                icon={<SettingsIcon />}
+                label="Settings"
+                onClick={() => closeAndNavigate("/settings")}
+                rowClass={hoverRow}
+                textPrimary={textPrimary}
+              />
+            </div>
+
+            <div className="h-px bg-glass-border-divider" />
+            <div className="flex flex-col items-stretch p-4 gap-3">
+              <div className="flex h-9 w-full items-center justify-between gap-x-2 px-2">
+                <div className={`overflow-hidden text-xs font-semibold ${textPrimary}`}>
+                  Theme
+                </div>
+                <div className="relative isolate w-fit select-none rounded-full bg-glass-background-secondary p-1 flex items-center gap-1 h-9">
                   <ThemeOption
                     active={themeMode === "light"}
                     onClick={() => setThemeMode("light")}
@@ -170,40 +194,49 @@ const ProfileMenu: React.FC = () => {
                   />
                 </div>
               </div>
-              <MenuItem icon={null} label="Pricing" onClick={() => {}} hoverBg={hoverBg} textPrimary={textPrimary} />
-              <MenuItem icon={null} label="Changelog" onClick={() => {}} hoverBg={hoverBg} textPrimary={textPrimary} />
-              <MenuItem icon={null} label="Blog" onClick={() => {}} hoverBg={hoverBg} textPrimary={textPrimary} />
-              <MenuItem icon={null} label="Careers" onClick={() => {}} external hoverBg={hoverBg} textPrimary={textPrimary} />
-              <MenuItem icon={null} label="Merch" badge="New" badgeBg={badgeBg} onClick={() => {}} external hoverBg={hoverBg} textPrimary={textPrimary} />
-              <MenuItem icon={null} label="Support" onClick={() => {}} external hoverBg={hoverBg} textPrimary={textPrimary} />
-              <MenuItem icon={<LogOutIcon />} label="Log out" onClick={handleLogout} hoverBg={hoverBg} textPrimary={textPrimary} />
             </div>
 
-            {/* 푸터: Privacy, Terms, Copyright, X */}
-            <div
-              className={`px-4 py-3 flex items-center justify-between ${textMuted} text-xs bg-[#252525]`}
-            >
-              <div className="flex gap-3">
+            <div className="h-px bg-glass-border-divider" />
+            <div className="flex flex-col items-stretch p-4 gap-1">
+              <MenuItem icon={null} label="Pricing" onClick={() => {}} rowClass={hoverRow} textPrimary={textPrimary} />
+              <MenuItem icon={null} label="Changelog" onClick={() => {}} rowClass={hoverRow} textPrimary={textPrimary} />
+              <MenuItem icon={null} label="Blog" onClick={() => {}} rowClass={hoverRow} textPrimary={textPrimary} />
+              <MenuItem icon={null} label="Careers" onClick={() => {}} external rowClass={hoverRow} textPrimary={textPrimary} />
+              <MenuItem icon={null} label="Merch" badge="New" badgeBg={badgeBg} onClick={() => {}} external rowClass={hoverRow} textPrimary={textPrimary} />
+              <MenuItem icon={null} label="Support" onClick={() => {}} external rowClass={hoverRow} textPrimary={textPrimary} />
+              <MenuItem icon={<LogOutIcon />} label="Log out" onClick={handleLogout} rowClass={hoverRow} textPrimary={textPrimary} />
+            </div>
+
+            <div className="h-px bg-glass-border-divider" />
+            {/* 푸터 */}
+            <div className="flex h-9 flex-row items-center justify-between px-4 text-[11px] leading-none text-glass-text-secondary">
+              <div className="flex flex-row items-center justify-start gap-3">
                 <button
                   type="button"
-                  className={`${hoverBg} rounded px-1 -mx-1`}
+                  className="text-[11px] hover:text-glass-text-primary"
                   onClick={() => {}}
                 >
                   Privacy
                 </button>
                 <button
                   type="button"
-                  className={`${hoverBg} rounded px-1 -mx-1`}
+                  className="text-[11px] hover:text-glass-text-primary"
                   onClick={() => {}}
                 >
                   Terms
                 </button>
-                <span>Copyright</span>
+                <button
+                  type="button"
+                  className="text-[11px] hover:text-glass-text-primary"
+                  onClick={() => {}}
+                >
+                  Copyright
+                </button>
               </div>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                className={`p-1 -mr-1 rounded ${hoverBg} ${textPrimary}`}
+                className="p-1 rounded hover:text-glass-text-primary"
                 aria-label="닫기"
               >
                 ✕
@@ -247,7 +280,7 @@ function MenuItem({
   icon,
   label,
   onClick,
-  hoverBg,
+  rowClass,
   textPrimary,
   external,
   badge,
@@ -256,7 +289,7 @@ function MenuItem({
   icon: React.ReactNode | null;
   label: string;
   onClick: () => void;
-  hoverBg: string;
+  rowClass: string;
   textPrimary: string;
   external?: boolean;
   badge?: string;
@@ -266,7 +299,7 @@ function MenuItem({
     <button
       type="button"
       onClick={onClick}
-      className={`w-full px-4 py-2.5 flex items-center gap-3 text-left text-sm ${textPrimary} ${hoverBg} transition-colors`}
+      className={`flex h-9 items-center justify-center rounded-xl px-[10px] gap-x-2 cursor-pointer focus:bg-glass-background-primary-hover text-xs font-semibold ${textPrimary} ${rowClass}`}
     >
       {icon && <span className="w-4 h-4 flex items-center justify-center shrink-0">{icon}</span>}
       {!icon && <span className="w-4 shrink-0" />}
