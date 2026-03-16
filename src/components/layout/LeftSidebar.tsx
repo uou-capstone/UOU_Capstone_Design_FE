@@ -13,15 +13,8 @@ import { lectureApi, type CourseDetail, type LectureResponseDto } from "../../se
 
 type ViewMode = "course-list" | "course-detail";
 
-type MenuItem =
-  | "dashboard"
-  | "lectures"
-  | "assignments"
-  | "exam-creation"
-  | "reports"
-  | "student-management"
-  | "settings"
-  | "help";
+// 좌측 메뉴는 강의만, 설정은 하단 프로필에서 진입
+type MenuItem = "lectures" | "settings";
 
 interface LeftSidebarProps {
   width?: number;
@@ -60,21 +53,10 @@ const MenuItemIcon: React.FC<{ type: MenuItem; className?: string }> = ({
   className,
 }) => {
   const iconPaths: Record<MenuItem, string> = {
-    dashboard:
-      "M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6",
     lectures:
       "M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253",
-    assignments:
-      "M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z",
-    "exam-creation":
-      "M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z",
-    reports:
-      "M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z",
-    "student-management":
-      "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z",
     settings:
       "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z",
-    help: "M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
   };
 
   return (
@@ -173,7 +155,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
       ? user.role
       : null;
   const [internalSelectedMenu, setInternalSelectedMenu] =
-    useState<MenuItem>("dashboard");
+    useState<MenuItem>("lectures");
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const [isHomeHovered, setIsHomeHovered] = useState(false);
   const profileDropdownRef = useRef<HTMLDivElement>(null);
@@ -201,7 +183,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
       "flex items-center rounded-lg text-sm transition-all duration-300 cursor-pointer min-h-[30px]",
   };
 
-  const sidebarBgClass = isDarkMode ? "bg-zinc-900" : "bg-gray-50";
+  const sidebarBgClass = isDarkMode ? "bg-[#141414]" : "bg-[#ffffff]";
   const sidebarTextClass = isDarkMode ? "text-white" : "text-[#0D0D0D]";
   const buttonDefaultTextClass = isDarkMode ? "text-white" : "text-[#0D0D0D]";
   const buttonDefaultHoverClass = isDarkMode ? "hover:bg-zinc-700" : "hover:bg-zinc-200";
@@ -238,7 +220,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
   }, [logout, navigate]);
 
   const handleHomeClick = useCallback(() => {
-    handleMenuSelect("dashboard");
+    handleMenuSelect("lectures");
     navigate("/");
   }, [handleMenuSelect, navigate]);
 
@@ -311,27 +293,13 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
   }, [isProfileDropdownOpen, updateDropdownPosition, width, isCollapsed]);
 
   const menuStructure = useMemo(() => {
-    const learningMenu: MenuItem[] = [
-      "dashboard",
-      "lectures",
-      "assignments",
-      "exam-creation",
-    ];
-    const managementMenu: MenuItem[] = ["reports", "student-management"];
-    const helpMenu: MenuItem[] = ["help"];
-
-    return { learningMenu, managementMenu, helpMenu };
+    const learningMenu: MenuItem[] = ["lectures"];
+    return { learningMenu };
   }, []);
 
   const menuLabels: Record<MenuItem, string> = {
-    dashboard: "대시보드",
     lectures: "강의",
-    assignments: "과제",
-    "exam-creation": "시험",
-    reports: "보고서",
-    "student-management": "학생관리",
     settings: "설정",
-    help: "도움말",
   };
 
   const sortedLectures = useMemo(() => {
@@ -509,6 +477,16 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     setIsLectureModalOpen(true);
   };
 
+  React.useEffect(() => {
+    const handleOpenLecture = () => {
+      openLectureModal();
+    };
+    window.addEventListener("open-lecture-modal" as any, handleOpenLecture as any);
+    return () => {
+      window.removeEventListener("open-lecture-modal" as any, handleOpenLecture as any);
+    };
+  }, [openLectureModal]);
+
   const closeLectureModal = () => {
     if (isCreatingLecture) return;
     setIsLectureModalOpen(false);
@@ -602,7 +580,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     >
                       <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
                         <MenuItemIcon
-                          type="dashboard"
+                          type="lectures"
                           className="w-[20px] h-[20px]"
                         />
                       </div>
@@ -631,7 +609,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   >
                     <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
                       <MenuItemIcon
-                        type="dashboard"
+                        type="lectures"
                         className="w-[20px] h-[20px]"
                       />
                     </div>
@@ -658,49 +636,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
           {viewMode === "course-detail" ? (
             <div className="flex flex-col gap-2 py-2">
               <div className="flex flex-col gap-1">{renderLectureList()}</div>
-              {isTeacher && (
-                <button
-                  type="button"
-                  onClick={openLectureModal}
-                  className={`mx-[6px] ${commonStyles.buttonBase} mt-1 ${
-                    isCollapsed ? "justify-center" : "justify-start"
-                  } px-3 py-2 border border-dashed text-sm font-medium leading-5 gap-2 transition-colors ${
-                    isDarkMode
-                      ? `border-zinc-700 text-white hover:border-emerald-500 hover:text-emerald-300 hover:bg-emerald-500/10`
-                      : `${buttonDefaultTextClass} border-gray-300 hover:border-emerald-500 hover:text-emerald-600 hover:bg-emerald-500/10`
-                  }`}
-                >
-                  {isCollapsed ? (
-                    <span className="text-sm font-semibold">＋</span>
-                  ) : (
-                    <>
-                      <span className="text-sm font-semibold">＋</span>
-                      <span className="truncate">새 강의 만들기</span>
-                    </>
-                  )}
-                </button>
-              )}
             </div>
           ) : (
             <div className="flex flex-col gap-2 py-2">
               {renderMenuSection(menuStructure.learningMenu)}
-
-              <div
-                className={`mx-[6px] border-t my-1 ${
-                  commonStyles.transition
-                } ${
-                  isCollapsed ? "opacity-0 h-0 my-0" : "opacity-100 h-px"
-                } ${dividerClass}`}
-              />
-              {isTeacher && renderMenuSection(menuStructure.managementMenu)}
-              <div
-                className={`mx-[6px] border-t my-1 ${
-                  commonStyles.transition
-                } ${
-                  isCollapsed ? "opacity-0 h-0 my-0" : "opacity-100 h-px"
-                } ${dividerClass}`}
-              />
-              {renderMenuSection(menuStructure.helpMenu)}
             </div>
           )}
         </div>

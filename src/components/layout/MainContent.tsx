@@ -23,18 +23,10 @@ import {
 } from "../../services/api";
 import RightSidebar from "./RightSidebar";
 import SettingsPage from "../pages/SettingsPage";
-import HelpPage from "../pages/HelpPage";
 
 type ViewMode = "course-list" | "course-detail";
-type MenuItem = 
-  | "dashboard" 
-  | "lectures" 
-  | "assignments" 
-  | "exam-creation"
-  | "reports"
-  | "student-management"
-  | "settings" 
-  | "help";
+// 메인 메뉴는 강의/설정만 사용
+type MenuItem = "lectures" | "settings";
 
 type ItemType = "material" | "exam" | "assessment";
 type CenterItem = {
@@ -93,6 +85,7 @@ interface MainContentProps {
   isCourseDetailLoading: boolean;
   courseDetailError: string | null;
   selectedLectureId?: number | null;
+  onSelectLecture?: (lectureId: number) => void;
   selectedMenu?: MenuItem;
   onEditCourse?: (course: Course) => void;
   onDeleteCourse?: (course: Course) => void;
@@ -109,10 +102,11 @@ const MainContent: React.FC<MainContentProps> = ({
   isCourseDetailLoading,
   courseDetailError,
   selectedLectureId,
+  onSelectLecture,
   onEditCourse,
   onDeleteCourse,
   onCourseCreated,
-  selectedMenu = "dashboard",
+  selectedMenu = "lectures",
 }) => {
   const { isDarkMode } = useTheme();
   const { user } = useAuth();
@@ -1920,54 +1914,10 @@ const MainContent: React.FC<MainContentProps> = ({
     return (
       <div className="flex flex-col gap-1.5 h-full">
         <div className={`flex-1 flex flex-col min-h-0 rounded-xl overflow-hidden ${
-          isDarkMode ? "bg-zinc-800" : "bg-white"
+          isDarkMode ? "bg-[#141414]" : "bg-white"
         }`}>
-          <div className={`flex items-center justify-between gap-3 shrink-0 px-4 pt-0 pb-3 border-b ${
-            isDarkMode ? "border-zinc-700" : "border-gray-200"
-          }`}>
-            <div className="flex items-center gap-2 ml-auto">
-              {isTeacher && (
-                <div className="flex items-center gap-1 mr-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCourseListBulkEditMode((v) => !v);
-                      if (courseListBulkEditMode) setBulkSelectedCourseIds({});
-                      setOpenCourseMenuId(null);
-                    }}
-                    className={`px-2 py-1 text-[11px] rounded border cursor-pointer ${
-                      isDarkMode
-                        ? "bg-zinc-800 border-zinc-600 text-gray-200 hover:bg-zinc-700"
-                        : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100"
-                    }`}
-                  >
-                    {courseListBulkEditMode ? "삭제 취소" : "삭제"}
-                  </button>
-                  {courseListBulkEditMode && (
-                    <button
-                      type="button"
-                      onClick={() => void handleCourseListBulkDelete()}
-                      className="px-2 py-1 text-[11px] rounded border border-red-500 text-red-600 cursor-pointer hover:bg-red-50 dark:text-red-400 dark:border-red-500 dark:hover:bg-red-500/10"
-                    >
-                      선택 삭제
-                    </button>
-                  )}
-                </div>
-              )}
-              <select
-                value={courseListSortOrder}
-                onChange={(e) => setCourseListSortOrder(e.target.value as "recent" | "name")}
-                className={`text-[11px] px-2 py-1 rounded border cursor-pointer ${
-                  isDarkMode ? "bg-zinc-800 border-zinc-600 text-gray-200" : "bg-white border-gray-200 text-gray-700"
-                }`}
-              >
-                <option value="recent">최신순</option>
-                <option value="name">이름순</option>
-              </select>
-            </div>
-          </div>
-          <div className={`flex-1 overflow-y-auto p-4 ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-3 gap-4">
+          <div className={`flex-1 overflow-y-auto ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-6">
           {sortedCourses.map((course) => {
             const checked = !!bulkSelectedCourseIds[course.courseId];
             return (
@@ -1989,13 +1939,13 @@ const MainContent: React.FC<MainContentProps> = ({
                   else handleCourseSelect(course.courseId);
                 }
               }}
-              className={`text-left p-5 rounded-xl border shadow-sm transition-all flex flex-col h-32 cursor-pointer focus:outline-none relative ${
+              className={`text-left rounded-2xl transition-all flex flex-col cursor-pointer focus:outline-none relative overflow-hidden ${
                 isDarkMode
-                  ? "bg-zinc-900 border-zinc-700 hover:border-zinc-500 hover:shadow-zinc-500/30"
-                  : "bg-white border-gray-200 hover:border-emerald-500/40 hover:shadow-emerald-500/20"
-              } ${courseListBulkEditMode && checked ? (isDarkMode ? "ring-2 ring-emerald-500" : "ring-2 ring-emerald-500") : ""} focus:ring-2 ${
-                isDarkMode ? "focus:ring-zinc-500/60 focus:ring-offset-zinc-900" : "focus:ring-emerald-500/60 focus:ring-offset-white"
-              }`}
+                  ? "bg-[#ffffff14] border border-zinc-800"
+                  : "bg-[#4040401f] border border-[#E5E7EB]"
+              } ${courseListBulkEditMode && checked ? "ring-2 ring-emerald-500" : ""} focus:ring-2 ${
+                isDarkMode ? "focus:ring-zinc-500/60 focus:ring-offset-zinc-950" : "focus:ring-emerald-500/60 focus:ring-offset-white"
+              } shadow-sm`}
             >
               {courseListBulkEditMode && (
                 <label
@@ -2011,9 +1961,11 @@ const MainContent: React.FC<MainContentProps> = ({
                   />
                 </label>
               )}
-              <div className="flex flex-col h-full">
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <h3 className="text-base font-semibold line-clamp-2 flex-1">{course.title}</h3>
+              <div className="flex flex-col h-full p-6">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <h3 className="text-base font-semibold line-clamp-2 flex-1">
+                    {course.title}
+                  </h3>
                   {!courseListBulkEditMode && (
                   <div className="relative flex-shrink-0">
                     <button
@@ -2080,19 +2032,6 @@ const MainContent: React.FC<MainContentProps> = ({
             </div>
           );
           })}
-          {isTeacher && (
-            <button
-              type="button"
-              onClick={() => setIsCourseModalOpen(true)}
-              className={`h-32 rounded-xl border-2 border-dashed flex items-center justify-center transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:ring-offset-2 ${
-                isDarkMode
-                  ? "border-zinc-600 hover:border-zinc-500 hover:bg-zinc-700 text-gray-400 hover:text-gray-200 focus:ring-offset-zinc-900"
-                  : "border-gray-300 hover:border-emerald-500 hover:bg-gray-50 text-gray-400 hover:text-gray-600 focus:ring-offset-white"
-              }`}
-            >
-              <span className="text-2xl font-light leading-none">+</span>
-            </button>
-          )}
         </div>
           </div>
         </div>
@@ -2200,12 +2139,20 @@ const MainContent: React.FC<MainContentProps> = ({
         : `${selectedLecture.weekNumber}주차`
       : null;
 
+    const weekNumbers = Array.from(
+      new Set((courseDetail.lectures || []).map((lec) => lec.weekNumber))
+    ).sort((a, b) => {
+      if (a === 0) return -1;
+      if (b === 0) return 1;
+      return a - b;
+    });
+
     // 업로드한 자료 미리보기 (좌: 미리보기 | 우: 채팅) — fileUrl 또는 materialId로 표시
     if (previewFileUrl || previewMaterialId != null) {
       return (
         <div className="flex flex-col h-full">
           <div className={`flex items-center justify-between gap-3 shrink-0 px-4 py-2 border-b ${
-            isDarkMode ? "border-zinc-700 bg-zinc-800" : "border-gray-200 bg-white"
+            isDarkMode ? "border-zinc-700 bg-[#141414]" : "border-gray-200 bg-white"
           }`}>
             <div className="flex items-center gap-2">
               <button
@@ -2342,20 +2289,56 @@ const MainContent: React.FC<MainContentProps> = ({
             <span className="text-xs opacity-80">완료 시 목록에 자동 추가됩니다.</span>
           </div>
         )}
-        {/* 박스형 목록 + 정렬 + 추가 버튼 */}
-        <div className={`flex-1 flex flex-col min-h-0 rounded-xl overflow-hidden ${
-          isDarkMode ? "bg-zinc-800" : "bg-white"
+        {/* 상단 컨트롤 영역: N주차 목록 / 삭제 / 정렬 */}
+        <div className={`flex-1 flex flex-col min-h-0 overflow-hidden ${
+          isDarkMode ? "bg-[#141414]" : "bg-white"
         }`}>
-          <div className={`flex items-center justify-between gap-3 shrink-0 px-4 pt-0 pb-3 border-b ${
-          isDarkMode ? "border-zinc-700" : "border-gray-200"
-        }`}>
-            {currentWeekLabel && (
-              <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium ${
-                isDarkMode ? "bg-zinc-700 text-gray-300" : "bg-white border border-gray-200 text-gray-600"
-              }`}>
-                {currentWeekLabel}
-              </span>
-            )}
+          <div
+            className={`flex items-center justify-between gap-3 shrink-0 pb-3 border-b ${
+              isDarkMode ? "border-zinc-700" : "border-gray-200"
+            }`}
+          >
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pr-2">
+              {weekNumbers.map((week) => {
+                const label = week === 0 ? "OT" : `${week}주차`;
+                const isActive =
+                  selectedLecture &&
+                  selectedLecture.weekNumber === week;
+                return (
+                  <button
+                    key={week}
+                    type="button"
+                    onClick={() => {
+                      if (!onSelectLecture || !courseDetail.lectures) return;
+                      const target = courseDetail.lectures.find(
+                        (lec) => lec.weekNumber === week
+                      );
+                      if (target) {
+                        onSelectLecture(target.lectureId);
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap cursor-pointer transition-colors ${
+                      isActive
+                        ? "bg-emerald-600 text-white"
+                        : isDarkMode
+                        ? "bg-zinc-800 text-gray-200 hover:bg-zinc-700"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+              {!weekNumbers.length && (
+                <span
+                  className={`text-xs ${
+                    isDarkMode ? "text-gray-500" : "text-gray-400"
+                  }`}
+                >
+                  등록된 강의가 없습니다.
+                </span>
+              )}
+            </div>
             <div className="flex items-center gap-2 ml-auto">
               {isTeacher && (
                 <div className="flex items-center gap-1 mr-1">
@@ -2371,7 +2354,7 @@ const MainContent: React.FC<MainContentProps> = ({
                         setBulkSelectedIds({});
                       }
                     }}
-                    className={`px-2 py-1 text-[11px] rounded border cursor-pointer ${
+                    className={`px-2 py-1 text-[11px] cursor-pointer ${
                       isDarkMode
                         ? "bg-zinc-800 border-zinc-600 text-gray-200 hover:bg-zinc-700"
                         : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100"
@@ -2408,16 +2391,35 @@ const MainContent: React.FC<MainContentProps> = ({
               </select>
             </div>
           </div>
-          <div className={`flex-1 overflow-y-auto p-4 ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}>
+
+          {/* 강의 리소스 박스 그리드 영역 */}
+          <div
+            className={`flex-1 overflow-y-auto pt-3 ${
+              isDarkMode ? "text-gray-200" : "text-gray-800"
+            }`}
+          >
             {assessmentsLoading ? (
               <div className="flex items-center justify-center py-12 text-sm opacity-70">목록 불러오는 중...</div>
             ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 auto-rows-fr">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-6">
               {sortedItems.map((item) => {
               const selectable = isTeacher && (item.type === "material" || item.type === "exam");
               const checked = !!bulkSelectedIds[item.id];
               return (
-                <div key={item.id} className="relative group/card">
+              <div
+                key={item.id}
+                className={`text-left rounded-2xl transition-all flex flex-col cursor-pointer focus:outline-none relative overflow-hidden ${
+                  isDarkMode
+                    ? "bg-[#ffffff14] border border-zinc-800"
+                    : "bg-[#4040401f] border border-[#E5E7EB]"
+                } ${
+                  bulkEditMode && selectable && checked ? "ring-2 ring-emerald-500" : ""
+                } focus:ring-2 ${
+                  isDarkMode
+                    ? "focus:ring-zinc-500/60 focus:ring-offset-zinc-950"
+                    : "focus:ring-emerald-500/60 focus:ring-offset-white"
+                } shadow-sm relative group/card`}
+              >
                   <button
                     type="button"
                     onClick={() => {
@@ -2427,11 +2429,11 @@ const MainContent: React.FC<MainContentProps> = ({
                         handleCardClick(item);
                       }
                     }}
-                    className={`w-full rounded-xl border p-4 min-h-[100px] flex flex-col justify-between transition-colors cursor-pointer text-left ${
+                    className={`w-full h-full text-left flex flex-col p-6 ${
                       isDarkMode
-                        ? "bg-zinc-800 border-zinc-700 hover:border-zinc-600"
-                        : "bg-white border-gray-200 hover:border-gray-300"
-                    } ${bulkEditMode && selectable && checked ? (isDarkMode ? "ring-2 ring-emerald-500" : "ring-2 ring-emerald-500") : ""}`}
+                        ? "hover:bg-zinc-900/90"
+                        : ""
+                    }`}
                   >
                     <p className="text-sm font-medium truncate">{item.title}</p>
                     <p className={`text-xs mt-1 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}>
@@ -2456,63 +2458,6 @@ const MainContent: React.FC<MainContentProps> = ({
                 </div>
               );
               })}
-              <div className="relative min-h-[100px]" ref={addMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setAddMenuOpen((v) => !v)}
-                  className={`w-full h-full min-h-[100px] rounded-xl border-2 border-dashed flex items-center justify-center transition-colors cursor-pointer ${
-                    isDarkMode
-                      ? "border-zinc-600 hover:border-zinc-500 hover:bg-zinc-700 text-gray-400 hover:text-gray-200"
-                      : "border-gray-300 hover:border-gray-400 hover:bg-gray-50 text-gray-400 hover:text-gray-600"
-                  }`}
-                >
-                  <span className="text-2xl font-light leading-none">+</span>
-                </button>
-                {addMenuOpen && (
-                  <div
-                    className={`absolute right-0 top-full mt-1 z-20 min-w-[160px] rounded-lg border shadow-lg py-1 ${
-                      isDarkMode ? "bg-zinc-800 border-zinc-700" : "bg-white border-gray-200"
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => { setAddMenuOpen(false); if (selectedLectureId) setUploadModalOpen(true); else window.alert("강의를 먼저 선택해주세요."); }}
-                      className={`w-full text-left px-3 py-2 text-sm cursor-pointer ${
-                        isDarkMode ? "hover:bg-zinc-700 text-gray-200" : "hover:bg-gray-100 text-gray-800"
-                      }`}
-                    >
-                      자료 업로드
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setAddMenuOpen(false); if (selectedLectureId) { resetMaterialGenModal(); setMaterialGenModalOpen(true); } else window.alert("강의를 먼저 선택해주세요."); }}
-                      className={`w-full text-left px-3 py-2 text-sm cursor-pointer ${
-                        isDarkMode ? "hover:bg-zinc-700 text-gray-200" : "hover:bg-gray-100 text-gray-800"
-                      }`}
-                    >
-                      강의자료 생성
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setAddMenuOpen(false); if (selectedLectureId) setRightSidebarExamMode(true); else window.alert("강의를 먼저 선택해주세요."); }}
-                      className={`w-full text-left px-3 py-2 text-sm cursor-pointer ${
-                        isDarkMode ? "hover:bg-zinc-700 text-gray-200" : "hover:bg-gray-100 text-gray-800"
-                      }`}
-                    >
-                      시험 생성
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setAddMenuOpen(false); if (isTeacher) setAssessmentModalOpen(true); else window.alert("선생님만 평가를 만들 수 있습니다."); }}
-                      className={`w-full text-left px-3 py-2 text-sm cursor-pointer ${
-                        isDarkMode ? "hover:bg-zinc-700 text-gray-200" : "hover:bg-gray-100 text-gray-800"
-                      }`}
-                    >
-                      평가 만들기
-                    </button>
-                  </div>
-                )}
-              </div>
             </div>
             )}
           </div>
@@ -2521,52 +2466,22 @@ const MainContent: React.FC<MainContentProps> = ({
     );
   };
 
-  const getMenuName = (menu: MenuItem): string => {
-    const menuNames: Record<MenuItem, string> = {
-      dashboard: "대시보드",
-      lectures: "강의",
-      assignments: "과제",
-      "exam-creation": "시험생성",
-      reports: "보고서",
-      "student-management": "학생관리",
-      settings: "환경설정",
-      help: "도움말",
-    };
-    return menuNames[menu] || "이 기능";
-  };
-
   const renderCourseListHeader = () => {
-    if (viewMode !== "course-list" || selectedMenu !== "lectures") {
-      return null;
-    }
-
-    return (
-      <div
-        className={`h-[50px] px-4 flex items-center justify-between ${
-          isDarkMode ? "bg-zinc-800" : "bg-white"
-        }`}
-      >
-        <h2 className={`text-xl font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-          내 강의실
-        </h2>
-        <div className="flex items-center gap-2">
-          {isStudent && (
-            <button
-              type="button"
-              onClick={handleOpenJoinModal}
-              className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium cursor-pointer ${
-                isDarkMode
-                  ? "border-zinc-600 text-gray-100 hover:bg-zinc-700"
-                  : "border-emerald-500 text-emerald-700 hover:bg-emerald-50"
-              }`}
-            >
-              <span>강의실 참여</span>
-            </button>
-          )}
-        </div>
-      </div>
-    );
+    // 상단 글로벌 헤더(TopNav)만 사용하므로 별도 "내 강의실" 헤더는 표시하지 않음
+    return null;
   };
+
+  React.useEffect(() => {
+    const handleOpenCourse = () => {
+      if (!isTeacher) return;
+      if (viewMode !== "course-list") return;
+      setIsCourseModalOpen(true);
+    };
+    window.addEventListener("open-course-modal" as any, handleOpenCourse as any);
+    return () => {
+      window.removeEventListener("open-course-modal" as any, handleOpenCourse as any);
+    };
+  }, [isTeacher, viewMode]);
 
   const renderCourseDetailHeader = () => {
     if (viewMode !== "course-detail" || !courseDetail) {
@@ -2577,24 +2492,10 @@ const MainContent: React.FC<MainContentProps> = ({
 
     return (
       <div
-        className={`h-[50px] px-1.5 flex items-center justify-between ${
-          isDarkMode ? "bg-zinc-800" : "bg-white"
+        className={`h-[50px] flex items-center justify-end ${
+          isDarkMode ? "bg-[#141414]" : "bg-white"
         }`}
       >
-        <button
-          type="button"
-          onClick={onBackToCourses}
-          className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg transition-colors cursor-pointer ${
-            isDarkMode
-              ? "text-gray-200 hover:bg-zinc-700"
-              : "text-gray-700 hover:bg-zinc-200"
-          }`}
-        >
-          <svg className="w-[20px] h-[20px] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-          </svg>
-          <span className="text-sm font-medium">강의실 목록으로</span>
-        </button>
         <div className="flex items-center gap-2">
           {isTeacher && courseDetail?.courseId != null && (
             <button
@@ -2644,54 +2545,27 @@ const MainContent: React.FC<MainContentProps> = ({
   };
 
   const renderSettingsHeader = () => {
-    if (viewMode !== "course-list" || selectedMenu !== "settings") {
-      return null;
-    }
-
-    return (
-      <div
-        className={`h-[50px] px-4 flex items-center justify-between ${
-          isDarkMode ? "bg-zinc-800" : "bg-white"
-        }`}
-      >
-        <h2 className={`text-xl font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-          설정
-        </h2>
-      </div>
-    );
+    return null;
   };
 
   return (
     <>
-      <div className="flex-1 flex flex-col min-h-0">
+      <div
+        className={`flex-1 flex flex-col min-h-0 gap-1.5 transition-colors px-5 sm:px-6 lg:px-8 xl:px-20 ${
+          isDarkMode ? "bg-[#141414]" : "bg-white"
+        }`}
+      >
         {renderCourseListHeader()}
         {renderCourseDetailHeader()}
         {renderSettingsHeader()}
-        <div
-          className={`flex-1 min-h-0 pt-2 p-1.5 overflow-y-auto scrollbar-hide transition-colors ${
-            isDarkMode ? "bg-zinc-800" : "bg-white"
-          }`}
-        >
-        {viewMode === "course-list" ? (
-          selectedMenu === "settings" ? (
+        <div className="flex-1 min-h-0 overflow-y-auto scrollbar-hide">
+          {selectedMenu === "settings" ? (
             <SettingsPage />
-          ) : selectedMenu === "help" ? (
-            <HelpPage />
-          ) : selectedMenu === "lectures" ? (
+          ) : viewMode === "course-list" ? (
             renderCourseList()
           ) : (
-            <div className={`h-full flex items-center justify-center ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-              <div className="text-center space-y-2">
-                <p className="text-lg font-medium">미구현</p>
-                <p className="text-sm">
-                  {getMenuName(selectedMenu)}은(는) 아직 구현되지 않았습니다.
-                </p>
-              </div>
-            </div>
-          )
-        ) : (
-          renderCourseDetail()
-        )}
+            renderCourseDetail()
+          )}
         </div>
       </div>
 

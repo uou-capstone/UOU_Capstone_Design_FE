@@ -1,15 +1,16 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
-import { useTheme, type ThemeMode } from "../../contexts/ThemeContext";
+import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
 
 interface TopNavProps {
-  currentCourseTitle?: string | null;
+  isCourseDetail?: boolean;
   onNavigateHome?: () => void;
+  onOpenSettings?: () => void;
 }
 
-const TopNav: React.FC<TopNavProps> = ({ currentCourseTitle, onNavigateHome }) => {
-  const { isDarkMode, themeMode, setThemeMode } = useTheme();
+const TopNav: React.FC<TopNavProps> = ({ isCourseDetail, onNavigateHome, onOpenSettings }) => {
+  const { isDarkMode, setThemeMode } = useTheme();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [isUserMenuOpen, setIsUserMenuOpen] = React.useState(false);
@@ -68,43 +69,45 @@ const TopNav: React.FC<TopNavProps> = ({ currentCourseTitle, onNavigateHome }) =
 
   return (
     <header
-      className={`flex items-center justify-between px-6 py-3 h-14 border-b transition-colors ${
-        isDarkMode ? "bg-slate-700 border-slate-600" : "bg-white border-gray-100"
+      className={`flex items-center justify-between px-5 sm:px-6 lg:px-8 xl:px-20 py-1 h-[70px] transition-colors ${
+        isDarkMode ? "bg-[#141414]" : "bg-[#ffffff]"
       }`}
     >
       <div className="flex items-center gap-3 min-w-0">
-        {currentCourseTitle ? (
-          <>
-            <button
-              type="button"
-              onClick={handleNavigateHome}
-              className={`inline-flex items-center justify-center w-9 h-9 rounded-lg border transition-colors cursor-pointer ${
-                isDarkMode
-                  ? "border-gray-700 text-gray-200 hover:bg-gray-700"
-                  : "border-gray-200 text-gray-700 hover:bg-gray-100"
-              }`}
-              title="강의실 목록으로"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-              </svg>
-            </button>
-            <div
-              className={`truncate text-lg font-semibold ${
-                isDarkMode ? "text-white" : "text-gray-900"
-              }`}
-              title={currentCourseTitle}
-            >
-              {currentCourseTitle}
-            </div>
-          </>
-        ) : (
-          <div className={`text-lg font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
-            AI Tutor LMS
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={handleNavigateHome}
+          className={`truncate text-lg font-semibold ${
+            isDarkMode ? "text-white" : "text-gray-900"
+          }`}
+        >
+          AI Tutor LMS
+        </button>
       </div>
       <div className="flex items-center gap-4">
+        {user?.role === "TEACHER" && (
+          <div className="hidden items-center justify-center lg:flex">
+            <button
+              type="button"
+              onClick={() => {
+                if (isCourseDetail) {
+                  window.dispatchEvent(new Event("open-lecture-modal"));
+                } else {
+                  window.dispatchEvent(new Event("open-course-modal"));
+                }
+              }}
+              className={`relative rounded-full h-9 text-xs font-semibold px-3 cursor-pointer transition-colors ease-out ${
+                isDarkMode ? "bg-[#FFFFFF] text-[#141414] hover:bg-white/90" : "bg-[#141414] text-white hover:bg-black"
+              }`}
+            >
+              <span className="flex items-center justify-center gap-x-2">
+                  <span className="truncate whitespace-nowrap">
+                    {isCourseDetail ? " 강의 만들기" : " 강의실 만들기"}
+                  </span>
+              </span>
+            </button>
+          </div>
+        )}
         {user ? (
           <div className="relative" ref={userMenuRef}>
             <button
@@ -115,7 +118,7 @@ const TopNav: React.FC<TopNavProps> = ({ currentCourseTitle, onNavigateHome }) =
               aria-expanded={isUserMenuOpen}
             >
               <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-semibold text-sm cursor-pointer ${
+                className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-sm cursor-pointer ${
                   isDarkMode ? "bg-gray-600 hover:bg-gray-700" : "bg-gray-500 hover:bg-gray-600"
                 }`}
               >
@@ -181,6 +184,22 @@ const TopNav: React.FC<TopNavProps> = ({ currentCourseTitle, onNavigateHome }) =
                     </label>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsUserMenuOpen(false);
+                    if (onOpenSettings) {
+                      onOpenSettings();
+                    } else {
+                      navigate("/settings");
+                    }
+                  }}
+                  className={`w-full text-left px-3 py-2 text-xs font-medium cursor-pointer ${
+                    isDarkMode ? "text-slate-200 hover:bg-slate-600/60" : "text-gray-700 hover:bg-gray-100"
+                  }`}
+                >
+                  설정
+                </button>
                 <div className={`border-t ${isDarkMode ? "border-slate-600" : "border-gray-200"}`}>
                   <button
                     type="button"

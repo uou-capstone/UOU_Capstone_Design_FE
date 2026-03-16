@@ -1,26 +1,15 @@
 import React, { useState, useCallback, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
-import LeftSidebar from "./LeftSidebar.tsx";
 import MainContent from "./MainContent.tsx";
+import TopNav from "./TopNav.tsx";
 import { useCourses } from "../../hooks/useCourses";
 import type { Course, CourseDetail, LectureResponseDto } from "../../services/api";
 
 type ViewMode = "course-list" | "course-detail";
-type MenuItem = 
-  | "dashboard" 
-  | "lectures" 
-  | "assignments" 
-  | "exam-creation"
-  | "reports"
-  | "student-management"
-  | "settings" 
-  | "help";
+type MenuItem = "lectures" | "settings";
 
 type CourseLecture = NonNullable<NonNullable<CourseDetail["lectures"]>[number]>;
-
-const DEFAULT_LEFT_SIDEBAR_WIDTH = 220;
-const COLLAPSED_LEFT_WIDTH = 56;
 
 const getLastLectureStorageKey = (courseId: number) => `course_${courseId}_last_lecture`;
 
@@ -50,17 +39,10 @@ const AppLayout: React.FC = () => {
 
   const [currentCourseId, setCurrentCourseId] = useState<number | null>(null);
   const [currentLectureId, setCurrentLectureId] = useState<number | null>(null);
-
-  const [isLeftSidebarCollapsed, setIsLeftSidebarCollapsed] = useState(false);
-  const [isAutoCollapsed, setIsAutoCollapsed] = useState(false);
   
-  // 메뉴 상태 관리 (메인 페이지일 때만 사용)
-  const [selectedMenu, setSelectedMenu] = useState<MenuItem>("dashboard");
-
+  // 메뉴 상태 관리 (메인 페이지일 때만 사용) - 기본은 "강의"
+  const [selectedMenu, setSelectedMenu] = useState<MenuItem>("lectures");
   const viewMode: ViewMode = selectedCourseId ? "course-detail" : "course-list";
-
-  const resetLectureOutputs = useCallback(() => {}, []);
-
   const loadCourseDetail = useCallback(
     async (courseId: number) => {
       setIsCourseDetailLoading(true);
@@ -89,6 +71,19 @@ const AppLayout: React.FC = () => {
     fetchCourses();
   }, [fetchCourses]);
 
+  const resetLectureOutputs = useCallback(() => {
+    try {
+      if (selectedCourseId != null) {
+        localStorage.removeItem(getLastLectureStorageKey(selectedCourseId));
+      }
+      if (currentLectureId != null) {
+        localStorage.removeItem(`lecture_upload_${currentLectureId}`);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [selectedCourseId, currentLectureId]);
+
   useEffect(() => {
     if (!selectedCourseId) {
       setCourseDetail(null);
@@ -96,13 +91,10 @@ const AppLayout: React.FC = () => {
       setCurrentCourseId(null);
       setCurrentLectureId(null);
       resetLectureOutputs();
-      // 메인 페이지로 돌아올 때 대시보드로 리셋 (단, 메뉴가 이미 lectures로 설정되어 있으면 유지)
-      setSelectedMenu((prev) => (prev === "lectures" ? "lectures" : "dashboard"));
+      // 메인 페이지로 돌아올 때 항상 "강의" 메뉴로
+      setSelectedMenu("lectures");
       return;
     }
-
-    setCurrentCourseId(selectedCourseId);
-    setCurrentLectureId(null);
     resetLectureOutputs();
     loadCourseDetail(selectedCourseId);
   }, [selectedCourseId, loadCourseDetail, resetLectureOutputs]);
@@ -334,58 +326,18 @@ const AppLayout: React.FC = () => {
     [currentCourseId, deleteCourse, navigate, resetLectureOutputs]
   );
 
-  // 화면 크기에 따라 좌측 사이드바 자동 접기/펼치기 (반응형)
-  useEffect(() => {
-    const handleResize = () => {
-      const shouldAutoCollapse = window.innerWidth < 1024;
-      if (shouldAutoCollapse && !isAutoCollapsed) {
-        setIsAutoCollapsed(true);
-        setIsLeftSidebarCollapsed(true);
-      } else if (!shouldAutoCollapse && isAutoCollapsed) {
-        setIsAutoCollapsed(false);
-        setIsLeftSidebarCollapsed(false);
-      }
-    };
-
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [isAutoCollapsed]);
-
-  const effectiveLeftSidebarWidth = isLeftSidebarCollapsed
-    ? COLLAPSED_LEFT_WIDTH
-    : DEFAULT_LEFT_SIDEBAR_WIDTH;
-
-  const toggleLeftSidebar = () => {
-    setIsAutoCollapsed(false);
-    setIsLeftSidebarCollapsed((prev) => !prev);
-  };
-
   return (
     <div
-      className={`h-screen w-full flex overflow-hidden transition-colors ${
-        isDarkMode ? "bg-zinc-900 text-gray-100" : "bg-white text-gray-900"
+      className={`h-screen w-full flex flex-col overflow-hidden transition-colors gap-8 ${
+        isDarkMode ? "bg-[#141414] text-gray-100" : "bg-white text-gray-900"
       }`}
     >
-      {/* 좌측 사이드바 (항상 표시) */}
-      <LeftSidebar
-        width={effectiveLeftSidebarWidth}
-        expandedWidth={DEFAULT_LEFT_SIDEBAR_WIDTH}
-        viewMode={viewMode}
-        courseDetail={courseDetail}
-        selectedLectureId={currentLectureId}
-        onSelectLecture={handleLectureSelect}
-        onDeleteLecture={handleLectureDelete}
-        onEditLecture={handleLectureEdit}
-        onLectureCreated={handleLectureCreated}
-        isCourseDetailLoading={isCourseDetailLoading}
-        selectedMenu={selectedMenu}
-        onMenuSelect={setSelectedMenu}
-        isCollapsed={isLeftSidebarCollapsed}
-        onToggleCollapse={toggleLeftSidebar}
+      <TopNav
+        isCourseDetail={viewMode === "course-detail"}
+        onNavigateHome={handleBackToCourses}
+        onOpenSettings={() => setSelectedMenu("settings")}
       />
-
-      <div className="flex flex-1 min-w-0 min-h-0 overflow-hidden">
+      <div className="flex-1 min-h-0 min-w-0 flex overflow-hidden">
         <MainContent
           viewMode={viewMode}
           courses={courses}
@@ -396,6 +348,7 @@ const AppLayout: React.FC = () => {
           isCourseDetailLoading={isCourseDetailLoading}
           courseDetailError={courseDetailError}
           selectedLectureId={currentLectureId}
+          onSelectLecture={handleLectureSelect}
           onEditCourse={handleCourseEdit}
           onDeleteCourse={handleCourseDelete}
           onCourseCreated={handleCourseCreated}
