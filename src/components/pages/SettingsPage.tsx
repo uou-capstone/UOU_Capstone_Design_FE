@@ -8,7 +8,6 @@ const SettingsPage: React.FC = () => {
   const { user, refreshUser } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [email, setEmail] = useState(user?.email || "");
   const [nickname, setNickname] = useState(user?.fullName || "");
   const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber || "");
   const [birthDate, setBirthDate] = useState(user?.birthDate || "");
@@ -28,7 +27,6 @@ const SettingsPage: React.FC = () => {
   // 사용자 정보가 변경되면 폼 업데이트
   useEffect(() => {
     if (user) {
-      setEmail(user.email || "");
       setNickname(user.fullName || "");
       setPhoneNumber(user.phoneNumber || "");
       setBirthDate(user.birthDate || "");
@@ -108,11 +106,13 @@ const SettingsPage: React.FC = () => {
     }
   };
 
-  const [editingField, setEditingField] = useState<"name" | "password" | null>(null);
+  const [editingField, setEditingField] = useState<"name" | "phone" | "birth" | "password" | null>(null);
   const [draftName, setDraftName] = useState(nickname);
+  const [draftPhoneNumber, setDraftPhoneNumber] = useState(phoneNumber);
+  const [draftBirthDate, setDraftBirthDate] = useState(birthDate);
 
   const renderAccountSection = () => (
-    <div className="flex flex-col gap-10 max-w-xl">
+    <div className="flex flex-col w-full">
       {/* 프로필 */}
       <div className="flex flex-col items-start gap-4">
         <button
@@ -156,8 +156,8 @@ const SettingsPage: React.FC = () => {
         />
       </div>
 
-      {/* 상단 사용자 정보 (이름, 이메일) */}
-      <div className="flex flex-col gap-1">
+      {/* 상단 사용자 정보 (이름, 이메일) - 프로필과 gap-6 */}
+      <div className="flex flex-col gap-1 mt-6">
         <h1
           className={`text-2xl font-semibold ${
             isDarkMode ? "text-white" : "text-gray-900"
@@ -171,26 +171,34 @@ const SettingsPage: React.FC = () => {
             color: isDarkMode ? "#adadad" : "#707070",
           }}
         >
-          {user?.email || email || ""}
+          {user?.email || ""}
         </p>
       </div>
 
-      {/* 이름 / 이메일 / 비밀번호 리스트 */}
-      <div className="space-y-6">
+      {/* 개인 정보 - 이메일과 gap-12 */}
+      <p className={`text-[24px] font-semibold mt-12 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+        개인 정보
+      </p>
+      {/* 이름 등 폼 - 개인정보 헤더와 gap-4 */}
+      <div className="space-y-6 mt-4">
         {/* 이름 행 */}
-        <div className="border-b pb-4" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
+        <div className="border-b pb-3.5" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
           <div className="text-[16px]">
             <div className="flex items-center justify-between">
-              <div className={isDarkMode ? "text-gray-400" : "text-gray-500"}>이름</div>
+              <div className={isDarkMode ? "text-[#FFFFFF]" : "text-gray-500"}>이름</div>
               <button
                 type="button"
                 onClick={() => {
-                  setDraftName(nickname);
-                  setEditingField("name");
+                  if (editingField === "name") {
+                    setEditingField(null);
+                  } else {
+                    setDraftName(nickname);
+                    setEditingField("name");
+                  }
                 }}
                 className="text-[14px] font-medium cursor-pointer text-[#FFFFFF]"
               >
-                Edit
+                {editingField === "name" ? "Cancel" : "Edit"}
               </button>
             </div>
             <div className="mt-1 text-[14px] text-[#adadad]">{nickname || "-"}</div>
@@ -248,6 +256,83 @@ const SettingsPage: React.FC = () => {
                 >
                   {isSaving ? "저장 중..." : "Save"}
                 </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 전화번호 행 */}
+        <div className="border-b pb-3.5" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
+          <div className="text-[16px]">
+            <div className="flex items-center justify-between">
+              <div className={isDarkMode ? "text-[#FFFFFF]" : "text-gray-500"}>전화번호</div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (editingField === "phone") {
+                    setEditingField(null);
+                  } else {
+                    setDraftPhoneNumber(phoneNumber);
+                    setEditingField("phone");
+                  }
+                }}
+                className="text-[14px] font-medium cursor-pointer text-[#FFFFFF]"
+              >
+                {editingField === "phone" ? "Cancel" : "Edit"}
+              </button>
+            </div>
+            <div className="mt-1 text-[14px] text-[#adadad]">{phoneNumber || "-"}</div>
+          </div>
+
+          {editingField === "phone" && (
+            <div className="mt-4 space-y-3 text-sm">
+              <div>
+                <div className={isDarkMode ? "text-gray-300 mb-1" : "text-gray-700 mb-1"}>
+                  전화번호
+                </div>
+                <input
+                  type="tel"
+                  value={draftPhoneNumber}
+                  onChange={(e) => setDraftPhoneNumber(e.target.value)}
+                  className={`w-full px-4 py-2 rounded-full text-sm ${
+                    isDarkMode
+                      ? "bg-zinc-800 text-white placeholder-gray-500"
+                      : "bg-gray-100 text-gray-900 placeholder-gray-500"
+                  } focus:outline-none`}
+                  placeholder="010-0000-0000"
+                />
+              </div>
+              <div className="flex items-center justify-between mt-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      setIsSaving(true);
+                      await userApi.updateProfile({
+                        fullName: nickname,
+                        phoneNumber: draftPhoneNumber || undefined,
+                        birthDate: birthDate || undefined,
+                      });
+                      setPhoneNumber(draftPhoneNumber);
+                      await refreshUser();
+                      setEditingField(null);
+                    } catch (error) {
+                      const msg =
+                        error instanceof Error ? error.message : "전화번호를 저장하는 데 실패했습니다.";
+                      window.alert(msg);
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                  disabled={isSaving}
+                  className={`px-4 py-1.5 rounded-full text-xs font-medium ${
+                    isSaving
+                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                      : "bg-black text-white"
+                  }`}
+                >
+                  {isSaving ? "저장 중..." : "Save"}
+                </button>
                 <button
                   type="button"
                   onClick={() => setEditingField(null)}
@@ -260,28 +345,102 @@ const SettingsPage: React.FC = () => {
           )}
         </div>
 
-        {/* 이메일 행 */}
-        <div className="border-b pb-4" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
+        {/* 생년월일 행 */}
+        <div className="border-b pb-3.5" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
           <div className="text-[16px]">
             <div className="flex items-center justify-between">
-              <div className={isDarkMode ? "text-gray-400" : "text-gray-500"}>이메일</div>
-              <span className="text-[14px] font-medium text-[#FFFFFF]">Edit</span>
+              <div className={isDarkMode ? "text-[#FFFFFF]" : "text-gray-500"}>생년월일</div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (editingField === "birth") {
+                    setEditingField(null);
+                  } else {
+                    setDraftBirthDate(birthDate);
+                    setEditingField("birth");
+                  }
+                }}
+                className="text-[14px] font-medium cursor-pointer text-[#FFFFFF]"
+              >
+                {editingField === "birth" ? "Cancel" : "Edit"}
+              </button>
             </div>
-            <div className="mt-1 text-[14px] text-[#adadad]">{email || "-"}</div>
+            <div className="mt-1 text-[14px] text-[#adadad]">{birthDate || "-"}</div>
           </div>
+
+          {editingField === "birth" && (
+            <div className="mt-4 space-y-3 text-sm">
+              <div>
+                <div className={isDarkMode ? "text-gray-300 mb-1" : "text-gray-700 mb-1"}>
+                  생년월일
+                </div>
+                <input
+                  type="date"
+                  value={draftBirthDate}
+                  onChange={(e) => setDraftBirthDate(e.target.value)}
+                  className={`w-full px-4 py-2 rounded-full text-sm ${
+                    isDarkMode
+                      ? "bg-zinc-800 text-white placeholder-gray-500"
+                      : "bg-gray-100 text-gray-900 placeholder-gray-500"
+                  } focus:outline-none`}
+                />
+              </div>
+              <div className="flex items-center justify-between mt-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      setIsSaving(true);
+                      await userApi.updateProfile({
+                        fullName: nickname,
+                        phoneNumber: phoneNumber || undefined,
+                        birthDate: draftBirthDate || undefined,
+                      });
+                      setBirthDate(draftBirthDate);
+                      await refreshUser();
+                      setEditingField(null);
+                    } catch (error) {
+                      const msg =
+                        error instanceof Error ? error.message : "생년월일을 저장하는 데 실패했습니다.";
+                      window.alert(msg);
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                  disabled={isSaving}
+                  className={`px-4 py-1.5 rounded-full text-xs font-medium ${
+                    isSaving
+                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                      : "bg-black text-white"
+                  }`}
+                >
+                  {isSaving ? "저장 중..." : "Save"}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* 비밀번호 행 */}
-        <div className="border-b pb-4" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
+        <div className="border-b pb-3.5" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
           <div className="text-[16px]">
             <div className="flex items-center justify-between">
-              <div className={isDarkMode ? "text-gray-400" : "text-gray-500"}>비밀번호</div>
+              <div className={isDarkMode ? "text-[#FFFFFF]" : "text-gray-500"}>비밀번호</div>
               <button
                 type="button"
-                onClick={() => setEditingField("password")}
+                onClick={() => {
+                  if (editingField === "password") {
+                    setCurrentPassword("");
+                    setNewPassword("");
+                    setConfirmPassword("");
+                    setEditingField(null);
+                  } else {
+                    setEditingField("password");
+                  }
+                }}
                 className="text-[14px] font-medium cursor-pointer text-[#FFFFFF]"
               >
-                Edit
+                {editingField === "password" ? "Cancel" : "Edit"}
               </button>
             </div>
             <div className="mt-1 text-[14px] text-[#adadad]">••••••••</div>
@@ -338,30 +497,46 @@ const SettingsPage: React.FC = () => {
                 >
                   {isSaving ? "변경 중..." : "Save"}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCurrentPassword("");
-                    setNewPassword("");
-                    setConfirmPassword("");
-                    setEditingField(null);
-                  }}
-                  className="text-xs text-gray-500 hover:text-gray-800"
-                >
-                  Cancel
-                </button>
               </div>
             </div>
           )}
         </div>
-      </div>
 
-      {/* (중복 UI 제거) 하단 비밀번호/회원탈퇴 블록은 상단 "Edit" 섹션에서 처리 */}
+        {/* 계정 관리 */}
+        <div className="pt-8 space-y-6">
+          <p className={`text-[24px] font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+            계정 관리
+          </p>
+          <div className="border-b pb-3.5" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
+            <div className="text-[16px]">
+              <div className="flex items-center justify-between">
+                <div className={isDarkMode ? "text-[#FFFFFF]" : "text-gray-500"}>계정 삭제</div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const confirmed = window.confirm("정말로 계정을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.");
+                    if (confirmed) {
+                      window.alert("계정 삭제 기능은 준비 중입니다.");
+                    }
+                  }}
+                  className="text-[14px] font-medium cursor-pointer text-[#ff824d] hover:opacity-80"
+                >
+                  삭제
+                </button>
+              </div>
+              <div className="mt-1 text-[14px] text-[#adadad]">
+                계정을 영구적으로 삭제합니다. 복구할 수 없습니다.
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="h-[50px]" aria-hidden />
     </div>
   );
 
   const renderSystemSection = () => (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 w-full">
       <div>
         <h2 className={`text-xl font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
           시스템
@@ -545,39 +720,62 @@ const SettingsPage: React.FC = () => {
     </div>
   );
 
+  const navButtonClass = (isActive: boolean) =>
+    `w-auto lg:w-full text-left flex items-center gap-2 rounded font-semibold text-[16px] transition-colors ${
+      isActive ? "text-[#FFFFFF]" : "text-[#adadad]"
+    }`;
+
+  const navItems = (
+    <>
+      <li className="grid h-10 content-center">
+        <button
+          type="button"
+          onClick={() => setSelectedSection("account")}
+          className={navButtonClass(selectedSection === "account")}
+        >
+          <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
+          계정
+        </button>
+      </li>
+      <li className="grid h-10 content-center">
+        <button
+          type="button"
+          onClick={() => setSelectedSection("system")}
+          className={navButtonClass(selectedSection === "system")}
+        >
+          <svg className="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
+          </svg>
+          시스템
+        </button>
+      </li>
+    </>
+  );
+
   return (
-    <div className="h-full flex">
-        <nav className="w-80 mr-auto">
-          <ul className="space-y-1">
-            <li>
-              <button
-                type="button"
-                onClick={() => setSelectedSection("account")}
-                className={`w-full text-left px-2 py-1.5 rounded font-semibold text-[16px] transition-colors ${
-                  selectedSection === "account" ? "text-[#FFFFFF]" : "text-[#adadad]"
-                }`}
-              >
-                계정
-              </button>
-            </li>
-            <li>
-              <button
-                type="button"
-                onClick={() => setSelectedSection("system")}
-                className={`w-full text-left px-2 py-1.5 rounded font-semibold text-[16px] transition-colors ${
-                  selectedSection === "system" ? "text-[#FFFFFF]" : "text-[#adadad]"
-                }`}
-              >
-                시스템
-              </button>
-            </li>
-          </ul>
-        </nav>
-        <main className="flex-1">
-          {selectedSection === "account" && renderAccountSection()}
-          {selectedSection === "system" && renderSystemSection()}
-        </main>
+    <div className="h-full flex flex-col lg:flex-row lg:items-start lg:justify-center">
+      {/* 모바일: 메뉴가 메인 컨테이너 상단에 가로 배치 */}
+      <nav className="lg:hidden shrink-0 pb-1 mb-4 border-b" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
+        <ul className="flex gap-6">
+          {navItems}
+        </ul>
+      </nav>
+      {/* 데스크톱: 좌측 사이드바 (1024px 이상에서만 표시) */}
+      <nav className="hidden lg:block w-85 shrink-0 self-start">
+        <ul className="grid grid-flow-row gap-[2px]">
+          {navItems}
+        </ul>
+      </nav>
+      {/* 메인 콘텐츠 - 고정 (줄어들지 않음) */}
+      <div className="flex-1 min-w-0 shrink-0">
+        {selectedSection === "account" && renderAccountSection()}
+        {selectedSection === "system" && renderSystemSection()}
       </div>
+      {/* 우측 여백 - 기본 350px, 페이지 너비 줄일 때 먼저 줄어듦 */}
+      <aside className="hidden lg:block w-[350px] min-w-0 shrink pl-8" />
+    </div>
   );
 };
 

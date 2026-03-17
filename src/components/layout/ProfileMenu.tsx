@@ -204,7 +204,7 @@ const ProfileMenu: React.FC = () => {
               <MenuItem icon={null} label="Careers" onClick={() => {}} external rowClass={hoverRow} textPrimary={textPrimary} />
               <MenuItem icon={null} label="Merch" badge="New" badgeBg={badgeBg} onClick={() => {}} external rowClass={hoverRow} textPrimary={textPrimary} />
               <MenuItem icon={null} label="Support" onClick={() => {}} external rowClass={hoverRow} textPrimary={textPrimary} />
-              <MenuItem icon={<LogOutIcon />} label="Log out" onClick={handleLogout} rowClass={hoverRow} textPrimary={textPrimary} />
+              <MenuItem icon={<LogOutIcon />} label="Log out" onClick={handleLogout} rowClass={hoverRow} textPrimary="text-[#ff824d]" />
             </div>
 
             <div className="h-px bg-glass-border-divider" />
