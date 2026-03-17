@@ -341,7 +341,7 @@ const AppLayout: React.FC = () => {
 
   return (
     <div
-      className={`min-h-screen w-full max-w-full flex flex-col transition-colors gap-8 overflow-x-hidden ${
+      className={`h-screen w-full max-w-full flex flex-col transition-colors gap-8 overflow-hidden ${
         isDarkMode ? "bg-[#141414] text-gray-100" : "bg-white text-gray-900"
       }`}
     >
@@ -353,7 +353,7 @@ const AppLayout: React.FC = () => {
         previewFileName={previewFileName}
         onBackFromPreview={() => window.dispatchEvent(new Event("back-from-preview"))}
       />
-      <div className="flex-1 min-h-0 min-w-0 flex overflow-x-hidden">
+      <div className="flex-1 min-h-0 min-w-0 flex overflow-hidden">
         <MainContent
           viewMode={viewMode}
           courses={courses}

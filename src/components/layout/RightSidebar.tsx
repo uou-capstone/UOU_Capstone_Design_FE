@@ -1099,11 +1099,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           </div>
         </div>
       ) : (
-      <>
+      <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
       {/* 채팅 메시지 영역 */}
       <div
         id="chat-messages"
-        className={`flex-1 min-w-0 overflow-y-auto overflow-x-hidden p-1.5 space-y-2 ${
+        className={`flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-3 py-4 space-y-2 ${
           isDarkMode ? "bg-zinc-800" : "bg-white"
         }`}
         style={{
@@ -1113,11 +1113,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       >
         {messages.length === 0 ? (
           <div
-            className={`flex h-full flex-col items-center justify-center text-center text-sm space-y-2 ${
+            className={`flex h-full flex-col items-center justify-center text-center space-y-3 ${
               isDarkMode ? "text-gray-400" : "text-gray-400"
             }`}
           >
-            <p className="font-medium">메시지가 없습니다.</p>
+            <p className="font-medium text-sm">메시지가 없습니다.</p>
             <span className="text-xs">
               파일을 드래그 앤 드롭하세요
             </span>
@@ -1211,12 +1211,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       </div>
 
       {/* 채팅 입력창 */}
-      <div className={`${
+      <div className={`shrink-0 w-full px-3 py-2 h-[55px] flex items-center ${
         isDarkMode ? "bg-zinc-800" : "bg-white"
-      }`}
-      style={{ padding: '6px 6px', height: '55px' }}>
+      }`}>
         {/* 통합된 입력 컨테이너 */}
-        <div className={`flex items-center rounded-lg border h-full ${
+        <div className={`flex items-center w-full rounded-lg border h-full ${
           isDarkMode
             ? "bg-zinc-800 border-zinc-700"
             : "bg-white border-gray-300"
@@ -1278,7 +1277,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           )}
         </div>
       </div>
-      </>
+      </div>
       )}
     </aside>
     </>

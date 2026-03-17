@@ -117,9 +117,6 @@ const MainContent: React.FC<MainContentProps> = ({
   const { user } = useAuth();
   const isTeacher = user?.role === "TEACHER";
   const isStudent = user?.role === "STUDENT";
-  const [sortOrder, setSortOrder] = React.useState<"recent" | "name" | "type">(
-    "recent",
-  );
   const [addMenuOpen, setAddMenuOpen] = React.useState(false);
   const addMenuRef = React.useRef<HTMLDivElement>(null);
   const [assessments, setAssessments] = React.useState<AssessmentSimpleDto[]>(
@@ -674,19 +671,9 @@ const MainContent: React.FC<MainContentProps> = ({
       assessmentId: a.assessmentId,
     }));
     const merged = [...materials, ...exams, ...fromAssessments];
-    if (sortOrder === "recent")
-      merged.sort((a, b) =>
-        (b.createdAt || "").localeCompare(a.createdAt || ""),
-      );
-    if (sortOrder === "name")
-      merged.sort((a, b) => a.title.localeCompare(b.title));
-    if (sortOrder === "type")
-      merged.sort((a, b) => {
-        const order = { material: 0, exam: 1, assessment: 2 };
-        return order[a.type] - order[b.type] || a.title.localeCompare(b.title);
-      });
+    merged.sort((a, b) => a.title.localeCompare(b.title));
     return merged;
-  }, [selectedLectureId, localMaterials, localExams, assessments, sortOrder]);
+  }, [selectedLectureId, localMaterials, localExams, assessments]);
 
   // 강의실 진입 시 /api/courses/{courseId}/contents 한 번 호출하여 모든 주차 리소스 로드
   React.useEffect(() => {
@@ -751,6 +738,14 @@ const MainContent: React.FC<MainContentProps> = ({
             materialGenerationApi.getLatestSessionForLecture(lec.lectureId),
           ),
         );
+        // getDocument가 필요한 세션 ID 수집 후 병렬 호출 (순차 호출 대비 속도 개선)
+        const sessionIdsToFetch: { sessionId: number; idx: number }[] = [];
+        const sessionInfos: Array<{
+          lec: (typeof lectures)[number];
+          sessionId: number;
+          finalDoc: string | undefined;
+          docUrl: string | null;
+        }> = [];
         for (let i = 0; i < lectures.length; i++) {
           const lec = lectures[i];
           const settled = sessionResults[i];
@@ -759,7 +754,6 @@ const MainContent: React.FC<MainContentProps> = ({
           const sessionId =
             typeof raw.sessionId === "number" ? raw.sessionId : null;
           if (sessionId == null) continue;
-          // 표시용: 반드시 finalDocument(마크다운 본문)만 사용. documentUrl은 다운로드/API용.
           const finalDoc =
             typeof raw.finalDocument === "string" && raw.finalDocument
               ? raw.finalDocument
@@ -771,7 +765,6 @@ const MainContent: React.FC<MainContentProps> = ({
                   "string"
                 ? (raw.document as { url: string }).url
                 : null;
-          // documentUrl 없을 때만 getDocument 호출. Phase 5 미완료 세션이면 404 발생 → 완료 가능성 있을 때만 호출
           if (!docUrl) {
             const phase = String(
               raw.currentPhase ?? raw.current_phase ?? "",
@@ -786,22 +779,34 @@ const MainContent: React.FC<MainContentProps> = ({
               phase.includes("COMPLETE") ||
               progress >= 100;
             if (mightHaveDoc) {
-              try {
-                const docRes =
-                  await materialGenerationApi.getDocument(sessionId);
-                const d = docRes as Record<string, unknown>;
-                docUrl =
-                  typeof d.documentUrl === "string"
-                    ? d.documentUrl
-                    : typeof d.url === "string"
-                      ? d.url
-                      : null;
-              } catch {
-                /* getDocument 404 등 실패 시 스킵 */
-              }
+              sessionIdsToFetch.push({ sessionId, idx: sessionInfos.length });
             }
           }
-          // 세션이 있고 (실제 URL 있음 또는 finalDocument 있음) 이면 목록에 추가
+          sessionInfos.push({ lec, sessionId, finalDoc, docUrl });
+        }
+        const docUrls = await Promise.all(
+          sessionIdsToFetch.map(async ({ sessionId }) => {
+            try {
+              const docRes =
+                await materialGenerationApi.getDocument(sessionId);
+              const d = docRes as Record<string, unknown>;
+              return (
+                typeof d.documentUrl === "string"
+                  ? d.documentUrl
+                  : typeof d.url === "string"
+                    ? d.url
+                    : null
+              );
+            } catch {
+              return null;
+            }
+          }),
+        );
+        sessionIdsToFetch.forEach(({ idx }, j) => {
+          const url = docUrls[j];
+          if (url) sessionInfos[idx].docUrl = url;
+        });
+        for (const { lec, sessionId, finalDoc, docUrl } of sessionInfos) {
           const hasDoc =
             (typeof docUrl === "string" && docUrl.length > 0) || finalDoc;
           if (!hasDoc) continue;
@@ -889,6 +894,13 @@ const MainContent: React.FC<MainContentProps> = ({
             materialGenerationApi.getLatestSessionForLecture(lec.lectureId),
           ),
         );
+        const sessionIdsToFetch: { sessionId: number; idx: number }[] = [];
+        const sessionInfos: Array<{
+          lec: (typeof lectures)[number];
+          sessionId: number;
+          finalDoc: string | undefined;
+          docUrl: string | null;
+        }> = [];
         for (let i = 0; i < lectures.length; i++) {
           const lec = lectures[i];
           const settled = sessionResults[i];
@@ -922,21 +934,34 @@ const MainContent: React.FC<MainContentProps> = ({
               phase.includes("COMPLETE") ||
               progress >= 100;
             if (mightHaveDoc) {
-              try {
-                const docRes =
-                  await materialGenerationApi.getDocument(sessionId);
-                const d = docRes as Record<string, unknown>;
-                docUrl =
-                  typeof d.documentUrl === "string"
-                    ? d.documentUrl
-                    : typeof d.url === "string"
-                      ? d.url
-                      : null;
-              } catch {
-                /* getDocument 404 등 실패 시 스킵 */
-              }
+              sessionIdsToFetch.push({ sessionId, idx: sessionInfos.length });
             }
           }
+          sessionInfos.push({ lec, sessionId, finalDoc, docUrl });
+        }
+        const docUrls = await Promise.all(
+          sessionIdsToFetch.map(async ({ sessionId }) => {
+            try {
+              const docRes =
+                await materialGenerationApi.getDocument(sessionId);
+              const d = docRes as Record<string, unknown>;
+              return (
+                typeof d.documentUrl === "string"
+                  ? d.documentUrl
+                  : typeof d.url === "string"
+                    ? d.url
+                    : null
+              );
+            } catch {
+              return null;
+            }
+          }),
+        );
+        sessionIdsToFetch.forEach(({ idx }, j) => {
+          const url = docUrls[j];
+          if (url) sessionInfos[idx].docUrl = url;
+        });
+        for (const { lec, sessionId, finalDoc, docUrl } of sessionInfos) {
           const hasDoc =
             (typeof docUrl === "string" && docUrl.length > 0) || finalDoc;
           if (!hasDoc) continue;
@@ -2622,9 +2647,9 @@ const MainContent: React.FC<MainContentProps> = ({
     if (previewFileUrl || previewMaterialId != null) {
       return (
         <div className="flex flex-col h-full min-w-0 overflow-hidden">
-          <div className="flex-1 flex min-h-[calc(100vh-110px)] min-w-0 overflow-hidden">
+          <div className="flex-1 flex min-h-0 min-w-0 overflow-hidden">
             {/* 좌: 미리보기 */}
-            <div className="flex-1 min-w-0 bg-gray-100 dark:bg-zinc-900 flex flex-col border-r border-zinc-700/50">
+            <div className="flex-1 min-h-0 min-w-0 bg-gray-100 dark:bg-zinc-900 flex flex-col overflow-hidden border-r border-zinc-700/50">
               {previewLoading ? (
                 <div
                   className={`flex-1 flex items-center justify-center ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}
@@ -2664,9 +2689,13 @@ const MainContent: React.FC<MainContentProps> = ({
                 </div>
               ) : previewMarkdownContent != null ? (
                 <div
-                  className={`flex-1 min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-6 py-6 pr-8 sm:px-8 sm:pr-10 lg:px-10 lg:pr-12 ${isDarkMode ? "text-gray-200" : "text-gray-900"}`}
+                  className={`flex-1 min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-6 py-6 pr-8 sm:px-8 sm:pr-10 lg:px-10 lg:pr-12 ${
+                    isDarkMode ? "text-gray-200" : "bg-[#FFFFFF] text-[#141414] [&_*]:text-[#141414]"
+                  }`}
                 >
-                  <article className="prose max-w-none dark:prose-invert break-words [&_*]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words">
+                  <article className={`prose max-w-none break-words [&_*]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words ${
+                    isDarkMode ? "dark:prose-invert" : ""
+                  }`}>
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {previewMarkdownContent}
                     </ReactMarkdown>
@@ -2697,7 +2726,8 @@ const MainContent: React.FC<MainContentProps> = ({
                 }`}
               />
             </div>
-            {/* 우: 채팅(강의 학습) 또는 시험 만들기(프로필 API) */}
+            {/* 우: 채팅(강의 학습) 또는 시험 만들기(프로필 API) — 고정 */}
+            <div className="shrink-0 min-h-0 overflow-hidden">
             <RightSidebar
               width={rightSidebarWidth}
               lectureId={selectedLectureId ?? undefined}
@@ -2741,6 +2771,7 @@ const MainContent: React.FC<MainContentProps> = ({
                   : null
               }
             />
+            </div>
           </div>
         </div>
       );
@@ -2796,10 +2827,12 @@ const MainContent: React.FC<MainContentProps> = ({
                     }}
                     className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap cursor-pointer transition-colors ${
                       isActive
-                        ? "bg-emerald-600 text-white"
+                        ? isDarkMode
+                          ? "bg-[#FFFFFF] text-[#141414]"
+                          : "bg-[#141414] text-[#FFFFFF]"
                         : isDarkMode
-                          ? "bg-zinc-800 text-gray-200 hover:bg-zinc-700"
-                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          ? "bg-[#ffffff14] text-gray-200 hover:bg-[#ffffff20]"
+                          : "bg-[#00000014] text-gray-700 hover:bg-[#00000020]"
                     }`}
                   >
                     {label}
@@ -2823,20 +2856,32 @@ const MainContent: React.FC<MainContentProps> = ({
                     setAddLectureTitle("");
                     setAddLectureModalOpen(true);
                   }}
-                  className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-sm font-medium cursor-pointer transition-colors ${
+                  className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-sm font-medium leading-[0] cursor-pointer transition-colors ${
                     isDarkMode
                       ? "bg-zinc-700 text-gray-300 hover:bg-zinc-600"
                       : "bg-gray-200 text-gray-600 hover:bg-gray-300"
                   }`}
                   title="주차 추가"
                 >
-                  +
+                  <span className="block leading-none -translate-y-0.5">+</span>
                 </button>
               )}
             </div>
             <div className="flex items-center gap-2 ml-auto">
+              {lectureResourcesLoading && (
+                <span className="text-[11px] opacity-70">불러오는 중...</span>
+              )}
               {isTeacher && (
-                <div className="flex items-center gap-1 mr-1">
+                <div className="flex items-center gap-1">
+                  {bulkEditMode && (
+                    <button
+                      type="button"
+                      onClick={handleBulkDelete}
+                      className="px-3 py-1.5 text-xs font-medium rounded-full cursor-pointer text-[#ff824d] hover:opacity-80"
+                    >
+                      삭제
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -2849,43 +2894,16 @@ const MainContent: React.FC<MainContentProps> = ({
                         setBulkSelectedIds({});
                       }
                     }}
-                    className={`px-2 py-1 text-[11px] cursor-pointer ${
+                    className={`px-3 py-1.5 text-xs font-medium rounded-full cursor-pointer transition-colors ${
                       isDarkMode
-                        ? "bg-zinc-800 border-zinc-600 text-gray-200 hover:bg-zinc-700"
-                        : "bg-white border-gray-300 text-gray-700 hover:bg-gray-100"
+                        ? "bg-[#FFFFFF] text-[#141414] hover:opacity-90"
+                        : "bg-[#141414] text-[#FFFFFF] hover:opacity-90"
                     }`}
                   >
-                    {bulkEditMode ? "삭제 취소" : "삭제"}
+                    {bulkEditMode ? "취소" : "삭제"}
                   </button>
-                  {bulkEditMode && (
-                    <button
-                      type="button"
-                      onClick={handleBulkDelete}
-                      className="px-2 py-1 text-[11px] rounded border border-red-500 text-red-600 cursor-pointer hover:bg-red-50 dark:text-red-400 dark:border-red-500 dark:hover:bg-red-500/10"
-                    >
-                      선택 삭제
-                    </button>
-                  )}
                 </div>
               )}
-              {lectureResourcesLoading && (
-                <span className="text-[11px] opacity-70">불러오는 중...</span>
-              )}
-              <select
-                value={sortOrder}
-                onChange={(e) =>
-                  setSortOrder(e.target.value as "recent" | "name" | "type")
-                }
-                className={`text-[11px] px-2 py-1 rounded border cursor-pointer ${
-                  isDarkMode
-                    ? "bg-zinc-800 border-zinc-600 text-gray-200"
-                    : "bg-white border-gray-200 text-gray-700"
-                }`}
-              >
-                <option value="recent">최신순</option>
-                <option value="name">이름순</option>
-                <option value="type">유형별</option>
-              </select>
             </div>
           </div>
 
@@ -3048,15 +3066,15 @@ const MainContent: React.FC<MainContentProps> = ({
   return (
     <>
       <div
-        className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden transition-colors pl-5 sm:pl-6 lg:pl-8 ${
+        className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden transition-colors px-5 sm:px-6 lg:px-8 ${
           isDarkMode ? "bg-[#141414]" : "bg-white"
         }`}
       >
         {renderCourseListHeader()}
         {renderCourseDetailHeader()}
         {renderSettingsHeader()}
-        <div className="flex-1 min-h-0 min-w-0 overflow-x-hidden">
-          <div className="pr-5 sm:pr-6 lg:pr-8 min-w-0">
+        <div className="flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col">
+          <div className={`flex-1 min-h-0 min-w-0 ${(previewFileUrl || previewMaterialId != null) ? "overflow-hidden" : "overflow-y-auto"}`}>
             {selectedMenu === "settings" ? (
               <SettingsPage />
             ) : viewMode === "course-list" ? (
