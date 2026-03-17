@@ -88,11 +88,13 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   }, [themeMode]);
 
   useEffect(() => {
-    // 테마 상태에 따라 body 클래스 업데이트
+    // 테마 상태에 따라 body, html 클래스 업데이트 (스크롤바 등 color-scheme 적용)
     if (isDarkMode) {
       document.body.classList.add('dark');
+      document.documentElement.classList.add('dark');
     } else {
       document.body.classList.remove('dark');
+      document.documentElement.classList.remove('dark');
     }
   }, [isDarkMode]);
 

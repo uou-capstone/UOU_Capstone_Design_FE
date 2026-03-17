@@ -816,7 +816,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                         e.stopPropagation();
                         handleLogout();
                       }}
-                      className={`w-full px-4 py-3 text-left text-sm transition-colors flex items-center gap-3 cursor-pointer ${textSecondaryClass} ${buttonDefaultHoverClass}`}
+                      className={`w-full px-4 py-3 text-left text-sm transition-colors flex items-center gap-3 cursor-pointer text-[#ff824d] hover:opacity-80 ${buttonDefaultHoverClass}`}
                     >
                       <svg
                         className="w-4 h-4"

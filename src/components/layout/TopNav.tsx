@@ -5,11 +5,14 @@ import { useAuth } from "../../contexts/AuthContext";
 
 interface TopNavProps {
   isCourseDetail?: boolean;
+  isSettingsPage?: boolean;
   onNavigateHome?: () => void;
   onOpenSettings?: () => void;
+  previewFileName?: string | null;
+  onBackFromPreview?: () => void;
 }
 
-const TopNav: React.FC<TopNavProps> = ({ isCourseDetail, onNavigateHome, onOpenSettings }) => {
+const TopNav: React.FC<TopNavProps> = ({ isCourseDetail, isSettingsPage, onNavigateHome, onOpenSettings, previewFileName, onBackFromPreview }) => {
   const { isDarkMode, setThemeMode } = useTheme();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -67,25 +70,49 @@ const TopNav: React.FC<TopNavProps> = ({ isCourseDetail, onNavigateHome, onOpenS
   const roleLabel =
     user?.role === "TEACHER" ? "선생님" : user?.role === "STUDENT" ? "학생" : "사용자";
 
+  const isPreviewMode = !!previewFileName;
+
   return (
     <header
-      className={`flex items-center justify-between px-5 sm:px-6 lg:px-8 xl:px-20 py-1 h-[70px] transition-colors ${
+      className={`flex items-end px-5 sm:px-6 lg:px-8 h-[52px] transition-colors ${
         isDarkMode ? "bg-[#141414]" : "bg-[#ffffff]"
       }`}
     >
-      <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center min-w-0 flex-1">
         <button
           type="button"
           onClick={handleNavigateHome}
-          className={`truncate text-lg font-semibold ${
-            isDarkMode ? "text-white" : "text-gray-900"
-          }`}
+          className={`truncate text-lg font-semibold h-9 flex items-center ${isDarkMode ? "text-white" : "text-gray-900"}`}
         >
           AI Tutor LMS
         </button>
       </div>
-      <div className="flex items-center gap-4">
-        {user?.role === "TEACHER" && (
+      <div className="flex items-center justify-center min-w-0 flex-1">
+        {isPreviewMode && (
+          <span className={`text-sm font-medium truncate max-w-[200px] sm:max-w-[300px] ${isDarkMode ? "text-gray-200" : "text-gray-700"}`} title={previewFileName}>
+            {previewFileName}
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-4 justify-end min-w-0 flex-1">
+        {isPreviewMode && (
+          <button
+            type="button"
+            onClick={onBackFromPreview}
+            className="p-1 shrink-0 rounded cursor-pointer transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-x-2 hover:scale-125 active:translate-x-0 active:scale-95"
+            aria-label="목록으로"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="#FFFFFF"
+              viewBox="0 0 24 24"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+          </button>
+        )}
+        {user?.role === "TEACHER" && !isSettingsPage && (
           <div className="hidden items-center justify-center lg:flex">
             <button
               type="button"
@@ -101,9 +128,9 @@ const TopNav: React.FC<TopNavProps> = ({ isCourseDetail, onNavigateHome, onOpenS
               }`}
             >
               <span className="flex items-center justify-center gap-x-2">
-                  <span className="truncate whitespace-nowrap">
-                    {isCourseDetail ? " 강의 만들기" : " 강의실 만들기"}
-                  </span>
+                <span className="truncate whitespace-nowrap">
+                  {isCourseDetail ? " 강의 만들기" : " 강의실 만들기"}
+                </span>
               </span>
             </button>
           </div>
@@ -204,9 +231,7 @@ const TopNav: React.FC<TopNavProps> = ({ isCourseDetail, onNavigateHome, onOpenS
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className={`w-full text-left px-3 py-2 text-xs font-medium cursor-pointer ${
-                      isDarkMode ? "text-red-300" : "text-red-600"
-                    }`}
+                    className="w-full text-left px-3 py-2 text-xs font-medium cursor-pointer text-[#ff824d] hover:opacity-80"
                   >
                     로그아웃
                   </button>

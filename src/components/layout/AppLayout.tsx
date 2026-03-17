@@ -39,6 +39,7 @@ const AppLayout: React.FC = () => {
 
   const [currentCourseId, setCurrentCourseId] = useState<number | null>(null);
   const [currentLectureId, setCurrentLectureId] = useState<number | null>(null);
+  const [previewFileName, setPreviewFileName] = useState<string | null>(null);
   
   // 메뉴 상태 관리 (메인 페이지일 때만 사용) - 기본은 "강의"
   const [selectedMenu, setSelectedMenu] = useState<MenuItem>("lectures");
@@ -95,9 +96,16 @@ const AppLayout: React.FC = () => {
       setSelectedMenu("lectures");
       return;
     }
-    resetLectureOutputs();
+    // resetLectureOutputs() 호출 제거: 마지막 강의 복원을 위해 localStorage 유지
     loadCourseDetail(selectedCourseId);
   }, [selectedCourseId, loadCourseDetail, resetLectureOutputs]);
+
+  // 설정 페이지로 전환 시 미리보기 상태(뒤로가기 버튼, 파일 제목) 초기화
+  useEffect(() => {
+    if (selectedMenu === "settings") {
+      setPreviewFileName(null);
+    }
+  }, [selectedMenu]);
 
   useEffect(() => {
     if (!selectedCourseId || !courseDetail?.lectures?.length) return;
@@ -140,8 +148,13 @@ const AppLayout: React.FC = () => {
   const handleLectureCreated = async (lecture: LectureResponseDto) => {
     if (!selectedCourseId) return;
     await loadCourseDetail(selectedCourseId);
-    setCurrentLectureId(lecture.lectureId);
     resetLectureOutputs();
+    setCurrentLectureId(lecture.lectureId);
+    try {
+      localStorage.setItem(getLastLectureStorageKey(selectedCourseId), String(lecture.lectureId));
+    } catch {
+      // ignore
+    }
   };
 
   const handleLectureDelete = useCallback(
@@ -328,16 +341,19 @@ const AppLayout: React.FC = () => {
 
   return (
     <div
-      className={`h-screen w-full flex flex-col overflow-hidden transition-colors gap-8 ${
+      className={`min-h-screen w-full max-w-full flex flex-col transition-colors gap-8 overflow-x-hidden ${
         isDarkMode ? "bg-[#141414] text-gray-100" : "bg-white text-gray-900"
       }`}
     >
       <TopNav
         isCourseDetail={viewMode === "course-detail"}
+        isSettingsPage={selectedMenu === "settings"}
         onNavigateHome={handleBackToCourses}
         onOpenSettings={() => setSelectedMenu("settings")}
+        previewFileName={previewFileName}
+        onBackFromPreview={() => window.dispatchEvent(new Event("back-from-preview"))}
       />
-      <div className="flex-1 min-h-0 min-w-0 flex overflow-hidden">
+      <div className="flex-1 min-h-0 min-w-0 flex overflow-x-hidden">
         <MainContent
           viewMode={viewMode}
           courses={courses}
@@ -352,7 +368,9 @@ const AppLayout: React.FC = () => {
           onEditCourse={handleCourseEdit}
           onDeleteCourse={handleCourseDelete}
           onCourseCreated={handleCourseCreated}
+          onLectureCreated={handleLectureCreated}
           selectedMenu={selectedMenu}
+          onPreviewStateChange={setPreviewFileName}
         />
       </div>
     </div>
