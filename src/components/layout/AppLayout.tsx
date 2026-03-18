@@ -309,13 +309,12 @@ const AppLayout: React.FC = () => {
   );
 
   const handleCourseDelete = useCallback(
-    async (course: Course) => {
-      const confirmed = window.confirm(
-        `정말로 '${course.title}' 강의실을 삭제하시겠습니까?\n삭제 후에는 되돌릴 수 없습니다.`
-      );
-
-      if (!confirmed) {
-        return;
+    async (course: Course, options?: { skipConfirm?: boolean }) => {
+      if (!options?.skipConfirm) {
+        const confirmed = window.confirm(
+          `정말로 '${course.title}' 강의실을 삭제하시겠습니까?\n삭제 후에는 되돌릴 수 없습니다.`
+        );
+        if (!confirmed) return;
       }
 
       const result = await deleteCourse(course.courseId);
