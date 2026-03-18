@@ -89,7 +89,7 @@ interface MainContentProps {
   onSelectLecture?: (lectureId: number) => void;
   selectedMenu?: MenuItem;
   onEditCourse?: (course: Course) => void;
-  onDeleteCourse?: (course: Course) => void;
+  onDeleteCourse?: (course: Course, options?: { skipConfirm?: boolean }) => void;
   onCourseCreated?: (course: CourseDetail) => void;
   onLectureCreated?: (lecture: LectureResponseDto) => void;
   onPreviewStateChange?: (fileName: string | null) => void;
@@ -205,15 +205,6 @@ const MainContent: React.FC<MainContentProps> = ({
   const [profileScopeBoundary, setProfileScopeBoundary] = React.useState<
     "Lecture_Material_Only" | "Allow_External_Knowledge"
   >("Lecture_Material_Only");
-  type ExamDesignMessage = {
-    id: string;
-    role: "assistant" | "user";
-    text: string;
-  };
-  const [examDesignMessages, setExamDesignMessages] = React.useState<
-    ExamDesignMessage[]
-  >([]);
-  const [examDesignInput, setExamDesignInput] = React.useState("");
   const [assessmentTitle, setAssessmentTitle] = React.useState("");
   const [assessmentType, setAssessmentType] = React.useState<
     "QUIZ" | "ASSIGNMENT"
@@ -291,7 +282,6 @@ const MainContent: React.FC<MainContentProps> = ({
   const [examProfileStatus, setExamProfileStatus] = React.useState<
     "IDLE" | "INCOMPLETE" | "COMPLETE"
   >("IDLE");
-  const [examProfileLoading, setExamProfileLoading] = React.useState(false);
   const [lectureResourcesLoading, setLectureResourcesLoading] =
     React.useState(false);
   const [bulkEditMode, setBulkEditMode] = React.useState(false);
@@ -326,9 +316,6 @@ const MainContent: React.FC<MainContentProps> = ({
       setExamRecoverSelectedId("");
       setExamProfile(null);
       setExamProfileStatus("IDLE");
-      setExamProfileLoading(false);
-      setExamDesignMessages([]);
-      setExamDesignInput("");
     }
   }, [rightSidebarExamMode]);
 
@@ -1685,13 +1672,8 @@ const MainContent: React.FC<MainContentProps> = ({
     }
     setSubmitting(true);
     try {
-      const convoTextFromChat = examDesignMessages
-        .filter((m) => m.role === "user")
-        .map((m) => m.text)
-        .join(" | ");
       const focusSource =
         profileFocusAreasInput.trim() ||
-        convoTextFromChat.trim() ||
         examTopic.trim();
       const focusAreas = focusSource
         .split(/[,\n]/)
@@ -1753,7 +1735,6 @@ const MainContent: React.FC<MainContentProps> = ({
       setExamTopic("");
       setExamCount(10);
       setProfileFocusAreasInput("");
-      setExamDesignMessages([]);
     } catch (e) {
       window.alert(
         e instanceof Error
@@ -1780,7 +1761,6 @@ const MainContent: React.FC<MainContentProps> = ({
     profileStrictness,
     profileExplanationDepth,
     profileScopeBoundary,
-    examDesignMessages,
   ]);
 
   const openExamSessionDetail = React.useCallback(async (sessionId: string) => {
@@ -1925,53 +1905,6 @@ const MainContent: React.FC<MainContentProps> = ({
 
     setFiveChoiceLog({ evaluationItems });
   };
-
-  /** POST /api/exams/generation/profile — 에이전트와 대화로 시험 프로필 채움. status가 COMPLETE될 때까지 반복 호출 후 updatedProfile을 시험 생성 요청의 userProfile로 사용 */
-  const sendExamProfileMessage = React.useCallback(
-    async (text: string) => {
-      const trimmedTopic = examTopic.trim();
-      if (!trimmedTopic) {
-        window.alert("먼저 시험 주제를 입력해주세요.");
-        return;
-      }
-      setExamProfileLoading(true);
-      try {
-        const res = await examGenerationApi.generateProfile({
-          lectureContent: trimmedTopic,
-          examType,
-          existingProfile: examProfile ?? undefined,
-          userMessage: text,
-        });
-        if (res.agentMessage) {
-          setExamDesignMessages((prev) => [
-            ...prev,
-            {
-              id: `a-${Date.now()}`,
-              role: "assistant",
-              text: res.agentMessage,
-            },
-          ]);
-        }
-        if (res.updatedProfile) {
-          setExamProfile(res.updatedProfile);
-        }
-        if (res.status === "COMPLETE") {
-          setExamProfileStatus("COMPLETE");
-        } else {
-          setExamProfileStatus("INCOMPLETE");
-        }
-      } catch (e) {
-        window.alert(
-          e instanceof Error
-            ? e.message
-            : "프로필 설정 에이전트와의 통신 중 오류가 발생했습니다.",
-        );
-      } finally {
-        setExamProfileLoading(false);
-      }
-    },
-    [examTopic, examType, examProfile],
-  );
 
   const handleShortAnswerInputChange = (
     problemIndex: number,
@@ -2193,7 +2126,7 @@ const MainContent: React.FC<MainContentProps> = ({
     const toDelete = courses.filter((c) => ids.includes(c.courseId));
     for (const course of toDelete) {
       try {
-        onDeleteCourse?.(course);
+        await onDeleteCourse?.(course, { skipConfirm: true });
       } catch (e) {
         window.alert(
           e instanceof Error ? e.message : "강의실 삭제에 실패했습니다.",
@@ -2396,7 +2329,45 @@ const MainContent: React.FC<MainContentProps> = ({
           }`}
         >
           <div
-            className={`flex-1 overflow-y-auto ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}
+            className={`flex items-center justify-between gap-3 shrink-0 pb-3 border-b ${
+              isDarkMode ? "border-zinc-700" : "border-gray-200"
+            }`}
+          >
+            <div className="flex-1" />
+            {isTeacher && (
+              <div className="flex items-center gap-1">
+                {courseListBulkEditMode && (
+                  <button
+                    type="button"
+                    onClick={handleCourseListBulkDelete}
+                    className="flex items-center justify-center w-7 h-7 text-xs font-medium leading-none rounded-full cursor-pointer text-[#ff824d] hover:opacity-80"
+                  >
+                    x
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCourseListBulkEditMode((v) => !v);
+                    if (courseListBulkEditMode) {
+                      setBulkSelectedCourseIds({});
+                    }
+                  }}
+                  className={`flex items-center justify-center h-7 text-xs font-medium leading-none rounded-full cursor-pointer transition-colors ${
+                    courseListBulkEditMode ? "min-w-7 px-3" : "w-7"
+                  } ${
+                    isDarkMode
+                      ? "bg-[#FFFFFF] text-[#141414] hover:opacity-90"
+                      : "bg-[#141414] text-[#FFFFFF] hover:opacity-90"
+                  }`}
+                >
+                  {courseListBulkEditMode ? "취소" : "x"}
+                </button>
+              </div>
+            )}
+          </div>
+          <div
+            className={`flex-1 overflow-y-auto pt-3 ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}
           >
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-6">
               {sortedCourses.map((course) => {
@@ -2425,28 +2396,18 @@ const MainContent: React.FC<MainContentProps> = ({
                       isDarkMode
                         ? "bg-[#ffffff14] border border-zinc-800"
                         : "bg-[#4040401f] border border-[#E5E7EB]"
-                    } ${courseListBulkEditMode && checked ? "ring-2 ring-emerald-500" : ""} focus:ring-2 ${
+                    } ${
+                      courseListBulkEditMode && checked
+                        ? isDarkMode
+                          ? "!border-2 !border-[#FFFFFF]"
+                          : "!border-2 !border-[#141414]"
+                        : ""
+                    } focus:ring-2 ${
                       isDarkMode
                         ? "focus:ring-zinc-500/60 focus:ring-offset-zinc-950"
-                        : "focus:ring-emerald-500/60 focus:ring-offset-white"
+                        : "focus:ring-zinc-500/60 focus:ring-offset-white"
                     } shadow-sm`}
                   >
-                    {courseListBulkEditMode && (
-                      <label
-                        className="absolute top-2 left-2 flex items-center justify-center w-5 h-5 rounded z-10 cursor-pointer"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() =>
-                            handleToggleCourseBulkSelect(course.courseId)
-                          }
-                          className="w-3 h-3"
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </label>
-                    )}
                     <div className="flex flex-col h-full p-6">
                       <div className="flex items-start justify-between gap-3 mb-3">
                         <h3 className="text-base font-semibold line-clamp-2 flex-1">
@@ -2752,12 +2713,12 @@ const MainContent: React.FC<MainContentProps> = ({
                       setExamTopic,
                       examCount,
                       setExamCount,
-                      examDesignMessages,
-                      setExamDesignMessages,
-                      examDesignInput,
-                      setExamDesignInput,
-                      examProfileLoading,
-                      sendExamProfileMessage,
+                      profileProficiencyLevel,
+                      setProfileProficiencyLevel,
+                      profileTargetDepth,
+                      setProfileTargetDepth,
+                      profileQuestionModality,
+                      setProfileQuestionModality,
                       onCreateExam: handleExamGenAsyncSubmit,
                       submitting,
                       onRecoverSession: handleExamSessionRecoverOpen,
@@ -2856,14 +2817,14 @@ const MainContent: React.FC<MainContentProps> = ({
                     setAddLectureTitle("");
                     setAddLectureModalOpen(true);
                   }}
-                  className={`shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-sm font-medium leading-[0] cursor-pointer transition-colors ${
+                  className={`shrink-0 w-7 h-7 flex items-center justify-center rounded-full text-sm font-medium leading-none cursor-pointer transition-colors ${
                     isDarkMode
                       ? "bg-zinc-700 text-gray-300 hover:bg-zinc-600"
                       : "bg-gray-200 text-gray-600 hover:bg-gray-300"
                   }`}
                   title="주차 추가"
                 >
-                  <span className="block leading-none -translate-y-0.5">+</span>
+                  +
                 </button>
               )}
             </div>
@@ -2877,9 +2838,9 @@ const MainContent: React.FC<MainContentProps> = ({
                     <button
                       type="button"
                       onClick={handleBulkDelete}
-                      className="px-3 py-1.5 text-xs font-medium rounded-full cursor-pointer text-[#ff824d] hover:opacity-80"
+                      className="flex items-center justify-center w-7 h-7 text-xs font-medium leading-none rounded-full cursor-pointer text-[#ff824d] hover:opacity-80"
                     >
-                      삭제
+                      x
                     </button>
                   )}
                   <button
@@ -2894,13 +2855,15 @@ const MainContent: React.FC<MainContentProps> = ({
                         setBulkSelectedIds({});
                       }
                     }}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-full cursor-pointer transition-colors ${
+                    className={`flex items-center justify-center h-7 text-xs font-medium leading-none rounded-full cursor-pointer transition-colors ${
+                      bulkEditMode ? "min-w-7 px-3" : "w-7"
+                    } ${
                       isDarkMode
                         ? "bg-[#FFFFFF] text-[#141414] hover:opacity-90"
                         : "bg-[#141414] text-[#FFFFFF] hover:opacity-90"
                     }`}
                   >
-                    {bulkEditMode ? "취소" : "삭제"}
+                    {bulkEditMode ? "취소" : "x"}
                   </button>
                 </div>
               )}
@@ -2933,12 +2896,14 @@ const MainContent: React.FC<MainContentProps> = ({
                           : "bg-[#4040401f] border border-[#E5E7EB]"
                       } ${
                         bulkEditMode && selectable && checked
-                          ? "ring-2 ring-emerald-500"
+                          ? isDarkMode
+                            ? "!border-2 !border-[#FFFFFF]"
+                            : "!border-2 !border-[#141414]"
                           : ""
                       } focus:ring-2 ${
                         isDarkMode
                           ? "focus:ring-zinc-500/60 focus:ring-offset-zinc-950"
-                          : "focus:ring-emerald-500/60 focus:ring-offset-white"
+                          : "focus:ring-zinc-500/60 focus:ring-offset-white"
                       } shadow-sm relative group/card`}
                     >
                       <button
@@ -2966,20 +2931,6 @@ const MainContent: React.FC<MainContentProps> = ({
                             " · 클릭 시 안내"}
                         </p>
                       </button>
-                      {selectable && bulkEditMode && (
-                        <label
-                          className={`absolute top-1.5 left-1.5 flex items-center justify-center w-5 h-5 rounded ${
-                            isDarkMode ? "bg-zinc-900/80" : "bg-white/90"
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => handleToggleBulkSelect(item.id)}
-                            className="w-3 h-3"
-                          />
-                        </label>
-                      )}
                     </div>
                   );
                 })}
@@ -3066,15 +3017,17 @@ const MainContent: React.FC<MainContentProps> = ({
   return (
     <>
       <div
-        className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden transition-colors px-5 sm:px-6 lg:px-8 ${
-          isDarkMode ? "bg-[#141414]" : "bg-white"
-        }`}
+        className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden transition-colors pl-5 sm:pl-6 lg:pl-8 ${
+          selectedMenu === "settings" ? "pr-0" : "pr-5 sm:pr-6 lg:pr-8"
+        } ${isDarkMode ? "bg-[#141414]" : "bg-white"}`}
       >
         {renderCourseListHeader()}
         {renderCourseDetailHeader()}
         {renderSettingsHeader()}
         <div className="flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col">
-          <div className={`flex-1 min-h-0 min-w-0 ${(previewFileUrl || previewMaterialId != null) ? "overflow-hidden" : "overflow-y-auto"}`}>
+          <div
+            className={`flex-1 min-h-0 min-w-0 ${(previewFileUrl || previewMaterialId != null) ? "overflow-hidden" : "overflow-y-auto"} ${selectedMenu === "settings" ? "pr-5 sm:pr-6 lg:pr-8" : ""}`}
+          >
             {selectedMenu === "settings" ? (
               <SettingsPage />
             ) : viewMode === "course-list" ? (
@@ -3148,7 +3101,7 @@ const MainContent: React.FC<MainContentProps> = ({
                     isDarkMode
                       ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-emerald-500"}`}
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-zinc-500"}`}
                   autoFocus
                 />
               </div>
@@ -3169,7 +3122,7 @@ const MainContent: React.FC<MainContentProps> = ({
                     isDarkMode
                       ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-emerald-500"}`}
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-zinc-500"}`}
                 />
               </div>
             </div>
@@ -3389,7 +3342,7 @@ const MainContent: React.FC<MainContentProps> = ({
                     isDarkMode
                       ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-emerald-500"}`}
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-zinc-500"}`}
                   autoFocus
                 />
               </div>
@@ -3408,7 +3361,7 @@ const MainContent: React.FC<MainContentProps> = ({
                     isDarkMode
                       ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-emerald-500"}`}
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-zinc-500"}`}
                 />
               </div>
               <div
@@ -3527,8 +3480,8 @@ const MainContent: React.FC<MainContentProps> = ({
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
                   } focus:outline-none focus:ring-2 ${
                     isDarkMode
-                      ? "focus:ring-emerald-500"
-                      : "focus:ring-emerald-500"
+                      ? "focus:ring-zinc-500"
+                      : "focus:ring-zinc-500"
                   }`}
                   disabled={isJoining}
                 />

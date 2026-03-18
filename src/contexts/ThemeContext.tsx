@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import { flushSync } from 'react-dom';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -45,14 +46,13 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   });
 
   const setThemeMode = useCallback((mode: ThemeMode) => {
-    setThemeModeState(mode);
+    document.documentElement.classList.add('theme-transition-disabled');
+    const nextDark = mode === 'system' ? getSystemTheme() : mode === 'dark';
     localStorage.setItem('themeMode', mode);
-    
-    if (mode === 'system') {
-      setIsDarkMode(getSystemTheme());
-    } else {
-      setIsDarkMode(mode === 'dark');
-    }
+    flushSync(() => {
+      setThemeModeState(mode);
+      setIsDarkMode(nextDark);
+    });
   }, [getSystemTheme]);
 
   const toggleTheme = (): void => {
@@ -72,6 +72,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     if (themeMode === 'system') {
       const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
       const handleChange = (e: MediaQueryListEvent) => {
+        document.documentElement.classList.add('theme-transition-disabled');
         setIsDarkMode(e.matches);
       };
 
@@ -96,6 +97,11 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       document.body.classList.remove('dark');
       document.documentElement.classList.remove('dark');
     }
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        document.documentElement.classList.remove('theme-transition-disabled');
+      });
+    });
   }, [isDarkMode]);
 
   const value: ThemeContextType = {

@@ -176,7 +176,7 @@ const SettingsPage: React.FC = () => {
       </div>
 
       {/* 개인 정보 - 이메일과 gap-12 */}
-      <p className={`text-[24px] font-semibold mt-12 ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+      <p className={`text-[24px] font-semibold mt-12 ${isDarkMode ? "text-white" : "text-[#141414]"}`}>
         개인 정보
       </p>
       {/* 이름 등 폼 - 개인정보 헤더와 gap-4 */}
@@ -185,7 +185,7 @@ const SettingsPage: React.FC = () => {
         <div className="border-b pb-3.5" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
           <div className="text-[16px]">
             <div className="flex items-center justify-between">
-              <div className={isDarkMode ? "text-[#FFFFFF]" : "text-gray-500"}>이름</div>
+              <div className={isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}>이름</div>
               <button
                 type="button"
                 onClick={() => {
@@ -196,12 +196,12 @@ const SettingsPage: React.FC = () => {
                     setEditingField("name");
                   }
                 }}
-                className="text-[14px] font-medium cursor-pointer text-[#FFFFFF]"
+                className={`text-[14px] font-medium cursor-pointer ${isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}`}
               >
                 {editingField === "name" ? "Cancel" : "Edit"}
               </button>
             </div>
-            <div className="mt-1 text-[14px] text-[#adadad]">{nickname || "-"}</div>
+            <div className={`mt-1 text-[14px] ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>{nickname || "-"}</div>
           </div>
 
           {editingField === "name" && (
@@ -265,7 +265,7 @@ const SettingsPage: React.FC = () => {
         <div className="border-b pb-3.5" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
           <div className="text-[16px]">
             <div className="flex items-center justify-between">
-              <div className={isDarkMode ? "text-[#FFFFFF]" : "text-gray-500"}>전화번호</div>
+              <div className={isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}>전화번호</div>
               <button
                 type="button"
                 onClick={() => {
@@ -276,12 +276,12 @@ const SettingsPage: React.FC = () => {
                     setEditingField("phone");
                   }
                 }}
-                className="text-[14px] font-medium cursor-pointer text-[#FFFFFF]"
+                className={`text-[14px] font-medium cursor-pointer ${isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}`}
               >
                 {editingField === "phone" ? "Cancel" : "Edit"}
               </button>
             </div>
-            <div className="mt-1 text-[14px] text-[#adadad]">{phoneNumber || "-"}</div>
+            <div className={`mt-1 text-[14px] ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>{phoneNumber || "-"}</div>
           </div>
 
           {editingField === "phone" && (
@@ -349,7 +349,7 @@ const SettingsPage: React.FC = () => {
         <div className="border-b pb-3.5" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
           <div className="text-[16px]">
             <div className="flex items-center justify-between">
-              <div className={isDarkMode ? "text-[#FFFFFF]" : "text-gray-500"}>생년월일</div>
+              <div className={isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}>생년월일</div>
               <button
                 type="button"
                 onClick={() => {
@@ -360,12 +360,12 @@ const SettingsPage: React.FC = () => {
                     setEditingField("birth");
                   }
                 }}
-                className="text-[14px] font-medium cursor-pointer text-[#FFFFFF]"
+                className={`text-[14px] font-medium cursor-pointer ${isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}`}
               >
                 {editingField === "birth" ? "Cancel" : "Edit"}
               </button>
             </div>
-            <div className="mt-1 text-[14px] text-[#adadad]">{birthDate || "-"}</div>
+            <div className={`mt-1 text-[14px] ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>{birthDate || "-"}</div>
           </div>
 
           {editingField === "birth" && (
@@ -425,7 +425,7 @@ const SettingsPage: React.FC = () => {
         <div className="border-b pb-3.5" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
           <div className="text-[16px]">
             <div className="flex items-center justify-between">
-              <div className={isDarkMode ? "text-[#FFFFFF]" : "text-gray-500"}>비밀번호</div>
+              <div className={isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}>비밀번호</div>
               <button
                 type="button"
                 onClick={() => {
@@ -438,12 +438,12 @@ const SettingsPage: React.FC = () => {
                     setEditingField("password");
                   }
                 }}
-                className="text-[14px] font-medium cursor-pointer text-[#FFFFFF]"
+                className={`text-[14px] font-medium cursor-pointer ${isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}`}
               >
                 {editingField === "password" ? "Cancel" : "Edit"}
               </button>
             </div>
-            <div className="mt-1 text-[14px] text-[#adadad]">••••••••</div>
+            <div className={`mt-1 text-[14px] ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>••••••••</div>
           </div>
 
           {editingField === "password" && (
@@ -504,13 +504,13 @@ const SettingsPage: React.FC = () => {
 
         {/* 계정 관리 */}
         <div className="pt-8 space-y-6">
-          <p className={`text-[24px] font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+          <p className={`text-[24px] font-semibold ${isDarkMode ? "text-white" : "text-[#141414]"}`}>
             계정 관리
           </p>
           <div className="border-b pb-3.5" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
             <div className="text-[16px]">
               <div className="flex items-center justify-between">
-                <div className={isDarkMode ? "text-[#FFFFFF]" : "text-gray-500"}>계정 삭제</div>
+                <div className={isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}>계정 삭제</div>
                 <button
                   type="button"
                   onClick={() => {
@@ -524,7 +524,7 @@ const SettingsPage: React.FC = () => {
                   삭제
                 </button>
               </div>
-              <div className="mt-1 text-[14px] text-[#adadad]">
+              <div className={`mt-1 text-[14px] ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>
                 계정을 영구적으로 삭제합니다. 복구할 수 없습니다.
               </div>
             </div>
@@ -722,7 +722,11 @@ const SettingsPage: React.FC = () => {
 
   const navButtonClass = (isActive: boolean) =>
     `w-auto lg:w-full text-left flex items-center gap-2 rounded font-semibold text-[16px] transition-colors ${
-      isActive ? "text-[#FFFFFF]" : "text-[#adadad]"
+      isActive
+        ? isDarkMode
+          ? "text-[#FFFFFF]"
+          : "text-[#141414]"
+        : "text-[#adadad]"
     }`;
 
   const navItems = (

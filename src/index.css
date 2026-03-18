@@ -28,6 +28,12 @@ body {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
 
+/* 테마 변경 시 색상 전환 비활성화 - 한꺼번에 변경되도록 */
+html.theme-transition-disabled body,
+html.theme-transition-disabled [class*="transition-colors"] {
+  transition: none !important;
+}
+
 /* 다크모드 스타일 */
 body.dark,
 html.dark body {
@@ -88,6 +94,11 @@ html.dark {
   margin: 0;
   padding: 0;
   font-size: var(--toggle-size);
+}
+
+/* 프로필 메뉴용 작은 테마 스위치 */
+.theme-switch--sm {
+  --toggle-size: 10px;
 }
 
 .theme-switch__container {
@@ -259,4 +270,13 @@ html.dark {
   -webkit-transform: translateY(-50%);
   -ms-transform: translateY(-50%);
   transform: translateY(-50%);
+}
+
+/* 글래스모피즘 (반투명) 프로필 드롭다운 - 테마 상관없이 항상 다크 스타일 */
+.profile-dropdown-glass {
+  background: rgba(30, 30, 30, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
 }
