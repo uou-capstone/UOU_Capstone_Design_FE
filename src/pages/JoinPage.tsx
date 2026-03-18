@@ -98,7 +98,7 @@ const JoinPage: React.FC = () => {
   // 인증 상태 확인 중이거나 로딩 중
   if (isAuthLoading || isJoining) {
     return (
-      <div className={`min-h-screen flex items-center justify-center ${isDarkMode ? 'bg-zinc-900' : 'bg-gray-100'}`}>
+      <div className={`min-h-screen flex items-center justify-center ${isDarkMode ? 'bg-[#141414]' : 'bg-[#FFFFFF]'}`}>
         <TruckLoader />
       </div>
     );
