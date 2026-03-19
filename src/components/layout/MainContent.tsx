@@ -26,6 +26,7 @@ import RightSidebar from "./RightSidebar";
 import SettingsPage from "../pages/SettingsPage";
 import ReportPage from "../pages/ReportPage";
 import PdfViewer from "../common/PdfViewer";
+import { CloseIcon, EditIcon, TrashIcon } from "../common/Icons";
 
 type ViewMode = "course-list" | "course-detail";
 // 메인 메뉴는 강의/설정/신고 사용
@@ -92,6 +93,7 @@ interface MainContentProps {
   selectedMenu?: MenuItem;
   onEditCourse?: (course: Course) => void;
   onDeleteCourse?: (course: Course, options?: { skipConfirm?: boolean }) => void;
+  onEditLecture?: (lecture: NonNullable<CourseDetail["lectures"]>[number]) => void;
   onCourseCreated?: (course: CourseDetail) => void;
   onLectureCreated?: (lecture: LectureResponseDto) => void;
   onPreviewStateChange?: (fileName: string | null) => void;
@@ -110,6 +112,7 @@ const MainContent: React.FC<MainContentProps> = ({
   onSelectLecture,
   onEditCourse,
   onDeleteCourse,
+  onEditLecture,
   onCourseCreated,
   onLectureCreated,
   selectedMenu = "lectures",
@@ -213,9 +216,6 @@ const MainContent: React.FC<MainContentProps> = ({
   >("QUIZ");
   const [assessmentDueDate, setAssessmentDueDate] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
-  const [openCourseMenuId, setOpenCourseMenuId] = React.useState<number | null>(
-    null,
-  );
   const [isCourseModalOpen, setIsCourseModalOpen] = React.useState(false);
   const [courseModalTitle, setCourseModalTitle] = React.useState("");
   const [courseModalDescription, setCourseModalDescription] =
@@ -258,7 +258,6 @@ const MainContent: React.FC<MainContentProps> = ({
   >(null);
   const [previewRetryKey, setPreviewRetryKey] = React.useState(0);
   const [rightSidebarWidth, setRightSidebarWidth] = React.useState(480);
-  const actionMenuRef = React.useRef<HTMLDivElement | null>(null);
   // 시험 세션 상세 보기 모달 상태
   const [examDetailSessionId, setExamDetailSessionId] = React.useState<
     string | null
@@ -297,9 +296,8 @@ const MainContent: React.FC<MainContentProps> = ({
   const [bulkSelectedIds, setBulkSelectedIds] = React.useState<
     Record<string, boolean>
   >({});
-  /** 강의실 목록에서 삭제 모드(강의 삭제와 동일 UI) */
-  const [courseListBulkEditMode, setCourseListBulkEditMode] =
-    React.useState(false);
+  /** 강의실 목록에서 수정/삭제 모드 (버튼 1개로 토글) */
+  const [courseListEditMode, setCourseListEditMode] = React.useState(false);
   const [bulkSelectedCourseIds, setBulkSelectedCourseIds] = React.useState<
     Record<number, boolean>
   >({});
@@ -318,11 +316,17 @@ const MainContent: React.FC<MainContentProps> = ({
   }, [courses, courseListSortOrder]);
   const [examRecoverOpen, setExamRecoverOpen] = React.useState(false);
   const [examRecoverSelectedId, setExamRecoverSelectedId] = React.useState("");
+  const [examEditMode, setExamEditMode] = React.useState(false);
+  const [selectedExamIds, setSelectedExamIds] = React.useState<
+    Record<string, boolean>
+  >({});
 
   React.useEffect(() => {
     if (!rightSidebarExamMode) {
       setExamRecoverOpen(false);
       setExamRecoverSelectedId("");
+      setExamEditMode(false);
+      setSelectedExamIds({});
       setExamProfile(null);
       setExamProfileStatus("IDLE");
     }
@@ -337,19 +341,33 @@ const MainContent: React.FC<MainContentProps> = ({
       if (prev) URL.revokeObjectURL(prev);
       return null;
     });
+    setPreviewMarkdownContent(null);
     setPreviewLoading(true);
     setPreviewLoadError(false);
     setPreviewErrorMessage(null);
     let objectUrl: string | null = null;
     const id = previewMaterialId;
+    const fileName = previewFileName;
     materialApi
       .getMaterialFile(id)
-      .then((blob) => {
+      .then(async (blob) => {
         const type = (blob.type || "").toLowerCase();
         const isHtml =
           type.includes("text/html") || type.includes("application/xhtml");
         if (isHtml) {
           setPreviewLoadError(true);
+          return;
+        }
+        // 마크다운 파일(.md)은 텍스트로 읽어 ReactMarkdown으로 렌더링
+        const isMarkdown =
+          type.includes("text/markdown") ||
+          type.includes("text/x-markdown") ||
+          (typeof fileName === "string" && /\.md$/i.test(fileName));
+        if (isMarkdown) {
+          const text = await blob.text();
+          setPreviewMarkdownContent(text);
+          setPreviewLoadError(false);
+          setPreviewErrorMessage(null);
           return;
         }
         objectUrl = URL.createObjectURL(blob);
@@ -366,7 +384,7 @@ const MainContent: React.FC<MainContentProps> = ({
     return () => {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [previewMaterialId, previewRetryKey]);
+  }, [previewMaterialId, previewRetryKey, previewFileName]);
 
   React.useEffect(() => {
     if (!previewFileUrl) {
@@ -521,6 +539,23 @@ const MainContent: React.FC<MainContentProps> = ({
           setPreviewLoading(false);
           return;
         }
+        // text/markdown 응답 또는 .md URL은 마크다운 뷰로 표시
+        const urlLooksLikeMd =
+          /\.md(\?|#|$)/i.test(previewFileUrl) ||
+          /\.md(\?|#|$)/i.test(fetchUrl || "");
+        const isMarkdown =
+          type.includes("text/markdown") ||
+          type.includes("text/x-markdown") ||
+          urlLooksLikeMd;
+        if (isMarkdown) {
+          const text = await blob.text();
+          setPreviewMarkdownContent(text);
+          setPreviewBlobUrl((prev) => {
+            if (prev) URL.revokeObjectURL(prev);
+            return null;
+          });
+          return;
+        }
         objectUrl = URL.createObjectURL(blob);
         setPreviewBlobUrl((prev) => {
           if (prev) URL.revokeObjectURL(prev);
@@ -603,33 +638,6 @@ const MainContent: React.FC<MainContentProps> = ({
   }, [previewFileUrl, previewMaterialId]);
 
   React.useEffect(() => {
-    if (openCourseMenuId === null) {
-      return;
-    }
-
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (actionMenuRef.current && !actionMenuRef.current.contains(target)) {
-        setOpenCourseMenuId(null);
-      }
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setOpenCourseMenuId(null);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleEscape);
-
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, [openCourseMenuId]);
-
-  React.useEffect(() => {
     if (!addMenuOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node))
@@ -656,8 +664,6 @@ const MainContent: React.FC<MainContentProps> = ({
     const lectureId = selectedLectureId ?? 0;
     const materials: CenterItem[] =
       (selectedLectureId ? localMaterials[selectedLectureId] : []) ?? [];
-    const exams: CenterItem[] =
-      (selectedLectureId ? localExams[selectedLectureId] : []) ?? [];
     const fromAssessments: CenterItem[] = assessments.map((a) => ({
       id: `assessment-${a.assessmentId}`,
       type: "assessment" as const,
@@ -666,10 +672,10 @@ const MainContent: React.FC<MainContentProps> = ({
       createdAt: a.dueDate || "",
       assessmentId: a.assessmentId,
     }));
-    const merged = [...materials, ...exams, ...fromAssessments];
+    const merged = [...materials, ...fromAssessments];
     merged.sort((a, b) => a.title.localeCompare(b.title));
     return merged;
-  }, [selectedLectureId, localMaterials, localExams, assessments]);
+  }, [selectedLectureId, localMaterials, assessments]);
 
   // 강의실 진입 시 /api/courses/{courseId}/contents 한 번 호출하여 모든 주차 리소스 로드
   React.useEffect(() => {
@@ -1740,7 +1746,7 @@ const MainContent: React.FC<MainContentProps> = ({
         lines.push("", res.message);
       }
       window.alert(lines.join("\n"));
-      setRightSidebarExamMode(false);
+      if (courseDetail?.courseId) refetchCourseContents(courseDetail.courseId);
       setExamTopic("");
       setExamCount(10);
       setProfileFocusAreasInput("");
@@ -1770,6 +1776,8 @@ const MainContent: React.FC<MainContentProps> = ({
     profileStrictness,
     profileExplanationDepth,
     profileScopeBoundary,
+    courseDetail?.courseId,
+    refetchCourseContents,
   ]);
 
   const openExamSessionDetail = React.useCallback(async (sessionId: string) => {
@@ -1838,6 +1846,76 @@ const MainContent: React.FC<MainContentProps> = ({
       setSubmitting(false);
     }
   }, [examRecoverSelectedId, courseDetail?.courseId, refetchCourseContents]);
+
+  const handleToggleExamSelect = React.useCallback((id: string) => {
+    setSelectedExamIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
+  const handleDeleteSelectedExams = React.useCallback(async () => {
+    const ids = Object.keys(selectedExamIds).filter((id) => selectedExamIds[id]);
+    if (ids.length === 0) {
+      window.alert("삭제할 시험을 선택해 주세요.");
+      return;
+    }
+    if (
+      !window.confirm(
+        `선택한 ${ids.length}개의 시험을 삭제하시겠습니까?\n(필요하면 다시 생성할 수 있습니다.)`,
+      )
+    ) {
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const exams = localExams[selectedLectureId ?? 0] ?? [];
+      const toDelete = exams.filter((e) => ids.includes(e.id) && e.examSessionId);
+      await Promise.all(
+        toDelete.map((e) =>
+          examGenerationApi.deleteExamSession(Number(e.examSessionId)),
+        ),
+      );
+      setLocalExams((prev) => {
+        const list = (prev[selectedLectureId ?? 0] ?? []).filter(
+          (e) => !ids.includes(e.id),
+        );
+        return { ...prev, [selectedLectureId ?? 0]: list };
+      });
+      setSelectedExamIds({});
+      setExamEditMode(false);
+      if (courseDetail?.courseId) refetchCourseContents(courseDetail.courseId);
+    } catch (e) {
+      window.alert(
+        e instanceof Error ? e.message : "시험 삭제에 실패했습니다.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }, [
+    selectedExamIds,
+    selectedLectureId,
+    localExams,
+    courseDetail?.courseId,
+    refetchCourseContents,
+  ]);
+
+  const handleDeleteSingleExam = React.useCallback(
+    async (examSessionId: string) => {
+      try {
+        await examGenerationApi.deleteExamSession(Number(examSessionId));
+        setLocalExams((prev) => {
+          const list = (prev[selectedLectureId ?? 0] ?? []).filter(
+            (e) => String(e.examSessionId) !== examSessionId,
+          );
+          return { ...prev, [selectedLectureId ?? 0]: list };
+        });
+        if (courseDetail?.courseId) refetchCourseContents(courseDetail.courseId);
+      } catch (e) {
+        window.alert(
+          e instanceof Error ? e.message : "시험 삭제에 실패했습니다.",
+        );
+      }
+    },
+    [selectedLectureId, courseDetail?.courseId, refetchCourseContents],
+  );
 
   const handleToggleFlashCard = (id: number) => {
     setExamDetailFlipped((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -2104,13 +2182,8 @@ const MainContent: React.FC<MainContentProps> = ({
     [openExamSessionDetail, getMaterialDocumentPreviewUrl],
   );
 
-  const toggleCourseMenu = (courseId: number) => {
-    setOpenCourseMenuId((prev) => (prev === courseId ? null : courseId));
-  };
-
   const handleCourseSelect = (courseId: number) => {
     onSelectCourse(courseId);
-    setOpenCourseMenuId(null);
   };
 
   const handleToggleCourseBulkSelect = (courseId: number) => {
@@ -2143,8 +2216,7 @@ const MainContent: React.FC<MainContentProps> = ({
       }
     }
     setBulkSelectedCourseIds({});
-    setCourseListBulkEditMode(false);
-    setOpenCourseMenuId(null);
+    setCourseListEditMode(false);
   }, [bulkSelectedCourseIds, courses, onDeleteCourse]);
 
   const handleCreateCourse = async () => {
@@ -2345,33 +2417,74 @@ const MainContent: React.FC<MainContentProps> = ({
             <div className="flex-1" />
             {isTeacher && (
               <div className="flex items-center gap-1">
-                {courseListBulkEditMode && (
+                {!courseListEditMode ? (
                   <button
                     type="button"
-                    onClick={handleCourseListBulkDelete}
-                    className="flex items-center justify-center w-7 h-7 text-xs font-medium leading-none rounded-full cursor-pointer text-[#ff824d] hover:opacity-80"
+                    onClick={() => setCourseListEditMode(true)}
+                    className={`flex items-center justify-center w-7 h-7 rounded-full cursor-pointer transition-colors ${
+                      isDarkMode
+                        ? "text-gray-400 hover:text-gray-200 hover:bg-zinc-700"
+                        : "text-gray-500 hover:text-gray-700 hover:bg-zinc-200"
+                    }`}
+                    aria-label="수정/삭제 모드"
+                    title="수정/삭제 모드"
                   >
-                    x
+                    <EditIcon className="w-4 h-4" />
                   </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const selectedIds = Object.entries(bulkSelectedCourseIds)
+                          .filter(([, v]) => v)
+                          .map(([k]) => Number(k));
+                        if (selectedIds.length !== 1) {
+                          window.alert("수정할 강의실을 1개 선택해주세요.");
+                          return;
+                        }
+                        const course = sortedCourses.find((c) => c.courseId === selectedIds[0]);
+                        if (course) {
+                          onEditCourse?.(course);
+                        }
+                      }}
+                      className={`flex items-center justify-center w-7 h-7 rounded-full cursor-pointer transition-colors ${
+                        isDarkMode
+                          ? "text-gray-300 hover:bg-zinc-700"
+                          : "text-gray-500 hover:bg-zinc-200"
+                      }`}
+                      aria-label="수정"
+                      title="수정"
+                    >
+                      <EditIcon className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCourseListBulkDelete}
+                      className="flex items-center justify-center w-7 h-7 rounded-full cursor-pointer text-[#ff824d] hover:opacity-80"
+                      aria-label="삭제"
+                      title="삭제"
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCourseListEditMode(false);
+                        setBulkSelectedCourseIds({});
+                      }}
+                      className={`flex items-center justify-center w-7 h-7 rounded-full cursor-pointer transition-colors ${
+                        isDarkMode
+                          ? "bg-[#FFFFFF] text-[#141414] hover:opacity-90"
+                          : "bg-[#141414] text-[#FFFFFF] hover:opacity-90"
+                      }`}
+                      aria-label="취소"
+                      title="취소"
+                    >
+                      <CloseIcon className="w-4 h-4" />
+                    </button>
+                  </>
                 )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCourseListBulkEditMode((v) => !v);
-                    if (courseListBulkEditMode) {
-                      setBulkSelectedCourseIds({});
-                    }
-                  }}
-                  className={`flex items-center justify-center h-7 text-xs font-medium leading-none rounded-full cursor-pointer transition-colors ${
-                    courseListBulkEditMode ? "min-w-7 px-3" : "w-7"
-                  } ${
-                    isDarkMode
-                      ? "bg-[#FFFFFF] text-[#141414] hover:opacity-90"
-                      : "bg-[#141414] text-[#FFFFFF] hover:opacity-90"
-                  }`}
-                >
-                  {courseListBulkEditMode ? "취소" : "x"}
-                </button>
               </div>
             )}
           </div>
@@ -2385,9 +2498,12 @@ const MainContent: React.FC<MainContentProps> = ({
                   <div
                     key={course.courseId}
                     role="button"
-                    tabIndex={0}
+                    tabIndex={courseListEditMode ? -1 : 0}
+                    onMouseDown={(e) => {
+                      if (courseListEditMode) e.preventDefault();
+                    }}
                     onClick={() => {
-                      if (courseListBulkEditMode) {
+                      if (courseListEditMode) {
                         handleToggleCourseBulkSelect(course.courseId);
                       } else {
                         handleCourseSelect(course.courseId);
@@ -2396,88 +2512,36 @@ const MainContent: React.FC<MainContentProps> = ({
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        if (courseListBulkEditMode)
+                        if (courseListEditMode) {
                           handleToggleCourseBulkSelect(course.courseId);
-                        else handleCourseSelect(course.courseId);
+                        } else handleCourseSelect(course.courseId);
                       }
                     }}
-                    className={`text-left rounded-2xl transition-all flex flex-col cursor-pointer focus:outline-none relative overflow-hidden ${
+                    className={`text-left rounded-2xl flex cursor-pointer focus:outline-none relative overflow-hidden ${
                       isDarkMode
-                        ? "bg-[#ffffff14] border border-zinc-800"
-                        : "bg-[#4040401f] border border-[#E5E7EB]"
+                        ? "border border-zinc-800"
+                        : "border border-[#E5E7EB]"
                     } ${
-                      courseListBulkEditMode && checked
+                      courseListEditMode && checked
                         ? isDarkMode
-                          ? "!border-2 !border-[#FFFFFF]"
-                          : "!border-2 !border-[#141414]"
+                          ? "shadow-[inset_0_0_0_2px_#FFFFFF]"
+                          : "shadow-[inset_0_0_0_2px_#141414]"
                         : ""
-                    } focus:ring-2 ${
+                    } ${
                       isDarkMode
-                        ? "focus:ring-zinc-500/60 focus:ring-offset-zinc-950"
-                        : "focus:ring-zinc-500/60 focus:ring-offset-white"
-                    } shadow-sm`}
+                        ? "bg-[#ffffff14]"
+                        : "bg-[#4040401f]"
+                    } ${
+                      courseListEditMode
+                        ? "focus:outline-none"
+                        : "focus:ring-2 " + (isDarkMode ? "focus:ring-zinc-500/60 focus:ring-offset-zinc-950" : "focus:ring-zinc-500/60 focus:ring-offset-white")
+                    }`}
                   >
-                    <div className="flex flex-col h-full p-6">
+                    <div className="flex flex-col h-full p-6 flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-3 mb-3">
                         <h3 className="text-base font-semibold line-clamp-2 flex-1">
                           {course.title}
                         </h3>
-                        {!courseListBulkEditMode && (
-                          <div className="relative flex-shrink-0">
-                            <button
-                              type="button"
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                toggleCourseMenu(course.courseId);
-                              }}
-                              className={`inline-flex items-center justify-center w-7 h-7 rounded-lg transition-colors cursor-pointer ${
-                                isDarkMode
-                                  ? "text-gray-200 hover:text-white hover:bg-zinc-700"
-                                  : "text-gray-500 hover:text-gray-700 hover:bg-zinc-200"
-                              }`}
-                              aria-haspopup="menu"
-                              aria-expanded={
-                                openCourseMenuId === course.courseId
-                              }
-                              aria-label="강의실 옵션 열기"
-                            >
-                              ⋮
-                            </button>
-                            {openCourseMenuId === course.courseId && (
-                              <div
-                                ref={(node) => {
-                                  if (openCourseMenuId === course.courseId) {
-                                    actionMenuRef.current = node;
-                                  }
-                                }}
-                                className={`absolute right-0 mt-1 w-36 rounded-lg border shadow-lg z-20 ${
-                                  isDarkMode
-                                    ? "bg-zinc-800 border-zinc-700"
-                                    : "bg-white border-gray-200"
-                                }`}
-                                role="menu"
-                                aria-label="강의실 옵션 메뉴"
-                              >
-                                <button
-                                  type="button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    setOpenCourseMenuId(null);
-                                    onEditCourse?.(course);
-                                  }}
-                                  className={`w-full text-left px-3 py-2 text-xs transition-colors rounded-lg cursor-pointer ${
-                                    isDarkMode
-                                      ? "text-gray-200 hover:bg-zinc-700"
-                                      : "text-gray-700 hover:bg-zinc-200"
-                                  }`}
-                                  role="menuitem"
-                                >
-                                  강의실 수정
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
                       </div>
                       {course.description && (
                         <p
@@ -2619,7 +2683,7 @@ const MainContent: React.FC<MainContentProps> = ({
         <div className="flex flex-col h-full min-w-0 overflow-hidden">
           <div className="flex-1 flex min-h-0 min-w-0 overflow-hidden">
             {/* 좌: 미리보기 */}
-            <div className="flex-1 min-h-0 min-w-0 bg-gray-100 dark:bg-zinc-900 flex flex-col overflow-hidden border-r border-zinc-700/50">
+            <div className="flex-1 min-h-0 min-w-0 bg-gray-100 dark:bg-zinc-900 flex flex-col overflow-hidden">
               {previewLoading ? (
                 <div
                   className={`flex-1 flex items-center justify-center ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}
@@ -2687,7 +2751,7 @@ const MainContent: React.FC<MainContentProps> = ({
               role="separator"
               aria-label="채팅창 너비 조절"
               onMouseDown={handleRightSidebarResizeStart}
-              className={`shrink-0 w-1 cursor-col-resize flex items-center justify-center group hover:bg-emerald-500/30 transition-colors ${
+              className={`shrink-0 w-0.1 cursor-col-resize flex items-center justify-center group hover:bg-emerald-500/30 transition-colors ${
                 isDarkMode ? "bg-zinc-700" : "bg-gray-200"
               }`}
             >
@@ -2739,6 +2803,16 @@ const MainContent: React.FC<MainContentProps> = ({
                       recoverExams: localExams[selectedLectureId ?? 0] ?? [],
                       onRecoverSubmit: handleExamSessionRecoverSubmit,
                       setRecoverOpen: setExamRecoverOpen,
+                      onExamClick: (id) => void openExamSessionDetail(id),
+                      examEditMode,
+                      onExamEditModeChange: (v) => {
+                        setExamEditMode(v);
+                        if (!v) setSelectedExamIds({});
+                      },
+                      selectedExamIds,
+                      onToggleExamSelect: handleToggleExamSelect,
+                      onDeleteSelectedExams: handleDeleteSelectedExams,
+                      onDeleteExam: handleDeleteSingleExam,
                     }
                   : null
               }
@@ -2845,37 +2919,76 @@ const MainContent: React.FC<MainContentProps> = ({
               )}
               {isTeacher && (
                 <div className="flex items-center gap-1">
-                  {bulkEditMode && (
+                  {!bulkEditMode ? (
                     <button
                       type="button"
-                      onClick={handleBulkDelete}
-                      className="flex items-center justify-center w-7 h-7 text-xs font-medium leading-none rounded-full cursor-pointer text-[#ff824d] hover:opacity-80"
+                      onClick={() => {
+                        if (!selectedLectureId) {
+                          window.alert("강의를 먼저 선택해주세요.");
+                          return;
+                        }
+                        setBulkEditMode(true);
+                      }}
+                      className={`flex items-center justify-center w-7 h-7 rounded-full cursor-pointer transition-colors ${
+                        isDarkMode
+                          ? "text-gray-400 hover:text-gray-200 hover:bg-zinc-700"
+                          : "text-gray-500 hover:text-gray-700 hover:bg-zinc-200"
+                      }`}
+                      aria-label="수정/삭제 모드"
+                      title="수정/삭제 모드"
                     >
-                      x
+                      <EditIcon className="w-4 h-4" />
                     </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const ids = Object.keys(bulkSelectedIds).filter((k) => bulkSelectedIds[k]);
+                          if (ids.length !== 1) {
+                            window.alert("수정할 자료/시험을 1개 선택해주세요.");
+                            return;
+                          }
+                          const item = sortedItems.find((i) => i.id === ids[0]);
+                          if (item) handleCardClick(item);
+                        }}
+                        className={`flex items-center justify-center w-7 h-7 rounded-full cursor-pointer transition-colors ${
+                          isDarkMode
+                            ? "text-gray-300 hover:bg-zinc-700"
+                            : "text-gray-500 hover:bg-zinc-200"
+                        }`}
+                        aria-label="수정"
+                        title="수정"
+                      >
+                        <EditIcon className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleBulkDelete}
+                        className="flex items-center justify-center w-7 h-7 rounded-full cursor-pointer text-[#ff824d] hover:opacity-80"
+                        aria-label="삭제"
+                        title="삭제"
+                      >
+                        <TrashIcon className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBulkEditMode(false);
+                          setBulkSelectedIds({});
+                        }}
+                        className={`flex items-center justify-center w-7 h-7 rounded-full cursor-pointer transition-colors ${
+                          isDarkMode
+                            ? "bg-[#FFFFFF] text-[#141414] hover:opacity-90"
+                            : "bg-[#141414] text-[#FFFFFF] hover:opacity-90"
+                        }`}
+                        aria-label="취소"
+                        title="취소"
+                      >
+                        <CloseIcon className="w-4 h-4" />
+                      </button>
+                    </>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!selectedLectureId) {
-                        window.alert("강의를 먼저 선택해주세요.");
-                        return;
-                      }
-                      setBulkEditMode((v) => !v);
-                      if (bulkEditMode) {
-                        setBulkSelectedIds({});
-                      }
-                    }}
-                    className={`flex items-center justify-center h-7 text-xs font-medium leading-none rounded-full cursor-pointer transition-colors ${
-                      bulkEditMode ? "min-w-7 px-3" : "w-7"
-                    } ${
-                      isDarkMode
-                        ? "bg-[#FFFFFF] text-[#141414] hover:opacity-90"
-                        : "bg-[#141414] text-[#FFFFFF] hover:opacity-90"
-                    }`}
-                  >
-                    {bulkEditMode ? "취소" : "x"}
-                  </button>
                 </div>
               )}
             </div>
@@ -2901,24 +3014,31 @@ const MainContent: React.FC<MainContentProps> = ({
                   return (
                     <div
                       key={item.id}
-                      className={`text-left rounded-2xl transition-all flex flex-col cursor-pointer focus:outline-none relative overflow-hidden ${
+                      className={`text-left rounded-2xl flex cursor-pointer focus:outline-none relative overflow-hidden ${
                         isDarkMode
-                          ? "bg-[#ffffff14] border border-zinc-800"
-                          : "bg-[#4040401f] border border-[#E5E7EB]"
+                          ? "border border-zinc-800"
+                          : "border border-[#E5E7EB]"
                       } ${
                         bulkEditMode && selectable && checked
                           ? isDarkMode
-                            ? "!border-2 !border-[#FFFFFF]"
-                            : "!border-2 !border-[#141414]"
+                            ? "shadow-[inset_0_0_0_2px_#FFFFFF]"
+                            : "shadow-[inset_0_0_0_2px_#141414]"
                           : ""
-                      } focus:ring-2 ${
+                      } ${
                         isDarkMode
-                          ? "focus:ring-zinc-500/60 focus:ring-offset-zinc-950"
-                          : "focus:ring-zinc-500/60 focus:ring-offset-white"
-                      } shadow-sm relative group/card`}
+                          ? "bg-[#ffffff14]"
+                          : "bg-[#4040401f]"
+                      } ${
+                        bulkEditMode && selectable
+                          ? "focus:outline-none"
+                          : "focus:ring-2 " + (isDarkMode ? "focus:ring-zinc-500/60 focus:ring-offset-zinc-950" : "focus:ring-zinc-500/60 focus:ring-offset-white")
+                      } relative group/card`}
                     >
                       <button
                         type="button"
+                        onMouseDown={(e) => {
+                          if (bulkEditMode && selectable) e.preventDefault();
+                        }}
                         onClick={() => {
                           if (bulkEditMode && selectable) {
                             handleToggleBulkSelect(item.id);
@@ -2926,7 +3046,7 @@ const MainContent: React.FC<MainContentProps> = ({
                             handleCardClick(item);
                           }
                         }}
-                        className={`w-full h-full text-left flex flex-col p-6 ${
+                        className={`w-full h-full text-left flex flex-col p-6 focus:outline-none ${
                           isDarkMode ? "hover:bg-zinc-900/90" : ""
                         }`}
                       >

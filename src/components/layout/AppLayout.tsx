@@ -356,8 +356,14 @@ const AppLayout: React.FC = () => {
         isSettingsPage={selectedMenu === "settings"}
         isReportPage={selectedMenu === "report"}
         onNavigateHome={handleBackToCourses}
-        onOpenSettings={() => navigate("/settings")}
-        onOpenReport={() => navigate("/report")}
+        onOpenSettings={() => {
+          setSelectedMenu("settings");
+          navigate("/settings");
+        }}
+        onOpenReport={() => {
+          setSelectedMenu("report");
+          navigate("/report");
+        }}
         previewFileName={previewFileName}
         onBackFromPreview={() => window.dispatchEvent(new Event("back-from-preview"))}
       />
@@ -375,6 +381,7 @@ const AppLayout: React.FC = () => {
           onSelectLecture={handleLectureSelect}
           onEditCourse={handleCourseEdit}
           onDeleteCourse={handleCourseDelete}
+          onEditLecture={handleLectureEdit}
           onCourseCreated={handleCourseCreated}
           onLectureCreated={handleLectureCreated}
           selectedMenu={selectedMenu}
