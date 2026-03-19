@@ -10,9 +10,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@react-pdf-viewer/core": "3.12.0",
+    "@react-pdf-viewer/default-layout": "3.12.0",
+    "@react-pdf-viewer/scroll-mode": "3.12.0",
+    "pdfjs-dist": "3.4.120",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-markdown": "^10.1.0",
+    "react-pdf": "^10.4.1",
     "react-router-dom": "^7.9.1",
     "remark-gfm": "^4.0.1"
   },

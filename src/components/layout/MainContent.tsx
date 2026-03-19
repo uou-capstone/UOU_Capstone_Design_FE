@@ -24,10 +24,12 @@ import {
 } from "../../services/api";
 import RightSidebar from "./RightSidebar";
 import SettingsPage from "../pages/SettingsPage";
+import ReportPage from "../pages/ReportPage";
+import PdfViewer from "../common/PdfViewer";
 
 type ViewMode = "course-list" | "course-detail";
-// 메인 메뉴는 강의/설정만 사용
-type MenuItem = "lectures" | "settings";
+// 메인 메뉴는 강의/설정/신고 사용
+type MenuItem = "lectures" | "settings" | "report";
 
 type ItemType = "material" | "exam" | "assessment";
 type CenterItem = {
@@ -238,6 +240,13 @@ const MainContent: React.FC<MainContentProps> = ({
   const [previewBlobUrl, setPreviewBlobUrl] = React.useState<string | null>(
     null,
   );
+  /** PDF 미리보기 시 사용자가 현재 보고 있는 페이지 (1-based, BE 전달용) */
+  const [previewCurrentPdfPage, setPreviewCurrentPdfPage] = React.useState<
+    number | null
+  >(null);
+  React.useEffect(() => {
+    if (!previewBlobUrl) setPreviewCurrentPdfPage(null);
+  }, [previewBlobUrl]);
   /** AI 강의자료 생성 문서는 MD로 불러와 마크다운 뷰로 표시 */
   const [previewMarkdownContent, setPreviewMarkdownContent] = React.useState<
     string | null
@@ -2664,10 +2673,11 @@ const MainContent: React.FC<MainContentProps> = ({
                 </div>
               ) : previewBlobUrl ? (
                 <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
-                  <iframe
-                    src={`${previewBlobUrl}#view=FitH`}
+                  <PdfViewer
+                    fileUrl={previewBlobUrl}
                     title={previewFileName || "자료 미리보기"}
-                    className="flex-1 min-h-[calc(100vh-110px)] w-full border-0"
+                    className="min-h-[calc(100vh-110px)]"
+                    onPageChange={(page) => setPreviewCurrentPdfPage(page)}
                   />
                 </div>
               ) : null}
@@ -2695,6 +2705,7 @@ const MainContent: React.FC<MainContentProps> = ({
               courseId={courseDetail.courseId}
               viewMode="course-detail"
               courseDetail={courseDetail}
+              previewCurrentPdfPage={previewCurrentPdfPage}
               onLectureDataChange={(_, fileUrl, fileName) => {
                 if (fileUrl) {
                   setPreviewFileUrl(fileUrl);
@@ -3018,7 +3029,7 @@ const MainContent: React.FC<MainContentProps> = ({
     <>
       <div
         className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden transition-colors pl-5 sm:pl-6 lg:pl-8 ${
-          selectedMenu === "settings" ? "pr-0" : "pr-5 sm:pr-6 lg:pr-8"
+          selectedMenu === "settings" || selectedMenu === "report" ? "pr-0" : "pr-5 sm:pr-6 lg:pr-8"
         } ${isDarkMode ? "bg-[#141414]" : "bg-white"}`}
       >
         {renderCourseListHeader()}
@@ -3026,10 +3037,12 @@ const MainContent: React.FC<MainContentProps> = ({
         {renderSettingsHeader()}
         <div className="flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col">
           <div
-            className={`flex-1 min-h-0 min-w-0 ${(previewFileUrl || previewMaterialId != null) ? "overflow-hidden" : "overflow-y-auto"} ${selectedMenu === "settings" ? "pr-5 sm:pr-6 lg:pr-8" : ""}`}
+            className={`flex-1 min-h-0 min-w-0 ${(previewFileUrl || previewMaterialId != null) ? "overflow-hidden" : "overflow-y-auto"} ${selectedMenu === "settings" || selectedMenu === "report" ? "pr-5 sm:pr-6 lg:pr-8" : ""}`}
           >
             {selectedMenu === "settings" ? (
               <SettingsPage />
+            ) : selectedMenu === "report" ? (
+              <ReportPage />
             ) : viewMode === "course-list" ? (
               renderCourseList()
             ) : (

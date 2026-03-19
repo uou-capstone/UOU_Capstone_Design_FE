@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useLocation } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import MainContent from "./MainContent.tsx";
 import TopNav from "./TopNav.tsx";
@@ -7,7 +7,7 @@ import { useCourses } from "../../hooks/useCourses";
 import type { Course, CourseDetail, LectureResponseDto } from "../../services/api";
 
 type ViewMode = "course-list" | "course-detail";
-type MenuItem = "lectures" | "settings";
+type MenuItem = "lectures" | "settings" | "report";
 
 type CourseLecture = NonNullable<NonNullable<CourseDetail["lectures"]>[number]>;
 
@@ -16,6 +16,7 @@ const getLastLectureStorageKey = (courseId: number) => `course_${courseId}_last_
 const AppLayout: React.FC = () => {
   const { isDarkMode } = useTheme();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { courseId: courseIdParam } = useParams<{ courseId?: string }>();
   const selectedCourseId = courseIdParam
     ? (() => {
@@ -100,9 +101,15 @@ const AppLayout: React.FC = () => {
     loadCourseDetail(selectedCourseId);
   }, [selectedCourseId, loadCourseDetail, resetLectureOutputs]);
 
-  // 설정 페이지로 전환 시 미리보기 상태(뒤로가기 버튼, 파일 제목) 초기화
+  // URL 경로에 따라 메뉴 동기화
   useEffect(() => {
-    if (selectedMenu === "settings") {
+    if (pathname === "/settings") setSelectedMenu("settings");
+    else if (pathname === "/report") setSelectedMenu("report");
+  }, [pathname]);
+
+  // 설정/신고 페이지로 전환 시 미리보기 상태(뒤로가기 버튼, 파일 제목) 초기화
+  useEffect(() => {
+    if (selectedMenu === "settings" || selectedMenu === "report") {
       setPreviewFileName(null);
     }
   }, [selectedMenu]);
@@ -347,8 +354,10 @@ const AppLayout: React.FC = () => {
       <TopNav
         isCourseDetail={viewMode === "course-detail"}
         isSettingsPage={selectedMenu === "settings"}
+        isReportPage={selectedMenu === "report"}
         onNavigateHome={handleBackToCourses}
-        onOpenSettings={() => setSelectedMenu("settings")}
+        onOpenSettings={() => navigate("/settings")}
+        onOpenReport={() => navigate("/report")}
         previewFileName={previewFileName}
         onBackFromPreview={() => window.dispatchEvent(new Event("back-from-preview"))}
       />

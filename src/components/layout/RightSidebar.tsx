@@ -64,6 +64,8 @@ interface RightSidebarProps {
   courseId?: number;
   viewMode: ViewMode;
   courseDetail?: CourseDetail | null;
+  /** PDF 미리보기 시 사용자가 현재 보고 있는 페이지 (1-based). BE API 호출 시 전달 가능 */
+  previewCurrentPdfPage?: number | null;
   /** 강의 상세에서 시험 만들기 시 오른쪽 패널에 프로필 설정 UI 표시 */
   examProps?: RightSidebarExamProps | null;
 }
@@ -75,6 +77,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   courseId,
   viewMode,
   courseDetail,
+  previewCurrentPdfPage,
   examProps,
 }) => {
   const { isDarkMode } = useTheme();
@@ -513,7 +516,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           throw new Error("요청이 중단되었습니다.");
         }
         try {
-          return await streamingApi.next(currentLectureId);
+          return await streamingApi.next(currentLectureId, {
+            pageNumber: previewCurrentPdfPage ?? undefined,
+          });
         } catch (e) {
           lastErr = e;
           const msg = e instanceof Error ? e.message : String(e);
@@ -865,7 +870,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         ...prev,
         { id: initMessageId, text: "", isUser: false, isLoading: true },
       ]);
-      streamingApi.initialize(currentLectureId)
+      streamingApi.initialize(currentLectureId, {
+        pageNumber: previewCurrentPdfPage ?? undefined,
+      })
         .then(() => {
           setIsStreaming(true);
           return fetchNextSegment(initMessageId);
