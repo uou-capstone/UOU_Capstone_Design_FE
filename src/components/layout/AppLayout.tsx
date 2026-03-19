@@ -93,13 +93,15 @@ const AppLayout: React.FC = () => {
       setCurrentCourseId(null);
       setCurrentLectureId(null);
       resetLectureOutputs();
-      // 메인 페이지로 돌아올 때 항상 "강의" 메뉴로
-      setSelectedMenu("lectures");
+      // 설정/신고 페이지로 이동한 경우 메뉴는 pathname effect에서 처리, 그 외에만 "강의"로
+      if (pathname !== "/settings" && pathname !== "/report") {
+        setSelectedMenu("lectures");
+      }
       return;
     }
     // resetLectureOutputs() 호출 제거: 마지막 강의 복원을 위해 localStorage 유지
     loadCourseDetail(selectedCourseId);
-  }, [selectedCourseId, loadCourseDetail, resetLectureOutputs]);
+  }, [selectedCourseId, loadCourseDetail, resetLectureOutputs, pathname]);
 
   // URL 경로에 따라 메뉴 동기화
   useEffect(() => {
@@ -165,7 +167,7 @@ const AppLayout: React.FC = () => {
   };
 
   const handleLectureDelete = useCallback(
-    async (lectureId: number) => {
+    async (lectureId: number, options?: { skipAlert?: boolean }) => {
       if (!selectedCourseId) return;
 
       try {
@@ -181,7 +183,9 @@ const AppLayout: React.FC = () => {
         // 강의 목록 갱신
         await loadCourseDetail(selectedCourseId);
         
-        window.alert("강의가 삭제되었습니다.");
+        if (!options?.skipAlert) {
+          window.alert("강의가 삭제되었습니다.");
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : "강의 삭제에 실패했습니다.";
         window.alert(message);
@@ -382,6 +386,7 @@ const AppLayout: React.FC = () => {
           onEditCourse={handleCourseEdit}
           onDeleteCourse={handleCourseDelete}
           onEditLecture={handleLectureEdit}
+          onDeleteLecture={handleLectureDelete}
           onCourseCreated={handleCourseCreated}
           onLectureCreated={handleLectureCreated}
           selectedMenu={selectedMenu}

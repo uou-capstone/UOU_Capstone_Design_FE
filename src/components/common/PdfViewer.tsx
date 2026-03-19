@@ -8,7 +8,8 @@ import "react-pdf/dist/Page/TextLayer.css";
 pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 const MIN_ZOOM = 0.5;
-const MAX_ZOOM = 1.5;
+/** 사용자가 확대할 수 있는 절대 최대 배율 (기본은 뷰포트 fit 최대, 여기서 더 확대 가능) */
+const ABSOLUTE_MAX_ZOOM = 3;
 const ZOOM_STEP = 0.1;
 const MAX_PAGE_WIDTH = 1200;
 
@@ -36,14 +37,17 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   const zoomInputRef = useRef<HTMLInputElement>(null);
   const [baseWidth, setBaseWidth] = useState(800);
   const [scrollAreaWidth, setScrollAreaWidth] = useState(800);
+  const [scrollAreaHeight, setScrollAreaHeight] = useState(600);
+  const [pageAspectRatio, setPageAspectRatio] = useState<number>(297 / 210); // A4 기본값
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollProgrammaticRef = useRef(false);
   const observerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFileUrlRef = useRef<string>("");
 
+  // Page는 고정 baseWidth로 렌더, CSS transform scale(zoom)으로 확대/축소 → 캔버스 재렌더 없이 부드럽게
   const pageWidth = Math.min(
-    Math.round(baseWidth * zoom),
+    Math.max(400, baseWidth),
     MAX_PAGE_WIDTH,
     Math.max(0, scrollAreaWidth - 48)
   );
@@ -51,15 +55,16 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const updateWidth = () => {
+    const updateSize = () => {
       const w = el.clientWidth || 800;
       setBaseWidth(Math.min(Math.max(400, w - 96), MAX_PAGE_WIDTH));
       if (scrollRef.current) {
         setScrollAreaWidth(scrollRef.current.clientWidth || 800);
+        setScrollAreaHeight(scrollRef.current.clientHeight || 600);
       }
     };
-    updateWidth();
-    const ro = new ResizeObserver(updateWidth);
+    updateSize();
+    const ro = new ResizeObserver(updateSize);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
@@ -67,11 +72,12 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   useEffect(() => {
     const scrollEl = scrollRef.current;
     if (!scrollEl) return;
-    const updateScrollWidth = () => {
+    const updateScrollSize = () => {
       setScrollAreaWidth(scrollEl.clientWidth || 800);
+      setScrollAreaHeight(scrollEl.clientHeight || 600);
     };
-    updateScrollWidth();
-    const ro = new ResizeObserver(updateScrollWidth);
+    updateScrollSize();
+    const ro = new ResizeObserver(updateScrollSize);
     ro.observe(scrollEl);
     return () => ro.disconnect();
   }, [numPages]);
@@ -101,18 +107,24 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
         const viewport = page.getViewport({ scale: 1 });
         const pageW = viewport.width;
         const pageH = viewport.height;
+        setPageAspectRatio(pageH / pageW);
 
         await new Promise((r) => setTimeout(r, 350));
         const scrollEl = scrollRef.current;
-        const containerH = (scrollEl?.clientHeight ?? 600) - 96;
-        const containerW = (scrollEl?.clientWidth ?? 800) - 48;
+        const containerH = (scrollEl?.clientHeight ?? 600) - 24;
+        const containerW = (scrollEl?.clientWidth ?? 800) - 16;
 
         const maxWidthFromHeight = (containerH * pageW) / pageH;
         const fitPageWidth = Math.min(containerW, maxWidthFromHeight);
         const fitZoom = fitPageWidth / (baseWidth || 700);
+        const maxByViewport = Math.min(
+          containerW / (baseWidth || 700),
+          containerH / ((baseWidth || 700) * (pageH / pageW))
+        );
+        // 기본 배율 = 뷰포트에 맞춘 최대 (fitMaxZoom), ABSOLUTE_MAX_ZOOM까지 확대 가능
         const newZoom = Math.max(
           MIN_ZOOM,
-          Math.min(MAX_ZOOM, fitZoom * 1.15)
+          Math.min(ABSOLUTE_MAX_ZOOM, fitZoom * 1.15, maxByViewport)
         );
         setZoom(newZoom);
       } catch (e) {
@@ -158,7 +170,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
         scrollToPage(currentPage + 1);
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
-        setZoom((z) => Math.min(z + ZOOM_STEP, MAX_ZOOM));
+        setZoom((z) => Math.min(z + ZOOM_STEP, ABSOLUTE_MAX_ZOOM));
       } else if (e.key === "ArrowDown") {
         e.preventDefault();
         setZoom((z) => Math.max(z - ZOOM_STEP, MIN_ZOOM));
@@ -168,22 +180,45 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [numPages, currentPage, scrollToPage]);
 
-  // Ctrl+휠로 배율 조정 (passive: false로 preventDefault 필요)
+  // Ctrl+휠로 배율 조정 (passive: false로 preventDefault 필요) - 스로틀로 깜빡임 감소
+  const zoomThrottleRef = useRef<{ last: number; timer: ReturnType<typeof setTimeout> | null; pending: "in" | "out" | null }>({
+    last: 0,
+    timer: null,
+    pending: null,
+  });
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
+    const THROTTLE_MS = 60;
     const handleWheel = (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
-        if (e.deltaY < 0) {
-          setZoom((z) => Math.min(z + ZOOM_STEP, MAX_ZOOM));
-        } else if (e.deltaY > 0) {
-          setZoom((z) => Math.max(z - ZOOM_STEP, MIN_ZOOM));
+        const dir: "in" | "out" = e.deltaY < 0 ? "in" : e.deltaY > 0 ? "out" : zoomThrottleRef.current.pending ?? "in";
+        if (e.deltaY !== 0) zoomThrottleRef.current.pending = dir;
+        const now = Date.now();
+        const doUpdate = () => {
+          zoomThrottleRef.current.last = Date.now();
+          zoomThrottleRef.current.timer = null;
+          const pending = zoomThrottleRef.current.pending;
+          zoomThrottleRef.current.pending = null;
+          if (pending === "in") {
+            setZoom((z) => Math.min(z + ZOOM_STEP, ABSOLUTE_MAX_ZOOM));
+          } else if (pending === "out") {
+            setZoom((z) => Math.max(z - ZOOM_STEP, MIN_ZOOM));
+          }
+        };
+        if (now - zoomThrottleRef.current.last >= THROTTLE_MS) {
+          doUpdate();
+        } else if (!zoomThrottleRef.current.timer) {
+          zoomThrottleRef.current.timer = setTimeout(doUpdate, THROTTLE_MS - (now - zoomThrottleRef.current.last));
         }
       }
     };
     el.addEventListener("wheel", handleWheel, { passive: false });
-    return () => el.removeEventListener("wheel", handleWheel);
+    return () => {
+      el.removeEventListener("wheel", handleWheel);
+      if (zoomThrottleRef.current.timer) clearTimeout(zoomThrottleRef.current.timer);
+    };
   }, []);
 
   // IntersectionObserver로 현재 보이는 페이지 감지 (가로 스크롤 기준)
@@ -250,7 +285,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   };
 
   const handleZoomIn = () => {
-    setZoom((z) => Math.min(z + ZOOM_STEP, MAX_ZOOM));
+    setZoom((z) => Math.min(z + ZOOM_STEP, ABSOLUTE_MAX_ZOOM));
   };
 
   const handleZoomOut = () => {
@@ -265,8 +300,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
 
   const applyZoomInput = () => {
     const n = parseInt(zoomInputValue.replace(/%/g, ""), 10);
-    if (Number.isFinite(n) && n >= MIN_ZOOM * 100 && n <= MAX_ZOOM * 100) {
-      setZoom(n / 100);
+    if (Number.isFinite(n) && n >= MIN_ZOOM * 100 && n <= ABSOLUTE_MAX_ZOOM * 100) {
+      setZoom(Math.min(n / 100, ABSOLUTE_MAX_ZOOM));
     }
     setZoomInputOpen(false);
   };
@@ -285,6 +320,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     <div
       ref={containerRef}
       className={`flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden ${className}`}
+      style={{ backgroundColor: isDarkMode ? "#141414" : "#FFFFFF" }}
       aria-label={title || "PDF 미리보기"}
     >
       {/* 상단 툴바 - 라이트: bg #FFFFFF / 메뉴 #141414, 다크: bg #141414 / 메뉴 #FFFFFF (ThemeContext 기준) */}
@@ -382,7 +418,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
             <button
               type="button"
               onClick={handleZoomIn}
-              disabled={zoom >= MAX_ZOOM}
+              disabled={zoom >= ABSOLUTE_MAX_ZOOM}
               className="p-1 rounded hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity"
               title="확대"
               aria-label="확대"
@@ -425,6 +461,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       <div
         ref={scrollRef}
         className="flex-1 min-h-0 overflow-x-auto overflow-y-auto pdf-scroll-area flex items-start snap-x snap-mandatory"
+        style={{ backgroundColor: isDarkMode ? "#141414" : "#FFFFFF" }}
       >
       <Document
         file={fileUrl}
@@ -448,16 +485,28 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                 <div
                   key={pageNum}
                   data-page={pageNum}
-                  className="flex-shrink-0 flex justify-center items-start bg-gray-100 dark:bg-zinc-900 snap-center min-h-full"
-                  style={{ width: scrollAreaWidth || 800, minWidth: scrollAreaWidth || 800 }}
+                  className="flex-shrink-0 flex justify-center items-start snap-center min-h-full"
+                  style={{
+                    width: scrollAreaWidth || 800,
+                    minWidth: scrollAreaWidth || 800,
+                    backgroundColor: isDarkMode ? "#141414" : "#FFFFFF",
+                  }}
                 >
-                  <Page
-                    pageNumber={pageNum}
-                    width={pageWidth}
-                    renderTextLayer
-                    renderAnnotationLayer
-                    className="shadow-sm"
-                  />
+                  <div
+                    style={{
+                      transform: `scale(${zoom})`,
+                      transformOrigin: "top center",
+                      transition: "transform 0.15s ease-out",
+                    }}
+                  >
+                    <Page
+                      pageNumber={pageNum}
+                      width={pageWidth}
+                      renderTextLayer
+                      renderAnnotationLayer
+                      className="shadow-sm"
+                    />
+                  </div>
                 </div>
               );
             })}

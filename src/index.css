@@ -285,6 +285,22 @@ html.dark {
   background: transparent;
 }
 
+/* 우측 사이드바 시험 모드 드롭다운 - 화살표를 왼쪽으로 조정 */
+.exam-select-arrow-left select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 2rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+  background-size: 1rem 1rem;
+}
+html.dark .exam-select-arrow-left select,
+body.dark .exam-select-arrow-left select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%239ca3af'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+}
+
 /* 글래스모피즘 (반투명) 프로필 드롭다운 - 테마 상관없이 항상 다크 스타일 */
 .profile-dropdown-glass {
   background: rgba(30, 30, 30, 0.85);

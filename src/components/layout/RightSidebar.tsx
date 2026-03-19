@@ -666,7 +666,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const resetInputText = () => {
     setInputText("");
     if (textareaRef.current) {
-      textareaRef.current.style.height = '40px';
+      textareaRef.current.style.height = '44px';
     }
   };
 
@@ -993,7 +993,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
       {/* 시험 만들기 모드: 옵션 선택 (유형/주제/문항 수 등) */}
       {examProps?.examMode ? (
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden exam-select-arrow-left">
           {examProps.recoverOpen && (
             <div className={`shrink-0 flex items-center gap-2 px-3 py-2 border-b ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}
             style={{ backgroundColor: isDarkMode ? "rgba(39,39,42,0.5)" : "#f9fafb" }}
@@ -1202,8 +1202,25 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     </span>
                   </div>
                 );})}
-                {examProps.recoverExams.length === 0 && (
-                  <span className="text-xs opacity-60" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>생성된 시험이 없습니다.</span>
+                {examProps.recoverExams.length === 0 && !examProps.submitting && (
+                  <div className="flex items-center justify-center py-8">
+                    <span className="text-xs opacity-60" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>생성된 시험이 없습니다.</span>
+                  </div>
+                )}
+                {examProps.submitting && (
+                  <div
+                    className={`flex items-center gap-2 px-3 py-2 rounded-2xl ${
+                      isDarkMode ? "bg-white/5 border border-zinc-600" : "bg-black/[0.03] border border-gray-200"
+                    }`}
+                    style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}
+                  >
+                    <div
+                      className={`animate-spin rounded-full h-4 w-4 border-2 border-t-transparent shrink-0 ${
+                        isDarkMode ? "border-gray-500" : "border-emerald-500"
+                      }`}
+                    />
+                    <span className="text-sm font-medium">시험 생성중</span>
+                  </div>
                 )}
               </div>
             </div>
@@ -1345,13 +1362,13 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       >
         {/* 통합된 입력 컨테이너 */}
         <div
-          className="flex items-center w-full rounded-lg border h-full"
+          className="flex items-center w-full rounded-lg border h-full min-h-[44px]"
           style={{
             backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF",
             borderColor: isDarkMode ? "#52525b" : "#d1d5db",
           }}
         >
-          {/* 텍스트 입력창 */}
+          {/* 텍스트 입력창 - 세로 중앙 정렬 */}
           <textarea
             ref={textareaRef}
             value={inputText}
@@ -1372,7 +1389,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   ? (waitingForAnswer ? "AI 질문에 대한 답변을 입력하고 Enter" : "Enter로 다음 세그먼트 진행")
                   : "Enter를 눌러 학습을 시작하세요"
             }
-            className={`flex-1 p-1.5 text-sm resize-none bg-transparent border-0 focus:outline-none overflow-y-auto ${isDarkMode ? "placeholder-gray-500" : "placeholder-gray-400"}`}
+            className={`flex-1 min-h-[44px] py-2.5 px-3 text-sm resize-none bg-transparent border-0 focus:outline-none overflow-y-auto leading-6 ${isDarkMode ? "placeholder-gray-500" : "placeholder-gray-400"}`}
             style={{
               color: isDarkMode ? "#FFFFFF" : "#141414",
               maxHeight: "120px",

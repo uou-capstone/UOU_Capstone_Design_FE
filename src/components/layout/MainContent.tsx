@@ -94,6 +94,7 @@ interface MainContentProps {
   onEditCourse?: (course: Course) => void;
   onDeleteCourse?: (course: Course, options?: { skipConfirm?: boolean }) => void;
   onEditLecture?: (lecture: NonNullable<CourseDetail["lectures"]>[number]) => void;
+  onDeleteLecture?: (lectureId: number, options?: { skipAlert?: boolean }) => void;
   onCourseCreated?: (course: CourseDetail) => void;
   onLectureCreated?: (lecture: LectureResponseDto) => void;
   onPreviewStateChange?: (fileName: string | null) => void;
@@ -113,6 +114,7 @@ const MainContent: React.FC<MainContentProps> = ({
   onEditCourse,
   onDeleteCourse,
   onEditLecture,
+  onDeleteLecture,
   onCourseCreated,
   onLectureCreated,
   selectedMenu = "lectures",
@@ -216,6 +218,8 @@ const MainContent: React.FC<MainContentProps> = ({
   >("QUIZ");
   const [assessmentDueDate, setAssessmentDueDate] = React.useState("");
   const [submitting, setSubmitting] = React.useState(false);
+  /** 시험 생성 비동기 작업 폴링 중인 taskId (완료 시 자동 refetch) */
+  const [examGenPollingTaskId, setExamGenPollingTaskId] = React.useState<string | null>(null);
   const [isCourseModalOpen, setIsCourseModalOpen] = React.useState(false);
   const [courseModalTitle, setCourseModalTitle] = React.useState("");
   const [courseModalDescription, setCourseModalDescription] =
@@ -295,6 +299,9 @@ const MainContent: React.FC<MainContentProps> = ({
   const [bulkEditMode, setBulkEditMode] = React.useState(false);
   const [bulkSelectedIds, setBulkSelectedIds] = React.useState<
     Record<string, boolean>
+  >({});
+  const [bulkSelectedWeekNumbers, setBulkSelectedWeekNumbers] = React.useState<
+    Record<number, boolean>
   >({});
   /** 강의실 목록에서 수정/삭제 모드 (버튼 1개로 토글) */
   const [courseListEditMode, setCourseListEditMode] = React.useState(false);
@@ -1011,65 +1018,102 @@ const MainContent: React.FC<MainContentProps> = ({
     }));
   };
 
+  const handleToggleWeekSelect = (weekNumber: number) => {
+    if (!bulkEditMode) return;
+    setBulkSelectedWeekNumbers((prev) => ({
+      ...prev,
+      [weekNumber]: !prev[weekNumber],
+    }));
+  };
+
   const handleBulkDelete = async () => {
-    if (!selectedLectureId) return;
-    const ids = Object.keys(bulkSelectedIds).filter(
-      (id) => bulkSelectedIds[id],
-    );
-    if (ids.length === 0) {
-      window.alert("삭제할 카드를 선택해주세요.");
+    const ids = Object.keys(bulkSelectedIds).filter((id) => bulkSelectedIds[id]);
+    const selectedWeeks = Object.keys(bulkSelectedWeekNumbers)
+      .map(Number)
+      .filter((w) => bulkSelectedWeekNumbers[w]);
+
+    if (ids.length === 0 && selectedWeeks.length === 0) {
+      window.alert("삭제할 주차 또는 자료/시험을 선택해주세요.");
       return;
     }
+
+    const parts: string[] = [];
+    if (selectedWeeks.length > 0) parts.push(`${selectedWeeks.length}개 주차`);
+    if (ids.length > 0) parts.push(`${ids.length}개 자료/시험`);
     if (
       !window.confirm(
-        `선택한 ${ids.length}개의 자료/시험을 삭제하시겠습니까?\n(자료는 서버에서도 삭제됩니다.)`,
+        `선택한 ${parts.join(", ")}를 삭제하시겠습니까?\n(삭제된 항목은 복구할 수 없습니다.)`,
       )
     ) {
       return;
     }
 
-    const materialList = localMaterials[selectedLectureId] || [];
-    const examList = localExams[selectedLectureId] || [];
-    const selectedMats = materialList.filter((it) => bulkSelectedIds[it.id]);
-    const selectedExams = examList.filter((it) => bulkSelectedIds[it.id]);
-
-    const materialDeletePromises = selectedMats.map((m) =>
-      m.materialId != null
-        ? materialApi.deleteMaterial(m.materialId)
-        : m.generationSessionId != null
-          ? materialGenerationApi.deleteSession(m.generationSessionId!)
-          : Promise.resolve(),
-    );
-    const examDeletePromises = selectedExams
-      .filter((e) => e.examSessionId != null)
-      .map((e) => examGenerationApi.deleteExamSession(Number(e.examSessionId)));
-    const settled = await Promise.allSettled([
-      ...materialDeletePromises,
-      ...examDeletePromises,
-    ]);
-    const failed = settled.filter((r) => r.status === "rejected");
-    if (failed.length > 0) {
-      const msg = (failed[0] as PromiseRejectedResult).reason;
-      window.alert(
-        `일부 삭제 실패: ${msg instanceof Error ? msg.message : String(msg)}`,
+    if (selectedWeeks.length > 0 && onDeleteLecture && courseDetail?.lectures) {
+      const lecturesToDelete = courseDetail.lectures.filter((l) =>
+        selectedWeeks.includes(l.weekNumber),
       );
+      for (const lec of lecturesToDelete) {
+        try {
+          await onDeleteLecture(lec.lectureId, { skipAlert: true });
+        } catch (e) {
+          window.alert(
+            `주차 삭제 실패: ${e instanceof Error ? e.message : String(e)}`,
+          );
+          return;
+        }
+      }
+      window.alert("선택한 주차가 삭제되었습니다.");
     }
 
-    setLocalMaterials((prev) => {
-      const list = prev[selectedLectureId] || [];
-      return {
-        ...prev,
-        [selectedLectureId]: list.filter((it) => !bulkSelectedIds[it.id]),
-      };
-    });
-    setLocalExams((prev) => {
-      const list = prev[selectedLectureId] || [];
-      return {
-        ...prev,
-        [selectedLectureId]: list.filter((it) => !bulkSelectedIds[it.id]),
-      };
-    });
+    if (ids.length > 0 && selectedLectureId) {
+      const materialList = localMaterials[selectedLectureId] || [];
+      const examList = localExams[selectedLectureId] || [];
+      const selectedMats = materialList.filter((it) => bulkSelectedIds[it.id]);
+      const selectedExams = examList.filter((it) => bulkSelectedIds[it.id]);
+
+      const materialDeletePromises = selectedMats.map((m) =>
+        m.materialId != null
+          ? materialApi.deleteMaterial(m.materialId)
+          : m.generationSessionId != null
+            ? materialGenerationApi.deleteSession(m.generationSessionId!)
+            : Promise.resolve(),
+      );
+      const examDeletePromises = selectedExams
+        .filter((e) => e.examSessionId != null)
+        .map((e) =>
+          examGenerationApi.deleteExamSession(Number(e.examSessionId)),
+        );
+      const settled = await Promise.allSettled([
+        ...materialDeletePromises,
+        ...examDeletePromises,
+      ]);
+      const failed = settled.filter((r) => r.status === "rejected");
+      if (failed.length > 0) {
+        const msg = (failed[0] as PromiseRejectedResult).reason;
+        window.alert(
+          `일부 삭제 실패: ${msg instanceof Error ? msg.message : String(msg)}`,
+        );
+        return;
+      }
+
+      setLocalMaterials((prev) => {
+        const list = prev[selectedLectureId] || [];
+        return {
+          ...prev,
+          [selectedLectureId]: list.filter((it) => !bulkSelectedIds[it.id]),
+        };
+      });
+      setLocalExams((prev) => {
+        const list = prev[selectedLectureId] || [];
+        return {
+          ...prev,
+          [selectedLectureId]: list.filter((it) => !bulkSelectedIds[it.id]),
+        };
+      });
+    }
+
     setBulkSelectedIds({});
+    setBulkSelectedWeekNumbers({});
     setBulkEditMode(false);
     if (courseDetail?.courseId) refetchCourseContents(courseDetail.courseId);
   };
@@ -1734,7 +1778,7 @@ const MainContent: React.FC<MainContentProps> = ({
       const lines = [
         "시험이 백그라운드에서 생성 중입니다.",
         "",
-        "다른 페이지로 이동하거나 새로고침·로그아웃을 해도 서버에서 계속 생성됩니다. 완료 후 이 강의 화면을 다시 열면 목록에 표시됩니다.",
+        "완료되면 시험 목록이 자동으로 갱신됩니다. 다른 페이지로 이동하거나 새로고침·로그아웃을 해도 서버에서 계속 생성됩니다.",
       ];
       if (res.taskId) {
         lines.push("", `작업 ID: ${res.taskId}`);
@@ -1750,6 +1794,37 @@ const MainContent: React.FC<MainContentProps> = ({
       setExamTopic("");
       setExamCount(10);
       setProfileFocusAreasInput("");
+
+      if (res.taskId && courseDetail?.courseId) {
+        const taskId = res.taskId;
+        const courseId = courseDetail.courseId;
+        setExamGenPollingTaskId(taskId);
+        const pollMs = 3000;
+        const maxAttempts = 200;
+        const pollUntilDone = async () => {
+          for (let i = 0; i < maxAttempts; i++) {
+            try {
+              const statusRes = await tasksApi.getStatus(taskId);
+              const s = (statusRes.status || "").toUpperCase();
+              if (s === "COMPLETED" || s === "DONE" || s === "SUCCESS") {
+                refetchCourseContents(courseId);
+                setExamGenPollingTaskId(null);
+                return;
+              }
+              if (s === "FAILED" || s === "ERROR") {
+                window.alert(statusRes.message || "시험 생성에 실패했습니다.");
+                setExamGenPollingTaskId(null);
+                return;
+              }
+            } catch {
+              /* 네트워크 오류 시 다음 폴링에서 재시도 */
+            }
+            await new Promise((r) => setTimeout(r, pollMs));
+          }
+          setExamGenPollingTaskId(null);
+        };
+        pollUntilDone();
+      }
     } catch (e) {
       window.alert(
         e instanceof Error
@@ -2531,10 +2606,6 @@ const MainContent: React.FC<MainContentProps> = ({
                       isDarkMode
                         ? "bg-[#ffffff14]"
                         : "bg-[#4040401f]"
-                    } ${
-                      courseListEditMode
-                        ? "focus:outline-none"
-                        : "focus:ring-2 " + (isDarkMode ? "focus:ring-zinc-500/60 focus:ring-offset-zinc-950" : "focus:ring-zinc-500/60 focus:ring-offset-white")
                     }`}
                   >
                     <div className="flex flex-col h-full p-6 flex-1 min-w-0">
@@ -2795,7 +2866,7 @@ const MainContent: React.FC<MainContentProps> = ({
                       profileQuestionModality,
                       setProfileQuestionModality,
                       onCreateExam: handleExamGenAsyncSubmit,
-                      submitting,
+                      submitting: submitting || !!examGenPollingTaskId,
                       onRecoverSession: handleExamSessionRecoverOpen,
                       recoverOpen: examRecoverOpen,
                       recoverSelectedId: examRecoverSelectedId,
@@ -2857,28 +2928,48 @@ const MainContent: React.FC<MainContentProps> = ({
               {weekNumbers.map((week) => {
                 const label = week === 0 ? "OT" : `${week}주차`;
                 const isActive =
-                  selectedLecture && selectedLecture.weekNumber === week;
+                  !bulkEditMode &&
+                  selectedLecture &&
+                  selectedLecture.weekNumber === week;
+                const isWeekSelected = !!bulkSelectedWeekNumbers[week];
                 return (
                   <button
                     key={week}
                     type="button"
-                    onClick={() => {
-                      if (!onSelectLecture || !courseDetail.lectures) return;
-                      const target = courseDetail.lectures.find(
-                        (lec) => lec.weekNumber === week,
-                      );
-                      if (target) {
-                        onSelectLecture(target.lectureId);
+                    onMouseDown={(e) => {
+                      if (bulkEditMode) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }
+                    }}
+                    onClick={(e) => {
+                      if (bulkEditMode) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleToggleWeekSelect(week);
+                        return;
+                      }
+                      if (onSelectLecture && courseDetail.lectures) {
+                        const target = courseDetail.lectures.find(
+                          (lec) => lec.weekNumber === week,
+                        );
+                        if (target) {
+                          onSelectLecture(target.lectureId);
+                        }
                       }
                     }}
                     className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap cursor-pointer transition-colors ${
-                      isActive
+                      bulkEditMode && isWeekSelected
                         ? isDarkMode
-                          ? "bg-[#FFFFFF] text-[#141414]"
-                          : "bg-[#141414] text-[#FFFFFF]"
-                        : isDarkMode
-                          ? "bg-[#ffffff14] text-gray-200 hover:bg-[#ffffff20]"
-                          : "bg-[#00000014] text-gray-700 hover:bg-[#00000020]"
+                          ? "shadow-[inset_0_0_0_2px_#FFFFFF] bg-[#ffffff20] text-white"
+                          : "shadow-[inset_0_0_0_2px_#141414] bg-[#00000020] text-[#141414]"
+                        : isActive
+                          ? isDarkMode
+                            ? "bg-[#FFFFFF] text-[#141414]"
+                            : "bg-[#141414] text-[#FFFFFF]"
+                          : isDarkMode
+                            ? "bg-[#ffffff14] text-gray-200 hover:bg-[#ffffff20]"
+                            : "bg-[#00000014] text-gray-700 hover:bg-[#00000020]"
                     }`}
                   >
                     {label}
@@ -2923,11 +3014,9 @@ const MainContent: React.FC<MainContentProps> = ({
                     <button
                       type="button"
                       onClick={() => {
-                        if (!selectedLectureId) {
-                          window.alert("강의를 먼저 선택해주세요.");
-                          return;
-                        }
                         setBulkEditMode(true);
+                        setBulkSelectedIds({});
+                        setBulkSelectedWeekNumbers({});
                       }}
                       className={`flex items-center justify-center w-7 h-7 rounded-full cursor-pointer transition-colors ${
                         isDarkMode
@@ -2976,6 +3065,7 @@ const MainContent: React.FC<MainContentProps> = ({
                         onClick={() => {
                           setBulkEditMode(false);
                           setBulkSelectedIds({});
+                          setBulkSelectedWeekNumbers({});
                         }}
                         className={`flex items-center justify-center w-7 h-7 rounded-full cursor-pointer transition-colors ${
                           isDarkMode
@@ -3028,10 +3118,6 @@ const MainContent: React.FC<MainContentProps> = ({
                         isDarkMode
                           ? "bg-[#ffffff14]"
                           : "bg-[#4040401f]"
-                      } ${
-                        bulkEditMode && selectable
-                          ? "focus:outline-none"
-                          : "focus:ring-2 " + (isDarkMode ? "focus:ring-zinc-500/60 focus:ring-offset-zinc-950" : "focus:ring-zinc-500/60 focus:ring-offset-white")
                       } relative group/card`}
                     >
                       <button
@@ -3096,26 +3182,32 @@ const MainContent: React.FC<MainContentProps> = ({
     };
   }, [isTeacher, viewMode]);
 
-  const [lectureResourceMenuOpen, setLectureResourceMenuOpen] =
-    React.useState(false);
-
   React.useEffect(() => {
-    const handleOpenLecture = () => {
+    const handleOpenUpload = () => {
       if (!isTeacher) return;
       if (viewMode !== "course-detail" || !courseDetail?.courseId) return;
-      setLectureResourceMenuOpen(true);
+      if (!selectedLectureId) {
+        window.alert("강의(주차)를 먼저 선택해주세요.");
+        return;
+      }
+      setUploadModalOpen(true);
     };
-    window.addEventListener(
-      "open-lecture-modal" as any,
-      handleOpenLecture as any,
-    );
+    const handleOpenMaterialGen = () => {
+      if (!isTeacher) return;
+      if (viewMode !== "course-detail" || !courseDetail?.courseId) return;
+      if (!selectedLectureId) {
+        window.alert("강의(주차)를 먼저 선택해주세요.");
+        return;
+      }
+      setMaterialGenModalOpen(true);
+    };
+    window.addEventListener("open-upload-modal" as any, handleOpenUpload as any);
+    window.addEventListener("open-material-gen-modal" as any, handleOpenMaterialGen as any);
     return () => {
-      window.removeEventListener(
-        "open-lecture-modal" as any,
-        handleOpenLecture as any,
-      );
+      window.removeEventListener("open-upload-modal" as any, handleOpenUpload as any);
+      window.removeEventListener("open-material-gen-modal" as any, handleOpenMaterialGen as any);
     };
-  }, [isTeacher, viewMode, courseDetail?.courseId]);
+  }, [isTeacher, viewMode, courseDetail?.courseId, selectedLectureId]);
 
   const renderCourseDetailHeader = () => {
     if (viewMode !== "course-detail" || !courseDetail) {
@@ -3295,119 +3387,6 @@ const MainContent: React.FC<MainContentProps> = ({
                 }`}
               >
                 생성하기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 강의 리소스 만들기 메뉴 모달 (선생님용) */}
-      {lectureResourceMenuOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-          role="dialog"
-          aria-modal="true"
-          onClick={() => setLectureResourceMenuOpen(false)}
-        >
-          <div
-            className={`w-full max-w-md rounded-xl shadow-xl border ${
-              isDarkMode
-                ? "bg-zinc-900 border-zinc-700 text-gray-100"
-                : "bg-white border-gray-200 text-gray-900"
-            }`}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div
-              className={`flex items-center justify-between px-5 py-4 border-b ${
-                isDarkMode ? "border-zinc-700/50" : "border-gray-200"
-              }`}
-            >
-              <h2
-                className={`text-lg font-semibold ${isDarkMode ? "text-gray-100" : "text-gray-900"}`}
-              >
-                강의 리소스 만들기
-              </h2>
-              <button
-                type="button"
-                onClick={() => setLectureResourceMenuOpen(false)}
-                className={`p-1.5 rounded cursor-pointer ${
-                  isDarkMode
-                    ? "hover:bg-zinc-700 text-gray-300"
-                    : "hover:bg-gray-200 text-gray-500"
-                }`}
-                aria-label="닫기"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="px-5 py-4 space-y-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (!selectedLectureId) {
-                    window.alert("강의(주차)를 먼저 선택해주세요.");
-                    return;
-                  }
-                  setLectureResourceMenuOpen(false);
-                  setUploadModalOpen(true);
-                }}
-                className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium cursor-pointer transition-colors ${
-                  isDarkMode
-                    ? "hover:bg-zinc-800 text-gray-200"
-                    : "hover:bg-gray-100 text-gray-800"
-                }`}
-              >
-                자료 업로드
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!selectedLectureId) {
-                    window.alert("강의(주차)를 먼저 선택해주세요.");
-                    return;
-                  }
-                  setLectureResourceMenuOpen(false);
-                  setMaterialGenModalOpen(true);
-                }}
-                className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium cursor-pointer transition-colors ${
-                  isDarkMode
-                    ? "hover:bg-zinc-800 text-gray-200"
-                    : "hover:bg-gray-100 text-gray-800"
-                }`}
-              >
-                AI 자료 생성
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!selectedLectureId) {
-                    window.alert("강의(주차)를 먼저 선택해주세요.");
-                    return;
-                  }
-                  setLectureResourceMenuOpen(false);
-                  setRightSidebarExamMode(true);
-                }}
-                className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium cursor-pointer transition-colors ${
-                  isDarkMode
-                    ? "hover:bg-zinc-800 text-gray-200"
-                    : "hover:bg-gray-100 text-gray-800"
-                }`}
-              >
-                시험 만들기
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setLectureResourceMenuOpen(false);
-                  setAssessmentModalOpen(true);
-                }}
-                className={`w-full text-left px-4 py-3 rounded-lg text-sm font-medium cursor-pointer transition-colors ${
-                  isDarkMode
-                    ? "hover:bg-zinc-800 text-gray-200"
-                    : "hover:bg-gray-100 text-gray-800"
-                }`}
-              >
-                평가 만들기
               </button>
             </div>
           </div>
