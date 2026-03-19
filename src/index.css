@@ -272,6 +272,19 @@ html.dark {
   transform: translateY(-50%);
 }
 
+/* PDF 뷰어 스크롤 영역 - 가로 스크롤 (세로 스크롤바 숨김) */
+.pdf-scroll-area::-webkit-scrollbar {
+  width: 0;
+  height: 6px;
+}
+.pdf-scroll-area::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.4);
+  border-radius: 3px;
+}
+.pdf-scroll-area::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 /* 글래스모피즘 (반투명) 프로필 드롭다운 - 테마 상관없이 항상 다크 스타일 */
 .profile-dropdown-glass {
   background: rgba(30, 30, 30, 0.85);

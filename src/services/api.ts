@@ -1439,14 +1439,16 @@ export const streamingApi = {
   getSession: async (lectureId: number): Promise<StreamSessionState> => {
     return apiRequest<StreamSessionState>(`/api/lectures/${lectureId}/stream/session`);
   },
-  initialize: async (lectureId: number): Promise<StreamInitializeResponse> => {
+  initialize: async (lectureId: number, options?: { pageNumber?: number }): Promise<StreamInitializeResponse> => {
     return apiRequest<StreamInitializeResponse>(`/api/lectures/${lectureId}/stream/initialize`, {
       method: 'POST',
+      ...(options?.pageNumber != null && { body: JSON.stringify({ pageNumber: options.pageNumber }) }),
     });
   },
-  next: async (lectureId: number): Promise<StreamNextResponse> => {
+  next: async (lectureId: number, options?: { pageNumber?: number }): Promise<StreamNextResponse> => {
     return apiRequest<StreamNextResponse>(`/api/lectures/${lectureId}/stream/next`, {
       method: 'POST',
+      ...(options?.pageNumber != null && { body: JSON.stringify({ pageNumber: options.pageNumber }) }),
     });
   },
   answer: async (lectureId: number, payload: StreamAnswerRequest): Promise<StreamAnswerResponse> => {
