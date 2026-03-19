@@ -351,7 +351,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
         <button
           type="button"
           onClick={() => onSelectLecture?.(lecture.lectureId)}
-          className={`${commonStyles.buttonBase} w-full justify-between px-3 py-2 ${
+          className={`${commonStyles.buttonBase} w-full justify-between px-3 py-2 focus:outline-none ${
             isSelected ? selectedButtonClass : `${buttonDefaultTextClass} ${buttonDefaultHoverClass}`
           }`}
         >
