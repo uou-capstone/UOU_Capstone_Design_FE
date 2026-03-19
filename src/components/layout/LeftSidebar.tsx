@@ -10,6 +10,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useTheme } from "../../contexts/ThemeContext";
 import { lectureApi, type CourseDetail, type LectureResponseDto } from "../../services/api";
+import { EditIcon, TrashIcon } from "../common/Icons";
 
 type ViewMode = "course-list" | "course-detail";
 
@@ -90,38 +91,6 @@ const LectureIcon: React.FC<{ className?: string }> = ({ className }) => (
       strokeLinejoin="round"
       strokeWidth={2}
       d="M5 7h14M5 12h14M5 17h10"
-    />
-  </svg>
-);
-
-const EditIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg
-    className={className}
-    fill="none"
-    stroke="currentColor"
-    viewBox="0 0 24 24"
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M15.232 5.232l3.536 3.536M4 13v7h7l8.485-8.485a1.5 1.5 0 000-2.121l-4.879-4.879a1.5 1.5 0 00-2.121 0L4 13z"
-    />
-  </svg>
-);
-
-const DeleteIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg
-    className={className}
-    fill="none"
-    stroke="currentColor"
-    viewBox="0 0 24 24"
-  >
-    <path
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth={2}
-      d="M18 6L6 18M6 6l12 12"
     />
   </svg>
 );
@@ -437,7 +406,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 }`}
                 title="강의 삭제"
               >
-                <DeleteIcon className="w-4 h-4" />
+                <TrashIcon className="w-4 h-4" />
               </button>
             )}
           </div>
