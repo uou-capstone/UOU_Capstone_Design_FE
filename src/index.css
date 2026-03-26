@@ -1,4 +1,19 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* MarkdownContent: 본문에서 ==강조 텍스트== 로 표시 (HTML <mark class="md-key">) */
+mark.md-key {
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.3125rem;
+  font-weight: 600;
+  color: rgb(6 95 70);
+  background-color: rgb(16 185 129 / 0.16);
+}
+html.dark mark.md-key,
+body.dark mark.md-key {
+  color: rgb(167 243 208);
+  background-color: rgb(52 211 153 / 0.2);
+}
 
 /* 전역 스타일 */
 * {
