@@ -1,8 +1,6 @@
 import React from "react";
-import {
-  MarkdownContent,
-  applyHighlightMarkers,
-} from "../common/MarkdownContent";
+import { useSearchParams } from "react-router-dom";
+import { MarkdownContent } from "../common/MarkdownContent";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
 import {
@@ -24,13 +22,13 @@ import {
   type ExamUserProfile,
   type CourseContentsResponse,
   type CourseContentsLectureExamSession,
+  readCourseExamSessionResourceIds,
 } from "../../services/api";
 import RightSidebar from "./RightSidebar";
 import SettingsPage from "../pages/SettingsPage";
 import ReportPage from "../pages/ReportPage";
 import PdfViewer from "../common/PdfViewer";
 import { CloseIcon, EditIcon, TrashIcon } from "../common/Icons";
-import { parseMarkdownToc } from "../../utils/markdownToc";
 
 type ViewMode = "course-list" | "course-detail";
 // 메인 메뉴는 강의/설정/신고 사용
@@ -54,7 +52,98 @@ type CenterItem = {
   /** 시험 항목: 자동 이름 (2),(3) 부여·중복 검사에 사용 */
   examType?: string;
   targetCount?: number;
+  /** 시험만: 출제 기준 업로드 PDF materialId (강의실 자료 카드의 materialId와 동일 개념) */
+  sourceMaterialId?: number;
+  /** 시험만: 출제 기준 AI 생성 문서 세션 ID */
+  sourceGenerationSessionId?: number;
 };
+
+/** 시험 뷰어 진입 직전 자료(PDF/마크다운) 미리보기 — 닫을 때 복원 */
+type ResourcePreviewSnapshot = {
+  previewFileUrl: string | null;
+  previewMaterialId: number | null;
+  previewFileName: string | null;
+  previewIsAiGenerationDoc: boolean;
+  previewLinkedGenerationSessionId: number | null;
+};
+
+/** 현재 미리보기 중인 자료와 일치하는 시험만 시험 메뉴에 표시 */
+type ExamResourceFilter =
+  | { kind: "material"; materialId: number }
+  | { kind: "generation"; sessionId: number };
+
+function parseGenerationSessionIdFromMaterialItem(item: CenterItem): number | null {
+  if (item.generationSessionId != null) return item.generationSessionId;
+  const m = /^material-session-(\d+)$/.exec(item.id);
+  if (m) return Number(m[1]);
+  const url = item.fileUrl ?? "";
+  const m2 = /\/materials\/generation\/(\d+)\//.exec(url);
+  if (m2) return Number(m2[1]);
+  return null;
+}
+
+function buildActiveExamResourceFilter(
+  previewMaterialId: number | null,
+  previewLinkedGenerationSessionId: number | null,
+): ExamResourceFilter | null {
+  if (previewMaterialId != null)
+    return { kind: "material", materialId: previewMaterialId };
+  if (previewLinkedGenerationSessionId != null)
+    return { kind: "generation", sessionId: previewLinkedGenerationSessionId };
+  return null;
+}
+
+/** 사이드바/스토리지 fileUrl에서 업로드 자료 materialId 추출 (시험 생성 sourceMaterialId 복구) */
+function parseMaterialIdFromMaterialFileUrl(fileUrl: string): number | null {
+  if (!fileUrl || typeof fileUrl !== "string") return null;
+  if (fileUrl.startsWith("blob:")) return null;
+  const m =
+    /\/api\/materials\/(\d+)(?:\/file)?(?:\?|#|$)/i.exec(fileUrl) ??
+    /\/materials\/(\d+)(?:\/file)?(?:\?|#|$)/i.exec(fileUrl);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function resolveMaterialIdFromSidebarSync(
+  lectureId: number | null | undefined,
+  fileUrl: string,
+  fileName: string,
+  localMaterials: Record<number, CenterItem[]>,
+  explicitMaterialId?: number | null,
+): number | null {
+  if (
+    explicitMaterialId != null &&
+    Number.isFinite(explicitMaterialId) &&
+    explicitMaterialId > 0
+  ) {
+    return explicitMaterialId;
+  }
+  const parsed = parseMaterialIdFromMaterialFileUrl(fileUrl);
+  if (parsed != null) return parsed;
+  if (lectureId == null) return null;
+  const mats = localMaterials[lectureId] ?? [];
+  const nameTrim = (fileName || "").trim();
+  for (const mat of mats) {
+    if (mat.materialId == null) continue;
+    if (fileUrl && mat.fileUrl && mat.fileUrl === fileUrl) return mat.materialId;
+    if (nameTrim && mat.title === nameTrim) return mat.materialId;
+  }
+  return null;
+}
+
+function examCenterItemMatchesResource(
+  item: CenterItem,
+  filter: ExamResourceFilter | null,
+): boolean {
+  if (item.type !== "exam") return true;
+  if (filter == null) return false;
+  const sm = item.sourceMaterialId;
+  const sg = item.sourceGenerationSessionId;
+  if (sm == null && sg == null) return false;
+  if (filter.kind === "material") return sm === filter.materialId;
+  return sg === filter.sessionId;
+}
 
 function formatAutoExamBaseTitle(examType: string, targetCount: number): string {
   return `${examType} · ${targetCount}문항`;
@@ -99,6 +188,9 @@ function courseExamSessionToCenterItem(
   const base = formatAutoExamBaseTitle(s.examType, s.targetCount);
   const custom = readExamSessionDisplayName(s);
   const title = custom ?? base;
+  const src = readCourseExamSessionResourceIds(
+    s as CourseContentsLectureExamSession & Record<string, unknown>,
+  );
   return {
     id: String(s.examSessionId),
     type: "exam",
@@ -108,6 +200,12 @@ function courseExamSessionToCenterItem(
     examSessionId: String(s.examSessionId),
     examType: s.examType,
     targetCount: s.targetCount,
+    ...(src.sourceMaterialId != null
+      ? { sourceMaterialId: src.sourceMaterialId }
+      : {}),
+    ...(src.sourceGenerationSessionId != null
+      ? { sourceGenerationSessionId: src.sourceGenerationSessionId }
+      : {}),
   };
 }
 
@@ -573,6 +671,12 @@ interface MainContentProps {
   onSelectLecture?: (lectureId: number) => void;
   selectedMenu?: MenuItem;
   onEditCourse?: (course: Course) => void;
+  /** 강의 상세에서 메타데이터 저장 시 — 사이드바 목록 동기화용(useCourses의 updateCourse 등) */
+  onUpdateCourse?: (
+    courseId: number,
+    data: { title: string; description: string },
+  ) => Promise<{ success: boolean; error?: string }>;
+  onReloadCourseDetail?: () => Promise<void>;
   onDeleteCourse?: (course: Course, options?: { skipConfirm?: boolean }) => void;
   onEditLecture?: (lecture: NonNullable<CourseDetail["lectures"]>[number]) => void;
   onDeleteLecture?: (lectureId: number, options?: { skipAlert?: boolean }) => void;
@@ -593,6 +697,8 @@ const MainContent: React.FC<MainContentProps> = ({
   selectedLectureId,
   onSelectLecture,
   onEditCourse,
+  onUpdateCourse,
+  onReloadCourseDetail,
   onDeleteCourse,
   onEditLecture,
   onDeleteLecture,
@@ -603,6 +709,7 @@ const MainContent: React.FC<MainContentProps> = ({
 }) => {
   const { isDarkMode } = useTheme();
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isTeacher = user?.role === "TEACHER";
   const isStudent = user?.role === "STUDENT";
   const [addMenuOpen, setAddMenuOpen] = React.useState(false);
@@ -664,10 +771,9 @@ const MainContent: React.FC<MainContentProps> = ({
     React.useState("");
   const materialStreamAbortRef = React.useRef<(() => void) | null>(null);
   const [examType, setExamType] = React.useState("FLASH_CARD");
-  const [examTopic, setExamTopic] = React.useState("");
   const [examCount, setExamCount] = React.useState(10);
-  /** 시험 목록 표시용 이름(선택). 비우면 자동 이름 규칙 적용 */
-  const [examDisplayName, setExamDisplayName] = React.useState("");
+  /** 시험 폼(이름·주제) 초기화 시 증가 — 입력은 RightSidebar 로컬 state로만 두어 MainContent 리렌더 감소 */
+  const [examFormKey, setExamFormKey] = React.useState(0);
   // 시험 생성 프로파일 공통 상태
   const [profileFocusAreasInput, setProfileFocusAreasInput] =
     React.useState("");
@@ -713,6 +819,12 @@ const MainContent: React.FC<MainContentProps> = ({
   const [addLectureWeekNumber, setAddLectureWeekNumber] = React.useState("");
   const [addLectureTitle, setAddLectureTitle] = React.useState("");
   const [addLectureSubmitting, setAddLectureSubmitting] = React.useState(false);
+  const [editCourseMetaModalOpen, setEditCourseMetaModalOpen] =
+    React.useState(false);
+  const [editCourseMetaTitle, setEditCourseMetaTitle] = React.useState("");
+  const [editCourseMetaDescription, setEditCourseMetaDescription] =
+    React.useState("");
+  const [editCourseMetaSaving, setEditCourseMetaSaving] = React.useState(false);
   const [joinError, setJoinError] = React.useState<string | null>(null);
   const [isJoining, setIsJoining] = React.useState(false);
   const [previewFileUrl, setPreviewFileUrl] = React.useState<string | null>(
@@ -727,9 +839,26 @@ const MainContent: React.FC<MainContentProps> = ({
   /** AI 생성 문서(세션/인라인 마크다운) 미리보기 — 뷰어 상단 제목바·TopNav 중복 제거용 */
   const [previewIsAiGenerationDoc, setPreviewIsAiGenerationDoc] =
     React.useState(false);
+  /** AI 문서 미리보기 시 연결된 generation sessionId — 시험 목록을 해당 자료로 한정 */
+  const [previewLinkedGenerationSessionId, setPreviewLinkedGenerationSessionId] =
+    React.useState<number | null>(null);
   const [previewBlobUrl, setPreviewBlobUrl] = React.useState<string | null>(
     null,
   );
+
+  const activeExamResourceFilter = React.useMemo(
+    () =>
+      buildActiveExamResourceFilter(
+        previewMaterialId,
+        previewLinkedGenerationSessionId,
+      ),
+    [previewMaterialId, previewLinkedGenerationSessionId],
+  );
+
+  const examsForActiveResource = React.useMemo(() => {
+    const all = localExams[selectedLectureId ?? 0] ?? [];
+    return all.filter((e) => examCenterItemMatchesResource(e, activeExamResourceFilter));
+  }, [localExams, selectedLectureId, activeExamResourceFilter]);
   /** PDF 미리보기 시 사용자가 현재 보고 있는 페이지 (1-based, BE 전달용) */
   const [previewCurrentPdfPage, setPreviewCurrentPdfPage] = React.useState<
     number | null
@@ -748,98 +877,19 @@ const MainContent: React.FC<MainContentProps> = ({
   >(null);
   const [previewRetryKey, setPreviewRetryKey] = React.useState(0);
   const previewMarkdownScrollRef = React.useRef<HTMLDivElement | null>(null);
-  const [activePreviewTocId, setActivePreviewTocId] = React.useState<
-    string | null
-  >(null);
-  /** lg 이상: 우측 선 레일에 마우스를 올렸을 때만 텍스트 목차 패널 표시 */
-  const [previewTocRailPanelOpen, setPreviewTocRailPanelOpen] =
-    React.useState(false);
-  const previewTocRailCloseTimerRef =
-    React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const openPreviewTocRailPanel = React.useCallback(() => {
-    if (previewTocRailCloseTimerRef.current) {
-      clearTimeout(previewTocRailCloseTimerRef.current);
-      previewTocRailCloseTimerRef.current = null;
-    }
-    setPreviewTocRailPanelOpen(true);
-  }, []);
-  const scheduleClosePreviewTocRailPanel = React.useCallback(() => {
-    if (previewTocRailCloseTimerRef.current) {
-      clearTimeout(previewTocRailCloseTimerRef.current);
-    }
-    previewTocRailCloseTimerRef.current = setTimeout(() => {
-      previewTocRailCloseTimerRef.current = null;
-      setPreviewTocRailPanelOpen(false);
-    }, 200);
-  }, []);
-  React.useEffect(() => {
-    setPreviewTocRailPanelOpen(false);
-  }, [previewMarkdownContent]);
-  React.useEffect(() => {
-    return () => {
-      if (previewTocRailCloseTimerRef.current) {
-        clearTimeout(previewTocRailCloseTimerRef.current);
-      }
-    };
-  }, []);
   const [rightSidebarWidth, setRightSidebarWidth] = React.useState(400);
-  const previewDocumentToc = React.useMemo(
-    () =>
-      previewMarkdownContent
-        ? parseMarkdownToc(applyHighlightMarkers(previewMarkdownContent))
-        : [],
-    [previewMarkdownContent],
-  );
-
-  /** 마크다운 미리보기 스크롤에 맞춰 목차 활성 항목(노션형) */
-  React.useEffect(() => {
-    if (!previewMarkdownContent || previewDocumentToc.length === 0) {
-      setActivePreviewTocId(null);
-      return;
-    }
-    const scrollEl = previewMarkdownScrollRef.current;
-    if (!scrollEl) return;
-    const ids = previewDocumentToc.map((t) => t.id);
-    let alive = true;
-    let scrollDebounceRaf = 0;
-    const updateActive = () => {
-      if (!alive) return;
-      const elements = ids
-        .map((id) => document.getElementById(id))
-        .filter((el): el is HTMLElement => el !== null);
-      if (elements.length === 0) return;
-      const rootRect = scrollEl.getBoundingClientRect();
-      const buffer = 72;
-      let current = ids[0];
-      for (let i = 0; i < elements.length; i++) {
-        const r = elements[i].getBoundingClientRect();
-        if (r.top <= rootRect.top + buffer) {
-          current = ids[i];
-        }
-      }
-      setActivePreviewTocId(current);
-    };
-    const onScroll = () => {
-      cancelAnimationFrame(scrollDebounceRaf);
-      scrollDebounceRaf = requestAnimationFrame(updateActive);
-    };
-    scrollEl.addEventListener("scroll", onScroll, { passive: true });
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (alive) updateActive();
-      });
-    });
-    return () => {
-      alive = false;
-      scrollEl.removeEventListener("scroll", onScroll);
-      cancelAnimationFrame(scrollDebounceRaf);
-    };
-  }, [previewMarkdownContent, previewDocumentToc]);
 
   // 시험 세션 상세 보기 모달 상태
   const [examDetailSessionId, setExamDetailSessionId] = React.useState<
     string | null
   >(null);
+  /** X로 닫은 직후 URL 쿼리가 한박자 남았을 때 딥링크 복구가 시험을 다시 열지 않도록 */
+  const suppressedExamSessionForUrlRestoreRef = React.useRef<string | null>(
+    null,
+  );
+  const previewBeforeExamRef = React.useRef<ResourcePreviewSnapshot | null>(
+    null,
+  );
   const [examDetail, setExamDetail] =
     React.useState<ExamSessionDetailResponse | null>(null);
   const [examDetailLoading, setExamDetailLoading] = React.useState(false);
@@ -902,6 +952,43 @@ const MainContent: React.FC<MainContentProps> = ({
     "recent" | "name"
   >("recent");
   const [courseContentsLoaded, setCourseContentsLoaded] = React.useState(false);
+
+  const patchResourceInUrl = React.useCallback(
+    (opts: { material?: number | null; gen?: number | null }) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete("exam");
+          if (opts.material != null) {
+            next.set("material", String(opts.material));
+            next.delete("gen");
+          } else if (opts.gen != null) {
+            next.set("gen", String(opts.gen));
+            next.delete("material");
+          } else {
+            next.delete("material");
+            next.delete("gen");
+          }
+          return next;
+        },
+        { replace: true },
+      );
+    },
+    [setSearchParams],
+  );
+
+  const clearResourceParamsInUrl = React.useCallback(() => {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("material");
+        next.delete("gen");
+        next.delete("exam");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
 
   const sortedCourses = React.useMemo(() => {
     const list = [...courses];
@@ -1770,12 +1857,31 @@ const MainContent: React.FC<MainContentProps> = ({
     }
   }, [uploadModalOpen]);
 
+  const prevLectureForPreviewRef = React.useRef<number | null | undefined>(
+    undefined,
+  );
   React.useEffect(() => {
+    const cur = selectedLectureId ?? null;
+    const prev = prevLectureForPreviewRef.current;
+    if (prev === undefined) {
+      prevLectureForPreviewRef.current = cur;
+      return;
+    }
+    if (prev === cur) return;
+    // null → 첫 강의 선택은 새로고침 복원 직후에도 올 수 있어 URL·미리보기 초기화하지 않음
+    if (prev === null && cur !== null) {
+      prevLectureForPreviewRef.current = cur;
+      return;
+    }
+    prevLectureForPreviewRef.current = cur;
+    previewBeforeExamRef.current = null;
     setPreviewFileUrl(null);
     setPreviewMaterialId(null);
     setPreviewFileName(null);
     setPreviewIsAiGenerationDoc(false);
-  }, [selectedLectureId]);
+    setPreviewLinkedGenerationSessionId(null);
+    clearResourceParamsInUrl();
+  }, [selectedLectureId, clearResourceParamsInUrl]);
 
   const handleRightSidebarResizeStart = React.useCallback(
     (e: React.MouseEvent) => {
@@ -1855,11 +1961,16 @@ const MainContent: React.FC<MainContentProps> = ({
         setPreviewFileUrl(null);
         setPreviewFileName(title);
         setPreviewIsAiGenerationDoc(false);
+        setPreviewLinkedGenerationSessionId(null);
+        patchResourceInUrl({ material: resMaterialId });
       } else if (url) {
         setPreviewFileUrl(url);
         setPreviewMaterialId(null);
         setPreviewFileName(title);
         setPreviewIsAiGenerationDoc(false);
+        setPreviewLinkedGenerationSessionId(null);
+        const mid = parseMaterialIdFromMaterialFileUrl(url);
+        patchResourceInUrl(mid != null ? { material: mid } : {});
       }
       // 업로드 후에는 모달만 닫고, 강의 콘텐츠 생성은 채팅(/generate)에서 수행
       setUploadModalOpen(false);
@@ -1868,7 +1979,7 @@ const MainContent: React.FC<MainContentProps> = ({
     } finally {
       setSubmitting(false);
     }
-  }, [selectedLectureId, uploadFile, courseDetail?.courseId]);
+  }, [selectedLectureId, uploadFile, courseDetail?.courseId, patchResourceInUrl]);
 
   const handleCloseUploadModal = React.useCallback(() => {
     setUploadFile(null);
@@ -2311,13 +2422,29 @@ const MainContent: React.FC<MainContentProps> = ({
     materialCompletedViaAsync,
   ]);
 
-  const handleExamGenAsyncSubmit = React.useCallback(async () => {
+  const handleExamGenAsyncSubmit = React.useCallback(
+    async (examTopic: string, examDisplayName: string) => {
     if (!examTopic.trim()) return;
     if (selectedLectureId == null) {
       window.alert("강의를 먼저 선택해주세요.");
       return;
     }
-    const existingExams = localExams[selectedLectureId] ?? [];
+    const resourceFilter = buildActiveExamResourceFilter(
+      previewMaterialId,
+      previewLinkedGenerationSessionId,
+    );
+    if (resourceFilter == null) {
+      window.alert(
+        "시험을 만들 자료(PDF 또는 AI 문서)를 먼저 선택해 주세요.\n좌측에서 자료 카드를 클릭해 미리보기를 연 뒤 다시 시도해 주세요.",
+      );
+      return;
+    }
+    /** 업로드 PDF 미리보기(blob)일 때만: 현재 페이지(없으면 1)를 출제 범위로 전달 */
+    const sourcePdfPageForAsync =
+      resourceFilter.kind === "material" && previewBlobUrl != null
+        ? (previewCurrentPdfPage ?? 1)
+        : undefined;
+    const existingExams = examsForActiveResource;
     const resolvedName = resolveNewExamDisplayName(
       examDisplayName,
       examType,
@@ -2376,6 +2503,12 @@ const MainContent: React.FC<MainContentProps> = ({
         topic: examTopic.trim(),
         userProfile: finalUserProfile,
         displayName: resolvedName.title,
+        ...(resourceFilter.kind === "material"
+          ? { sourceMaterialId: resourceFilter.materialId }
+          : { sourceGenerationSessionId: resourceFilter.sessionId }),
+        ...(sourcePdfPageForAsync != null
+          ? { sourcePdfPage: sourcePdfPageForAsync }
+          : {}),
       });
       const lines = [
         "시험이 백그라운드에서 생성 중입니다.",
@@ -2393,8 +2526,7 @@ const MainContent: React.FC<MainContentProps> = ({
       }
       window.alert(lines.join("\n"));
       if (courseDetail?.courseId) refetchCourseContents(courseDetail.courseId);
-      setExamTopic("");
-      setExamDisplayName("");
+      setExamFormKey((k) => k + 1);
       setExamCount(10);
       setProfileFocusAreasInput("");
 
@@ -2437,12 +2569,15 @@ const MainContent: React.FC<MainContentProps> = ({
     } finally {
       setSubmitting(false);
     }
-  }, [
+  },
+  [
     examType,
-    examTopic,
     examCount,
-    examDisplayName,
-    localExams,
+    examsForActiveResource,
+    previewMaterialId,
+    previewLinkedGenerationSessionId,
+    previewBlobUrl,
+    previewCurrentPdfPage,
     selectedLectureId,
     examProfile,
     examProfileStatus,
@@ -2458,10 +2593,34 @@ const MainContent: React.FC<MainContentProps> = ({
     profileScopeBoundary,
     courseDetail?.courseId,
     refetchCourseContents,
-  ]);
+  ],
+  );
 
   const openExamSessionDetail = React.useCallback(
     async (sessionId: string, navTitle?: string | null) => {
+      const hadResourcePreview =
+        previewFileUrl != null || previewMaterialId != null;
+      if (hadResourcePreview) {
+        previewBeforeExamRef.current = {
+          previewFileUrl,
+          previewMaterialId,
+          previewFileName,
+          previewIsAiGenerationDoc,
+          previewLinkedGenerationSessionId,
+        };
+      } else {
+        previewBeforeExamRef.current = null;
+      }
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("exam", String(sessionId));
+          next.delete("material");
+          next.delete("gen");
+          return next;
+        },
+        { replace: true },
+      );
       const t = navTitle != null ? String(navTitle).trim() : "";
       setPreviewFileName(t.length > 0 ? t : "시험");
       setPreviewIsAiGenerationDoc(false);
@@ -2501,13 +2660,33 @@ const MainContent: React.FC<MainContentProps> = ({
         setExamDetailLoading(false);
       }
     },
-    [],
+    [
+      setSearchParams,
+      previewFileUrl,
+      previewMaterialId,
+      previewFileName,
+      previewIsAiGenerationDoc,
+      previewLinkedGenerationSessionId,
+    ],
   );
 
   const closeExamSessionDetail = React.useCallback(() => {
+    const closingId = examDetailSessionId;
+    if (closingId != null) {
+      suppressedExamSessionForUrlRestoreRef.current = closingId;
+    }
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("exam");
+        return next;
+      },
+      { replace: true },
+    );
     setExamDetailSessionId(null);
     setExamDetail(null);
     setExamDetailError(null);
+    setExamDetailLoading(false);
     setExamDetailFlipped({});
     setFlashCardIndex(0);
     setFiveChoiceUserAnswers({});
@@ -2523,42 +2702,77 @@ const MainContent: React.FC<MainContentProps> = ({
     setShortAnswerKeywordOpen({});
     setShortAnswerGrading(false);
     setShortAnswerGradeError(null);
-  }, []);
+
+    const snap = previewBeforeExamRef.current;
+    previewBeforeExamRef.current = null;
+    if (
+      snap != null &&
+      (snap.previewMaterialId != null || snap.previewFileUrl != null)
+    ) {
+      setPreviewFileUrl(snap.previewFileUrl);
+      setPreviewMaterialId(snap.previewMaterialId);
+      setPreviewFileName(snap.previewFileName);
+      setPreviewIsAiGenerationDoc(snap.previewIsAiGenerationDoc);
+      setPreviewLinkedGenerationSessionId(snap.previewLinkedGenerationSessionId);
+      if (snap.previewMaterialId != null) {
+        patchResourceInUrl({ material: snap.previewMaterialId });
+      } else if (snap.previewLinkedGenerationSessionId != null) {
+        patchResourceInUrl({ gen: snap.previewLinkedGenerationSessionId });
+      } else {
+        patchResourceInUrl({});
+      }
+    }
+  }, [setSearchParams, examDetailSessionId, patchResourceInUrl]);
+
+  /** 시험 뷰어 + PDF/마크다운 미리보기 모두 닫기 (홈 이동·뒤로가기 공통) */
+  const exitPreviewAndExamViewer = React.useCallback(() => {
+    previewBeforeExamRef.current = null;
+    closeExamSessionDetail();
+    setPreviewFileUrl(null);
+    setPreviewMaterialId(null);
+    setPreviewFileName(null);
+    setPreviewIsAiGenerationDoc(false);
+    setPreviewLinkedGenerationSessionId(null);
+    setPreviewMarkdownContent(null);
+    setPreviewBlobUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setPreviewLoadError(false);
+    setPreviewErrorMessage(null);
+    setPreviewLoading(false);
+    clearResourceParamsInUrl();
+  }, [closeExamSessionDetail, clearResourceParamsInUrl]);
 
   React.useEffect(() => {
-    const handleBack = () => {
-      closeExamSessionDetail();
-      setPreviewFileUrl(null);
-      setPreviewMaterialId(null);
-      setPreviewFileName(null);
-      setPreviewIsAiGenerationDoc(false);
-      setPreviewMarkdownContent(null);
-      setPreviewBlobUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
-      });
-      setPreviewLoadError(false);
-      setPreviewErrorMessage(null);
-    };
+    const handleBack = () => exitPreviewAndExamViewer();
     window.addEventListener("back-from-preview", handleBack);
     return () => window.removeEventListener("back-from-preview", handleBack);
-  }, [closeExamSessionDetail]);
+  }, [exitPreviewAndExamViewer]);
+
+  /** 강의실 목록/홈으로 나가면 시험·뷰어 state가 남지 않도록 초기화 */
+  React.useEffect(() => {
+    if (viewMode !== "course-list") return;
+    exitPreviewAndExamViewer();
+  }, [viewMode, exitPreviewAndExamViewer]);
 
   const handleExamSessionRecoverOpen = React.useCallback(() => {
     if (!selectedLectureId) {
       window.alert("먼저 왼쪽에서 강의(주차)를 선택해 주세요.");
       return;
     }
-    const exams = localExams[selectedLectureId] || [];
+    const exams = examsForActiveResource;
     if (exams.length === 0) {
       window.alert(
-        "이 강의에 시험 세션이 없습니다. 시험을 생성한 뒤 복구할 수 있습니다.",
+        activeExamResourceFilter == null
+          ? "미리보기 중인 자료가 없습니다. 자료를 연 뒤 해당 자료에 속한 시험만 복구할 수 있습니다."
+          : "현재 미리보기 중인 자료에 연결된 시험이 없습니다.",
       );
       return;
     }
     setExamRecoverSelectedId(exams[0]?.examSessionId ?? "");
     setExamRecoverOpen(true);
-  }, [selectedLectureId, localExams]);
+  }, [selectedLectureId, examsForActiveResource, activeExamResourceFilter]);
 
   const handleExamSessionRecoverSubmit = React.useCallback(async () => {
     const id = Number(examRecoverSelectedId);
@@ -2881,8 +3095,16 @@ const MainContent: React.FC<MainContentProps> = ({
       selectedLectureId != null
         ? localMaterials[selectedLectureId] ?? []
         : [];
+    const examRows =
+      selectedLectureId != null ? localExams[selectedLectureId] ?? [] : [];
+    const thisExam = examRows.find(
+      (e) => String(e.examSessionId) === String(examDetailSessionId),
+    );
     const materialId =
-      mats.find((m) => m.materialId != null)?.materialId ?? null;
+      previewMaterialId ??
+      thisExam?.sourceMaterialId ??
+      mats.find((m) => m.materialId != null)?.materialId ??
+      null;
 
     setShortAnswerGrading(true);
     setShortAnswerGradeError(null);
@@ -2946,6 +3168,9 @@ const MainContent: React.FC<MainContentProps> = ({
     shortAnswerUserAnswers,
     selectedLectureId,
     localMaterials,
+    localExams,
+    previewMaterialId,
+    examDetailSessionId,
   ]);
 
   const handleAssessmentSubmit = React.useCallback(async () => {
@@ -3000,6 +3225,8 @@ const MainContent: React.FC<MainContentProps> = ({
         setPreviewFileUrl(null);
         setPreviewFileName(item.title || null);
         setPreviewIsAiGenerationDoc(false);
+        setPreviewLinkedGenerationSessionId(null);
+        patchResourceInUrl({ material: item.materialId });
         return;
       }
       // AI 생성 자료: finalDocument(마크다운 본문)가 있으면 fetch 없이 그대로 표시
@@ -3008,6 +3235,9 @@ const MainContent: React.FC<MainContentProps> = ({
         setPreviewMaterialId(null);
         setPreviewFileName(item.title || null);
         setPreviewIsAiGenerationDoc(true);
+        const sid = parseGenerationSessionIdFromMaterialItem(item);
+        setPreviewLinkedGenerationSessionId(sid);
+        patchResourceInUrl(sid != null ? { gen: sid } : {});
         return;
       }
       // sessionId만 있으면 document API URL로 미리보기
@@ -3018,16 +3248,24 @@ const MainContent: React.FC<MainContentProps> = ({
         setPreviewMaterialId(null);
         setPreviewFileName(item.title || null);
         setPreviewIsAiGenerationDoc(true);
+        setPreviewLinkedGenerationSessionId(item.generationSessionId);
+        patchResourceInUrl({ gen: item.generationSessionId });
         return;
       }
       if (item.fileUrl) {
         setPreviewFileUrl(item.fileUrl);
         setPreviewMaterialId(null);
         setPreviewFileName(item.title || null);
-        setPreviewIsAiGenerationDoc(
+        const genDoc =
           item.fileUrl.includes("materials/generation") &&
-            item.fileUrl.includes("/document"),
-        );
+          item.fileUrl.includes("/document");
+        const sid = genDoc ? parseGenerationSessionIdFromMaterialItem(item) : null;
+        setPreviewIsAiGenerationDoc(genDoc);
+        setPreviewLinkedGenerationSessionId(sid);
+        const mid = parseMaterialIdFromMaterialFileUrl(item.fileUrl);
+        if (mid != null) patchResourceInUrl({ material: mid });
+        else if (sid != null) patchResourceInUrl({ gen: sid });
+        else patchResourceInUrl({});
         return;
       }
       if (item.type === "material") {
@@ -3047,8 +3285,87 @@ const MainContent: React.FC<MainContentProps> = ({
         void openExamSessionDetail(item.examSessionId, item.title ?? null);
       }
     },
-    [openExamSessionDetail, getMaterialDocumentPreviewUrl],
+    [
+      openExamSessionDetail,
+      getMaterialDocumentPreviewUrl,
+      patchResourceInUrl,
+    ],
   );
+
+  React.useLayoutEffect(() => {
+    if (viewMode !== "course-detail" || selectedLectureId == null) return;
+    if (!courseContentsLoaded || lectureResourcesLoading) return;
+
+    const exam = searchParams.get("exam");
+    if (
+      exam &&
+      suppressedExamSessionForUrlRestoreRef.current != null &&
+      String(suppressedExamSessionForUrlRestoreRef.current) === exam
+    ) {
+      suppressedExamSessionForUrlRestoreRef.current = null;
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.delete("exam");
+          return next;
+        },
+        { replace: true },
+      );
+      return;
+    }
+    if (!exam) {
+      suppressedExamSessionForUrlRestoreRef.current = null;
+    }
+
+    const material = searchParams.get("material");
+    const gen = searchParams.get("gen");
+
+    if (exam) {
+      if (String(examDetailSessionId ?? "") === exam) return;
+      void openExamSessionDetail(exam, null);
+      return;
+    }
+
+    if (examDetailSessionId) return;
+
+    const mats = localMaterials[selectedLectureId] ?? [];
+
+    if (material) {
+      const mid = Number(material);
+      if (!Number.isFinite(mid)) return;
+      if (previewMaterialId === mid) return;
+      const item = mats.find((i) => i.materialId === mid);
+      if (item) handleCardClick(item);
+      return;
+    }
+
+    if (gen) {
+      const sid = Number(gen);
+      if (!Number.isFinite(sid)) return;
+      if (previewLinkedGenerationSessionId === sid && previewFileUrl != null) {
+        return;
+      }
+      const item = mats.find(
+        (i) =>
+          i.generationSessionId === sid ||
+          parseGenerationSessionIdFromMaterialItem(i) === sid,
+      );
+      if (item) handleCardClick(item);
+    }
+  }, [
+    viewMode,
+    selectedLectureId,
+    courseContentsLoaded,
+    lectureResourcesLoading,
+    searchParams,
+    localMaterials,
+    examDetailSessionId,
+    previewMaterialId,
+    previewLinkedGenerationSessionId,
+    previewFileUrl,
+    openExamSessionDetail,
+    handleCardClick,
+  ]);
 
   const handleCourseSelect = (courseId: number) => {
     onSelectCourse(courseId);
@@ -3228,6 +3545,53 @@ const MainContent: React.FC<MainContentProps> = ({
       window.alert(msg);
     } finally {
       setAddLectureSubmitting(false);
+    }
+  };
+
+  const handleEditCourseMetaSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!courseDetail?.courseId) return;
+    const trimmedTitle = editCourseMetaTitle.trim();
+    if (!trimmedTitle) {
+      window.alert("강의실 제목은 비워둘 수 없습니다.");
+      return;
+    }
+    const trimmedDescription = editCourseMetaDescription.trim();
+    setEditCourseMetaSaving(true);
+    try {
+      let result: { success: boolean; error?: string };
+      if (onUpdateCourse) {
+        result = await onUpdateCourse(courseDetail.courseId, {
+          title: trimmedTitle,
+          description: trimmedDescription,
+        });
+      } else {
+        try {
+          await courseApi.updateCourse(courseDetail.courseId, {
+            title: trimmedTitle,
+            description: trimmedDescription,
+          });
+          result = { success: true };
+        } catch (err) {
+          result = {
+            success: false,
+            error:
+              err instanceof Error
+                ? err.message
+                : "강의실 수정에 실패했습니다.",
+          };
+        }
+      }
+      if (!result.success) {
+        window.alert(result.error ?? "강의실 수정에 실패했습니다.");
+        return;
+      }
+      if (onReloadCourseDetail) {
+        await onReloadCourseDetail();
+      }
+      setEditCourseMetaModalOpen(false);
+    } finally {
+      setEditCourseMetaSaving(false);
     }
   };
 
@@ -3592,7 +3956,11 @@ const MainContent: React.FC<MainContentProps> = ({
                       )}
                       <button
                         type="button"
-                        onClick={closeExamSessionDetail}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          closeExamSessionDetail();
+                        }}
                         className={`p-1 rounded cursor-pointer shrink-0 ${isDarkMode ? "hover:bg-zinc-800" : "hover:bg-gray-100"}`}
                         aria-label="시험 보기 닫기"
                         title="닫기"
@@ -4698,198 +5066,12 @@ const MainContent: React.FC<MainContentProps> = ({
                     ref={previewMarkdownScrollRef}
                     className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
                   >
-                    <div className="relative flex min-h-min w-full flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6 lg:grid lg:grid-cols-1 lg:gap-0 lg:px-8">
+                    <div className="relative flex min-h-min w-full flex-col gap-5 px-3 py-5 sm:pr-6 sm:py-6 lg:px-6">
                       <article
-                        className={`prose prose-lg prose-neutral relative z-0 max-w-none min-w-0 min-h-min leading-relaxed break-words lg:col-start-1 lg:row-start-1 [&_*]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words prose-headings:scroll-mt-24 prose-headings:font-semibold prose-h1:text-balance prose-blockquote:border-l-4 prose-blockquote:border-emerald-600/45 prose-blockquote:bg-zinc-500/[0.06] dark:prose-blockquote:bg-white/[0.04] ${
-                          previewDocumentToc.length > 0 ? "lg:pr-11 xl:pr-12" : ""
-                        } ${isDarkMode ? "prose-invert" : ""}`}
+                        className={`prose prose-lg prose-neutral relative z-0 max-w-none min-w-0 min-h-min leading-relaxed break-words [&_*]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words prose-headings:scroll-mt-24 prose-headings:font-semibold prose-h1:text-balance prose-blockquote:border-l-4 prose-blockquote:border-emerald-600/45 prose-blockquote:bg-zinc-500/[0.06] dark:prose-blockquote:bg-white/[0.04] ${isDarkMode ? "prose-invert" : ""}`}
                       >
                         <MarkdownContent>{previewMarkdownContent}</MarkdownContent>
                       </article>
-                      {previewDocumentToc.length > 0 ? (
-                        <aside
-                          className="relative z-20 w-full lg:col-start-1 lg:row-start-1 lg:w-max lg:max-w-none lg:justify-self-end lg:self-start lg:sticky lg:top-3 lg:ml-2 lg:pr-0"
-                          aria-label="문서 목차 패널"
-                        >
-                        {/** 큰 화면: 우측 세로 막대(위치 표시만, 비클릭) + 호버 시 막대 영역을 덮는 텍스트 목차 */}
-                        <div
-                          className="relative hidden w-full min-w-[1.25rem] justify-end lg:flex"
-                          onMouseEnter={openPreviewTocRailPanel}
-                          onMouseLeave={scheduleClosePreviewTocRailPanel}
-                        >
-                          <div
-                            className={`absolute top-0 right-0 z-30 w-[15rem] max-w-[calc(100vw-5rem)] transition-[opacity,transform,visibility] duration-150 ease-out ${
-                              previewTocRailPanelOpen
-                                ? "visible pointer-events-auto translate-x-1 translate-y-0 opacity-100"
-                                : "invisible pointer-events-none translate-x-1 translate-y-1 opacity-0"
-                            }`}
-                          >
-                            <nav
-                              aria-label="문서 목차"
-                              className={`max-h-[min(100vh-5.5rem,32rem)] overflow-y-auto overflow-x-hidden rounded-xl border px-2.5 py-2.5 shadow-lg ${
-                                isDarkMode
-                                  ? "border-zinc-700/90 bg-zinc-900/98 text-zinc-400 shadow-black/40"
-                                  : "border-gray-200 bg-gray-50/98 text-gray-600 shadow-gray-200/60"
-                              }`}
-                            >
-                              <ul className="m-0 list-none space-y-0.5 p-0">
-                                {previewDocumentToc.map((item) => {
-                                  const isActive =
-                                    activePreviewTocId === item.id;
-                                  const depthPad =
-                                    item.depth === 1
-                                      ? "pl-2"
-                                      : item.depth === 2
-                                        ? "pl-6"
-                                        : "pl-10";
-                                  const depthSize =
-                                    item.depth === 1
-                                      ? "text-[12px] font-semibold leading-snug"
-                                      : item.depth === 2
-                                        ? "text-[11.5px] font-medium leading-snug"
-                                        : "text-[11px] font-normal leading-snug opacity-[0.92]";
-                                  return (
-                                    <li key={item.id} className="m-0 p-0">
-                                      <button
-                                        type="button"
-                                        className={`w-full cursor-pointer rounded-lg border-0 py-1.5 pr-2 text-left font-inherit transition-colors ${depthPad} ${depthSize} ${
-                                          isActive
-                                            ? isDarkMode
-                                              ? "bg-sky-500/15 text-sky-300"
-                                              : "bg-sky-500/12 text-sky-700"
-                                            : isDarkMode
-                                              ? "text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-100"
-                                              : "text-gray-600 hover:bg-white hover:text-gray-900"
-                                        }`}
-                                        onClick={() => {
-                                          setActivePreviewTocId(item.id);
-                                          document
-                                            .getElementById(item.id)
-                                            ?.scrollIntoView({
-                                              behavior: "smooth",
-                                              block: "start",
-                                            });
-                                        }}
-                                      >
-                                        {item.text}
-                                      </button>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            </nav>
-                          </div>
-                          <nav
-                            aria-label="문서에서 현재 위치"
-                            className={`flex min-w-[1.25rem] flex-col items-end gap-1.5 overflow-hidden py-1 transition-opacity duration-150 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${
-                              previewTocRailPanelOpen
-                                ? "pointer-events-none opacity-0"
-                                : isDarkMode
-                                  ? "opacity-90"
-                                  : "opacity-90"
-                            }`}
-                          >
-                            {previewDocumentToc.map((item) => {
-                              const isActive = activePreviewTocId === item.id;
-                              const barW =
-                                item.depth === 1
-                                  ? "w-10"
-                                  : item.depth === 2
-                                    ? "w-6"
-                                    : "w-3.5";
-                              const depthInset =
-                                item.depth === 1
-                                  ? ""
-                                  : item.depth === 2
-                                    ? "mr-0.5"
-                                    : "mr-1";
-                              return (
-                                <span
-                                  key={item.id}
-                                  aria-hidden="true"
-                                  className={`pointer-events-none shrink-0 ${depthInset}`}
-                                >
-                                  <span
-                                    className={`block h-0.5 rounded-full ${barW} ${
-                                      isActive
-                                        ? isDarkMode
-                                          ? "bg-sky-400/95"
-                                          : "bg-sky-600"
-                                        : isDarkMode
-                                          ? "bg-zinc-500/55"
-                                          : "bg-gray-400/65"
-                                    }`}
-                                  />
-                                </span>
-                              );
-                            })}
-                          </nav>
-                        </div>
-                        {/** 작은 화면: 터치·좁은 폭에서 항상 텍스트 목차 */}
-                        <nav
-                          aria-label="문서 목차"
-                          className={`rounded-xl border p-3 shadow-md lg:hidden ${
-                            isDarkMode
-                              ? "border-zinc-700/90 bg-zinc-900/95 text-zinc-400 shadow-black/30"
-                              : "border-gray-200 bg-gray-50/95 text-gray-600 shadow-gray-200/60"
-                          }`}
-                        >
-                          <p
-                            className={`mb-2 border-b pb-2 text-[11px] font-semibold tracking-tight ${
-                              isDarkMode
-                                ? "border-zinc-700 text-zinc-500"
-                                : "border-gray-200 text-gray-500"
-                            }`}
-                          >
-                            목차
-                          </p>
-                          <ul className="m-0 list-none space-y-0.5 p-0">
-                            {previewDocumentToc.map((item) => {
-                              const isActive = activePreviewTocId === item.id;
-                              const depthPad =
-                                item.depth === 1
-                                  ? "pl-1"
-                                  : item.depth === 2
-                                    ? "pl-2.5"
-                                    : "pl-4";
-                              const depthSize =
-                                item.depth === 1
-                                  ? "text-[12px] font-semibold leading-snug"
-                                  : item.depth === 2
-                                    ? "text-[11.5px] font-medium leading-snug"
-                                    : "text-[11px] font-normal leading-snug opacity-[0.92]";
-                              return (
-                                <li key={item.id} className="m-0 p-0">
-                                  <button
-                                    type="button"
-                                    className={`w-full cursor-pointer rounded-lg border-0 px-2 py-1.5 text-left font-inherit transition-colors ${depthPad} ${depthSize} ${
-                                      isActive
-                                        ? isDarkMode
-                                          ? "bg-sky-500/15 text-sky-300"
-                                          : "bg-sky-500/12 text-sky-700"
-                                        : isDarkMode
-                                          ? "text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-100"
-                                          : "text-gray-600 hover:bg-white hover:text-gray-900"
-                                    }`}
-                                    onClick={() => {
-                                      setActivePreviewTocId(item.id);
-                                      document
-                                        .getElementById(item.id)
-                                        ?.scrollIntoView({
-                                          behavior: "smooth",
-                                          block: "start",
-                                        });
-                                    }}
-                                  >
-                                    {item.text}
-                                  </button>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </nav>
-                        </aside>
-                      ) : null}
                     </div>
                   </div>
                 </div>
@@ -4931,10 +5113,34 @@ const MainContent: React.FC<MainContentProps> = ({
               viewMode="course-detail"
               courseDetail={courseDetail}
               previewCurrentPdfPage={previewCurrentPdfPage}
-              onLectureDataChange={(_, fileUrl, fileName) => {
+              onLectureDataChange={(_, fileUrl, fileName, materialIdOpt) => {
                 if (fileUrl) {
                   setPreviewFileUrl(fileUrl);
                   setPreviewFileName(fileName);
+                  const resolvedMid = resolveMaterialIdFromSidebarSync(
+                    selectedLectureId,
+                    fileUrl,
+                    fileName ?? "",
+                    localMaterials,
+                    materialIdOpt,
+                  );
+                  setPreviewMaterialId(resolvedMid);
+                  const gen = /\/materials\/generation\/(\d+)\//.exec(fileUrl);
+                  if (gen) {
+                    const sid = Number(gen[1]);
+                    setPreviewLinkedGenerationSessionId(sid);
+                    setPreviewIsAiGenerationDoc(true);
+                    patchResourceInUrl({ gen: sid });
+                  } else {
+                    setPreviewLinkedGenerationSessionId(null);
+                    setPreviewIsAiGenerationDoc(false);
+                    if (resolvedMid != null) {
+                      patchResourceInUrl({ material: resolvedMid });
+                    } else {
+                      const mid = parseMaterialIdFromMaterialFileUrl(fileUrl);
+                      patchResourceInUrl(mid != null ? { material: mid } : {});
+                    }
+                  }
                 }
               }}
               examProps={
@@ -4945,12 +5151,9 @@ const MainContent: React.FC<MainContentProps> = ({
                       isTeacher,
                       examType,
                       setExamType,
-                      examTopic,
-                      setExamTopic,
                       examCount,
                       setExamCount,
-                      examDisplayName,
-                      setExamDisplayName,
+                      examFormKey,
                       profileProficiencyLevel,
                       setProfileProficiencyLevel,
                       profileTargetDepth,
@@ -4963,13 +5166,13 @@ const MainContent: React.FC<MainContentProps> = ({
                       recoverOpen: examRecoverOpen,
                       recoverSelectedId: examRecoverSelectedId,
                       setRecoverSelectedId: setExamRecoverSelectedId,
-                      recoverExams: localExams[selectedLectureId ?? 0] ?? [],
+                      recoverExams: examsForActiveResource,
                       onRecoverSubmit: handleExamSessionRecoverSubmit,
                       setRecoverOpen: setExamRecoverOpen,
                       onExamClick: (id) => {
-                        const ex = (
-                          localExams[selectedLectureId ?? 0] ?? []
-                        ).find((e) => String(e.examSessionId) === String(id));
+                        const ex = examsForActiveResource.find(
+                          (e) => String(e.examSessionId) === String(id),
+                        );
                         void openExamSessionDetail(id, ex?.title ?? null);
                       },
                       examEditMode,
@@ -5130,21 +5333,20 @@ const MainContent: React.FC<MainContentProps> = ({
                       <button
                         type="button"
                         onClick={() => {
-                          const ids = Object.keys(bulkSelectedIds).filter((k) => bulkSelectedIds[k]);
-                          if (ids.length !== 1) {
-                            window.alert("수정할 자료/시험을 1개 선택해주세요.");
-                            return;
-                          }
-                          const item = sortedItems.find((i) => i.id === ids[0]);
-                          if (item) handleCardClick(item);
+                          if (!courseDetail) return;
+                          setEditCourseMetaTitle(courseDetail.title ?? "");
+                          setEditCourseMetaDescription(
+                            courseDetail.description ?? "",
+                          );
+                          setEditCourseMetaModalOpen(true);
                         }}
                         className={`flex items-center justify-center w-7 h-7 rounded-full cursor-pointer transition-colors ${
                           isDarkMode
                             ? "text-gray-300 hover:bg-zinc-700"
                             : "text-gray-500 hover:bg-zinc-200"
                         }`}
-                        aria-label="수정"
-                        title="수정"
+                        aria-label="강의실 정보 수정"
+                        title="강의실 이름·설명 수정"
                       >
                         <EditIcon className="w-4 h-4" />
                       </button>
@@ -5486,6 +5688,133 @@ const MainContent: React.FC<MainContentProps> = ({
                 생성하기
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 강의실 이름·설명 수정 (수정/삭제 모드 연필) */}
+      {editCourseMetaModalOpen && courseDetail?.courseId && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="edit-course-meta-title"
+          onClick={() => !editCourseMetaSaving && setEditCourseMetaModalOpen(false)}
+        >
+          <div
+            className={`w-full max-w-md rounded-xl shadow-xl border ${
+              isDarkMode
+                ? "bg-zinc-900 border-zinc-700 text-gray-100"
+                : "bg-white border-gray-200 text-gray-900"
+            }`}
+            onClick={(ev) => ev.stopPropagation()}
+          >
+            <div
+              className={`flex items-center justify-between px-5 py-4 border-b ${
+                isDarkMode ? "border-zinc-700/50" : "border-gray-200"
+              }`}
+            >
+              <h2
+                id="edit-course-meta-title"
+                className={`text-lg font-semibold ${isDarkMode ? "text-gray-100" : "text-gray-900"}`}
+              >
+                강의실 정보 수정
+              </h2>
+              <button
+                type="button"
+                onClick={() =>
+                  !editCourseMetaSaving && setEditCourseMetaModalOpen(false)
+                }
+                className={`p-1.5 rounded cursor-pointer ${
+                  isDarkMode
+                    ? "hover:bg-zinc-700 text-gray-300"
+                    : "hover:bg-gray-200 text-gray-500"
+                }`}
+                aria-label="닫기"
+              >
+                ✕
+              </button>
+            </div>
+            <form
+              onSubmit={handleEditCourseMetaSubmit}
+              className="px-5 py-4 space-y-4"
+            >
+              <div>
+                <label
+                  className={`block text-sm font-medium mb-1 ${
+                    isDarkMode ? "text-gray-200" : "text-gray-700"
+                  }`}
+                >
+                  강의실 제목 *
+                </label>
+                <input
+                  type="text"
+                  value={editCourseMetaTitle}
+                  onChange={(e) => setEditCourseMetaTitle(e.target.value)}
+                  className={`w-full px-3 py-2 text-sm rounded border ${
+                    isDarkMode
+                      ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
+                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-zinc-500"}`}
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label
+                  className={`block text-sm font-medium mb-1 ${
+                    isDarkMode ? "text-gray-200" : "text-gray-700"
+                  }`}
+                >
+                  강의실 설명 (선택)
+                </label>
+                <textarea
+                  value={editCourseMetaDescription}
+                  onChange={(e) =>
+                    setEditCourseMetaDescription(e.target.value)
+                  }
+                  rows={3}
+                  className={`w-full px-3 py-2 text-sm rounded border resize-none ${
+                    isDarkMode
+                      ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
+                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
+                  } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-zinc-500"}`}
+                />
+              </div>
+              <div
+                className={`flex justify-end gap-2 pt-2 border-t ${
+                  isDarkMode ? "border-zinc-700/50" : "border-gray-200"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    !editCourseMetaSaving && setEditCourseMetaModalOpen(false)
+                  }
+                  className={`px-4 py-2 text-sm rounded ${
+                    isDarkMode
+                      ? "bg-zinc-800 hover:bg-zinc-700 text-gray-200"
+                      : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                  }`}
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  disabled={editCourseMetaSaving || !editCourseMetaTitle.trim()}
+                  className={`px-4 py-2 text-sm rounded font-medium ${
+                    editCourseMetaSaving || !editCourseMetaTitle.trim()
+                      ? isDarkMode
+                        ? "bg-zinc-800/40 text-gray-400 cursor-not-allowed"
+                        : "bg-emerald-200 text-emerald-500 cursor-not-allowed"
+                      : isDarkMode
+                        ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                        : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  }`}
+                >
+                  {editCourseMetaSaving ? "저장 중..." : "저장"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
