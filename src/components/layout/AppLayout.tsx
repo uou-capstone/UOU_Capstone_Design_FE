@@ -41,7 +41,7 @@ const AppLayout: React.FC = () => {
   const [currentCourseId, setCurrentCourseId] = useState<number | null>(null);
   const [currentLectureId, setCurrentLectureId] = useState<number | null>(null);
   const [previewFileName, setPreviewFileName] = useState<string | null>(null);
-  
+
   // 메뉴 상태 관리 (메인 페이지일 때만 사용) - 기본은 "강의"
   const [selectedMenu, setSelectedMenu] = useState<MenuItem>("lectures");
   const viewMode: ViewMode = selectedCourseId ? "course-detail" : "course-list";

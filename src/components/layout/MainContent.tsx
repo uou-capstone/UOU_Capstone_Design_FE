@@ -1,6 +1,8 @@
 import React from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import {
+  MarkdownContent,
+  applyHighlightMarkers,
+} from "../common/MarkdownContent";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
 import {
@@ -21,12 +23,14 @@ import {
   type ExamSessionDetailResponse,
   type ExamUserProfile,
   type CourseContentsResponse,
+  type CourseContentsLectureExamSession,
 } from "../../services/api";
 import RightSidebar from "./RightSidebar";
 import SettingsPage from "../pages/SettingsPage";
 import ReportPage from "../pages/ReportPage";
 import PdfViewer from "../common/PdfViewer";
 import { CloseIcon, EditIcon, TrashIcon } from "../common/Icons";
+import { parseMarkdownToc } from "../../utils/markdownToc";
 
 type ViewMode = "course-list" | "course-detail";
 // 메인 메뉴는 강의/설정/신고 사용
@@ -47,7 +51,89 @@ type CenterItem = {
   finalDocument?: string;
   assessmentId?: number;
   examSessionId?: string;
+  /** 시험 항목: 자동 이름 (2),(3) 부여·중복 검사에 사용 */
+  examType?: string;
+  targetCount?: number;
 };
+
+function formatAutoExamBaseTitle(examType: string, targetCount: number): string {
+  return `${examType} · ${targetCount}문항`;
+}
+
+/** 자동 이름 계열: "TYPE · N문항" 또는 "TYPE · N문항 (k)" */
+function isAutoFamilyTitle(title: string, base: string): boolean {
+  if (title === base) return true;
+  const prefix = `${base} (`;
+  if (!title.startsWith(prefix) || !title.endsWith(")")) return false;
+  const inner = title.slice(prefix.length, -1);
+  return /^\d+$/.test(inner);
+}
+
+function centerItemMatchesExamKeyForAuto(
+  e: CenterItem,
+  examType: string,
+  targetCount: number,
+  base: string,
+): boolean {
+  if (e.type !== "exam") return false;
+  if (e.examType != null && e.targetCount != null) {
+    return e.examType === examType && e.targetCount === targetCount;
+  }
+  return isAutoFamilyTitle(e.title, base);
+}
+
+function readExamSessionDisplayName(
+  s: CourseContentsLectureExamSession & { display_name?: string | null },
+): string | undefined {
+  const raw =
+    (typeof s.displayName === "string" ? s.displayName : null) ??
+    (typeof s.display_name === "string" ? s.display_name : null);
+  if (raw == null) return undefined;
+  const t = raw.trim();
+  return t.length > 0 ? t : undefined;
+}
+
+function courseExamSessionToCenterItem(
+  s: CourseContentsLectureExamSession,
+): CenterItem {
+  const base = formatAutoExamBaseTitle(s.examType, s.targetCount);
+  const custom = readExamSessionDisplayName(s);
+  const title = custom ?? base;
+  return {
+    id: String(s.examSessionId),
+    type: "exam",
+    title,
+    meta: "시험",
+    createdAt: s.createdAt,
+    examSessionId: String(s.examSessionId),
+    examType: s.examType,
+    targetCount: s.targetCount,
+  };
+}
+
+function resolveNewExamDisplayName(
+  customInput: string,
+  examType: string,
+  targetCount: number,
+  existingItems: CenterItem[],
+): { title: string } | { error: "duplicate-custom" } {
+  const exams = existingItems.filter((e) => e.type === "exam");
+  const trimmed = customInput.trim();
+  if (trimmed.length > 0) {
+    const dup = exams.some((e) => e.title === trimmed);
+    if (dup) return { error: "duplicate-custom" };
+    return { title: trimmed };
+  }
+  const base = formatAutoExamBaseTitle(examType, targetCount);
+  const sameKey = exams.filter((e) =>
+    centerItemMatchesExamKeyForAuto(e, examType, targetCount, base),
+  );
+  const used = new Set(sameKey.map((e) => e.title));
+  if (!used.has(base)) return { title: base };
+  let n = 2;
+  while (used.has(`${base} (${n})`)) n += 1;
+  return { title: `${base} (${n})` };
+}
 
 type FiveChoiceResultStatus = "Correct" | "Incorrect";
 
@@ -64,19 +150,414 @@ interface FiveChoiceLogData {
   evaluationItems: FiveChoiceEvaluationItem[];
 }
 
-type ShortAnswerResultStatus = "Correct" | "Incorrect" | "Partial_Correct";
-
 interface ShortAnswerEvaluationItem {
   questionId: number;
-  resultStatus: ShortAnswerResultStatus;
   questionContent: string;
   userResponse: string;
-  relatedTopic?: string;
-  feedbackMessage?: string;
+  /** 0~1 (백엔드 Gemini 채점) */
+  score: number;
+  gradingReason: string;
+  feedback: string;
+  pointsDeducted?: boolean;
+  deductionReason?: string;
 }
 
 interface ShortAnswerLogData {
   evaluationItems: ShortAnswerEvaluationItem[];
+}
+
+function getShortAnswerKeywordsFromProblem(q: {
+  relatedKeywords?: string[];
+  keyKeywords?: string[];
+}): string[] {
+  if (Array.isArray(q.relatedKeywords) && q.relatedKeywords.length > 0) {
+    return q.relatedKeywords;
+  }
+  const kk = q.keyKeywords;
+  if (Array.isArray(kk) && kk.length > 0) return kk;
+  return [];
+}
+
+function getShortAnswerIntentText(q: {
+  evaluationCriteria?: string;
+  intentDiagnosis?: string;
+}): string {
+  const parts = [q.intentDiagnosis, q.evaluationCriteria].filter(
+    (s): s is string => typeof s === "string" && s.trim().length > 0,
+  );
+  return parts.join("\n\n").trim();
+}
+
+type OxUserChoice = "O" | "X";
+
+/** 시험 API의 correctAnswer 문자열을 O/X로 정규화 (인식 불가 시 null) */
+function normalizeExamOxCorrectAnswer(raw: string): OxUserChoice | null {
+  const t = raw.trim();
+  const u = t.toUpperCase();
+  if (
+    u === "O" ||
+    u === "TRUE" ||
+    u === "T" ||
+    u === "1" ||
+    u === "YES" ||
+    u === "Y"
+  ) {
+    return "O";
+  }
+  if (
+    u === "X" ||
+    u === "FALSE" ||
+    u === "F" ||
+    u === "0" ||
+    u === "NO" ||
+    u === "N"
+  ) {
+    return "X";
+  }
+  const k = t.replace(/\s/g, "");
+  if (k === "맞음" || k === "참" || k === "옳음" || k === "○") return "O";
+  if (k === "틀림" || k === "거짓" || k === "×" || k === "✕") return "X";
+  if (t.length === 1) {
+    const c = t.toUpperCase();
+    if (c === "O") return "O";
+    if (c === "X") return "X";
+  }
+  return null;
+}
+
+function isOxAnswerCorrect(userChoice: OxUserChoice, correctRaw: string): boolean {
+  const canonical = normalizeExamOxCorrectAnswer(correctRaw);
+  if (canonical !== null) return userChoice === canonical;
+  const one = correctRaw.trim().slice(0, 1).toUpperCase();
+  if (one === "O" || one === "X") return userChoice === one;
+  return false;
+}
+
+function areAllFiveChoiceAnswered(
+  problems: { options?: { id: string }[] }[],
+  answers: Record<string, string>,
+): boolean {
+  return problems.every((q, idx) => {
+    const id = answers[String(idx)];
+    const opts = q.options ?? [];
+    return id != null && id !== "" && opts.some((o) => o.id === id);
+  });
+}
+
+/** 5지선다 보기 행: 선택·채점 후 정오답에 따른 테두리·배경 */
+function fiveChoiceOptionLabelClass(
+  selected: boolean,
+  mcGraded: boolean,
+  optIsCorrect: boolean,
+  isDarkMode: boolean,
+): string {
+  let c =
+    "flex items-start gap-2 w-full rounded-lg border text-left transition-colors px-2.5 py-2 ";
+  if (mcGraded) {
+    if (optIsCorrect) {
+      c += isDarkMode
+        ? "border-emerald-500/90 bg-emerald-950/35"
+        : "border-emerald-500 bg-emerald-50";
+    } else if (selected) {
+      c += isDarkMode
+        ? "border-red-500/80 bg-red-950/30"
+        : "border-red-400 bg-red-50";
+    } else {
+      c += isDarkMode
+        ? "border-zinc-800/80 bg-transparent opacity-55"
+        : "border-gray-100 bg-transparent opacity-65";
+    }
+    c += " cursor-default";
+  } else if (selected) {
+    c += isDarkMode
+      ? "border-emerald-500 bg-emerald-950/40 ring-1 ring-emerald-500/30"
+      : "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500/25";
+    c += " cursor-pointer";
+  } else {
+    c += isDarkMode
+      ? "border-zinc-600 hover:border-zinc-500 hover:bg-zinc-800/40"
+      : "border-gray-200 hover:border-gray-300 hover:bg-gray-50";
+    c += " cursor-pointer";
+  }
+  return c;
+}
+
+/** O/X 선택 버튼: 선택·채점 후 정오답 표시 */
+function oxChoiceButtonClass(opts: {
+  letter: OxUserChoice;
+  choice: OxUserChoice | undefined;
+  correctCanonical: OxUserChoice | null;
+  graded: boolean;
+  isDarkMode: boolean;
+}): string {
+  const { letter, choice, correctCanonical, graded, isDarkMode } = opts;
+  const selected = choice === letter;
+  const isCorrectAnswer = correctCanonical === letter;
+  let base =
+    "inline-flex items-center justify-center min-w-[3rem] px-4 py-2 rounded-lg border text-sm font-semibold transition-colors ";
+
+  if (graded) {
+    if (isCorrectAnswer) {
+      return (
+        base +
+        (isDarkMode
+          ? "border-emerald-500 bg-emerald-950/40 text-emerald-300 cursor-default"
+          : "border-emerald-500 bg-emerald-50 text-emerald-800 cursor-default")
+      );
+    }
+    if (selected) {
+      return (
+        base +
+        (isDarkMode
+          ? "border-red-500 bg-red-950/35 text-red-300 cursor-default"
+          : "border-red-400 bg-red-50 text-red-700 cursor-default")
+      );
+    }
+    return (
+      base +
+      (isDarkMode
+        ? "border-zinc-700 text-zinc-500 opacity-45 cursor-default"
+        : "border-gray-200 text-gray-400 opacity-55 cursor-default")
+    );
+  }
+  if (selected) {
+    return (
+      base +
+      (isDarkMode
+        ? "border-emerald-500 bg-emerald-950/45 text-emerald-200 ring-1 ring-emerald-500/35 cursor-pointer"
+        : "border-emerald-500 bg-emerald-50 text-emerald-900 ring-1 ring-emerald-500/25 cursor-pointer")
+    );
+  }
+  return (
+    base +
+    (isDarkMode
+      ? "border-zinc-600 text-zinc-200 hover:border-zinc-500 hover:bg-zinc-800/50 cursor-pointer"
+      : "border-gray-300 text-gray-800 hover:border-gray-400 hover:bg-gray-50 cursor-pointer")
+  );
+}
+
+type ExamProblemViewMode = "single" | "all";
+
+/** OX / 5지선다: 한 개씩 보기 ↔ 전체 보기 (클릭마다 전환) */
+function ExamSectionViewModeToggle(props: {
+  mode: ExamProblemViewMode;
+  onChange: (mode: ExamProblemViewMode) => void;
+  isDarkMode: boolean;
+}) {
+  const { mode, onChange, isDarkMode } = props;
+  const nextMode: ExamProblemViewMode =
+    mode === "single" ? "all" : "single";
+  const btnClass = `inline-flex items-center justify-center rounded-md border p-1.5 transition-colors shrink-0 ${
+    isDarkMode
+      ? "border-emerald-500/80 bg-emerald-950/40 text-emerald-200 hover:bg-emerald-950/60"
+      : "border-emerald-500 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+  }`;
+  const singleIcon = (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      aria-hidden
+    >
+      <rect x="6" y="4" width="12" height="16" rx="1.5" strokeWidth="2" />
+      <path d="M9 9h6M9 12h4" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+  const allIcon = (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      aria-hidden
+    >
+      <circle cx="5" cy="7" r="1.25" fill="currentColor" />
+      <circle cx="5" cy="12" r="1.25" fill="currentColor" />
+      <circle cx="5" cy="17" r="1.25" fill="currentColor" />
+      <path
+        d="M9 7h10M9 12h10M9 17h10"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+  return (
+    <button
+      type="button"
+      className={btnClass}
+      onClick={() => onChange(nextMode)}
+      title={
+        mode === "single"
+          ? "한 개씩 보기 — 클릭하면 전체 보기"
+          : "전체 보기 — 클릭하면 한 개씩 보기"
+      }
+      aria-label={
+        mode === "single"
+          ? "한 개씩 보기. 클릭하면 전체 보기로 전환합니다."
+          : "전체 보기. 클릭하면 한 개씩 보기로 전환합니다."
+      }
+      aria-pressed={mode === "single"}
+    >
+      {mode === "single" ? singleIcon : allIcon}
+    </button>
+  );
+}
+
+/** 플래시카드와 동일: 카드 영역 양옆에 절반 겹침 원형 이전·다음 */
+function ExamFlashStyleSideArrows(props: {
+  show: boolean;
+  isDarkMode: boolean;
+  prevDisabled: boolean;
+  nextDisabled: boolean;
+  onPrev: () => void;
+  onNext: () => void;
+}) {
+  const {
+    show,
+    isDarkMode,
+    prevDisabled,
+    nextDisabled,
+    onPrev,
+    onNext,
+  } = props;
+  if (!show) return null;
+  const base =
+    "absolute top-1/2 z-10 flex h-9 w-9 items-center justify-center rounded-full border disabled:opacity-40 disabled:cursor-not-allowed";
+  const skin = isDarkMode
+    ? "border-zinc-700 bg-zinc-900/90 text-gray-200"
+    : "border-gray-300 bg-white/95 text-gray-700";
+  return (
+    <>
+      <button
+        type="button"
+        onClick={onPrev}
+        disabled={prevDisabled}
+        className={`${base} ${skin} left-0 -translate-x-1/2 -translate-y-1/2`}
+        aria-label="이전 문항"
+        title="이전"
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          aria-hidden
+        >
+          <path
+            d="M15 18l-6-6 6-6"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+      <button
+        type="button"
+        onClick={onNext}
+        disabled={nextDisabled}
+        className={`${base} ${skin} right-0 translate-x-1/2 -translate-y-1/2`}
+        aria-label="다음 문항"
+        title="다음"
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          aria-hidden
+        >
+          <path
+            d="M9 6l6 6-6 6"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </button>
+    </>
+  );
+}
+
+function examSingleFlashCardShellClass(isDarkMode: boolean): string {
+  return `flex w-full min-h-[min(320px,45dvh)] flex-col rounded-xl border p-5 text-left transition-colors ${
+    isDarkMode
+      ? "border-zinc-700 bg-zinc-900/70"
+      : "border-gray-200 bg-gray-50"
+  }`;
+}
+
+function examModalFlashCardShellClass(isDarkMode: boolean): string {
+  return `flex w-full min-h-[min(240px,36dvh)] flex-col rounded-xl border p-4 text-left transition-colors ${
+    isDarkMode
+      ? "border-zinc-700 bg-zinc-900/70"
+      : "border-gray-200 bg-gray-50"
+  }`;
+}
+
+/** 문항별 응답 여부·현재 문항(한 개씩 보기) 미니 표시 */
+function ExamQuestionProgressDots(props: {
+  total: number;
+  currentIndex: number | null;
+  isAnswered: (index: number) => boolean;
+  onSelect?: (index: number) => void;
+  isDarkMode: boolean;
+}) {
+  const { total, currentIndex, isAnswered, onSelect, isDarkMode } = props;
+  return (
+    <div
+      className="flex flex-wrap items-center justify-center gap-2 py-1.5"
+      role="list"
+      aria-label="문항별 응답 상태"
+    >
+      {Array.from({ length: total }, (_, i) => {
+        const answered = isAnswered(i);
+        const current = currentIndex === i;
+        const base =
+          "h-2 w-2 rounded-full transition-all shrink-0 outline-none focus-visible:ring-2 focus-visible:ring-emerald-500";
+        let cls = `${base} `;
+        if (answered) {
+          cls += isDarkMode ? "bg-emerald-500" : "bg-emerald-600";
+        } else {
+          cls += isDarkMode
+            ? "border border-zinc-500 bg-transparent"
+            : "border border-gray-300 bg-transparent";
+        }
+        if (current) {
+          cls += isDarkMode
+            ? " ring-2 ring-zinc-200 ring-offset-2 ring-offset-[#141414]"
+            : " ring-2 ring-gray-800 ring-offset-2 ring-offset-white";
+        }
+        const label = `문항 ${i + 1}${answered ? ", 응답함" : ", 미응답"}`;
+        if (onSelect) {
+          return (
+            <button
+              key={i}
+              type="button"
+              className={cls}
+              title={label}
+              aria-label={label}
+              aria-current={current ? "step" : undefined}
+              onClick={() => onSelect(i)}
+            />
+          );
+        }
+        return (
+          <span
+            key={i}
+            className={cls}
+            title={label}
+            role="listitem"
+            aria-label={label}
+          />
+        );
+      })}
+    </div>
+  );
 }
 
 interface MainContentProps {
@@ -185,6 +666,8 @@ const MainContent: React.FC<MainContentProps> = ({
   const [examType, setExamType] = React.useState("FLASH_CARD");
   const [examTopic, setExamTopic] = React.useState("");
   const [examCount, setExamCount] = React.useState(10);
+  /** 시험 목록 표시용 이름(선택). 비우면 자동 이름 규칙 적용 */
+  const [examDisplayName, setExamDisplayName] = React.useState("");
   // 시험 생성 프로파일 공통 상태
   const [profileFocusAreasInput, setProfileFocusAreasInput] =
     React.useState("");
@@ -241,6 +724,9 @@ const MainContent: React.FC<MainContentProps> = ({
   const [previewFileName, setPreviewFileName] = React.useState<string | null>(
     null,
   );
+  /** AI 생성 문서(세션/인라인 마크다운) 미리보기 — 뷰어 상단 제목바·TopNav 중복 제거용 */
+  const [previewIsAiGenerationDoc, setPreviewIsAiGenerationDoc] =
+    React.useState(false);
   const [previewBlobUrl, setPreviewBlobUrl] = React.useState<string | null>(
     null,
   );
@@ -261,7 +747,95 @@ const MainContent: React.FC<MainContentProps> = ({
     string | null
   >(null);
   const [previewRetryKey, setPreviewRetryKey] = React.useState(0);
-  const [rightSidebarWidth, setRightSidebarWidth] = React.useState(480);
+  const previewMarkdownScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const [activePreviewTocId, setActivePreviewTocId] = React.useState<
+    string | null
+  >(null);
+  /** lg 이상: 우측 선 레일에 마우스를 올렸을 때만 텍스트 목차 패널 표시 */
+  const [previewTocRailPanelOpen, setPreviewTocRailPanelOpen] =
+    React.useState(false);
+  const previewTocRailCloseTimerRef =
+    React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const openPreviewTocRailPanel = React.useCallback(() => {
+    if (previewTocRailCloseTimerRef.current) {
+      clearTimeout(previewTocRailCloseTimerRef.current);
+      previewTocRailCloseTimerRef.current = null;
+    }
+    setPreviewTocRailPanelOpen(true);
+  }, []);
+  const scheduleClosePreviewTocRailPanel = React.useCallback(() => {
+    if (previewTocRailCloseTimerRef.current) {
+      clearTimeout(previewTocRailCloseTimerRef.current);
+    }
+    previewTocRailCloseTimerRef.current = setTimeout(() => {
+      previewTocRailCloseTimerRef.current = null;
+      setPreviewTocRailPanelOpen(false);
+    }, 200);
+  }, []);
+  React.useEffect(() => {
+    setPreviewTocRailPanelOpen(false);
+  }, [previewMarkdownContent]);
+  React.useEffect(() => {
+    return () => {
+      if (previewTocRailCloseTimerRef.current) {
+        clearTimeout(previewTocRailCloseTimerRef.current);
+      }
+    };
+  }, []);
+  const [rightSidebarWidth, setRightSidebarWidth] = React.useState(400);
+  const previewDocumentToc = React.useMemo(
+    () =>
+      previewMarkdownContent
+        ? parseMarkdownToc(applyHighlightMarkers(previewMarkdownContent))
+        : [],
+    [previewMarkdownContent],
+  );
+
+  /** 마크다운 미리보기 스크롤에 맞춰 목차 활성 항목(노션형) */
+  React.useEffect(() => {
+    if (!previewMarkdownContent || previewDocumentToc.length === 0) {
+      setActivePreviewTocId(null);
+      return;
+    }
+    const scrollEl = previewMarkdownScrollRef.current;
+    if (!scrollEl) return;
+    const ids = previewDocumentToc.map((t) => t.id);
+    let alive = true;
+    let scrollDebounceRaf = 0;
+    const updateActive = () => {
+      if (!alive) return;
+      const elements = ids
+        .map((id) => document.getElementById(id))
+        .filter((el): el is HTMLElement => el !== null);
+      if (elements.length === 0) return;
+      const rootRect = scrollEl.getBoundingClientRect();
+      const buffer = 72;
+      let current = ids[0];
+      for (let i = 0; i < elements.length; i++) {
+        const r = elements[i].getBoundingClientRect();
+        if (r.top <= rootRect.top + buffer) {
+          current = ids[i];
+        }
+      }
+      setActivePreviewTocId(current);
+    };
+    const onScroll = () => {
+      cancelAnimationFrame(scrollDebounceRaf);
+      scrollDebounceRaf = requestAnimationFrame(updateActive);
+    };
+    scrollEl.addEventListener("scroll", onScroll, { passive: true });
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (alive) updateActive();
+      });
+    });
+    return () => {
+      alive = false;
+      scrollEl.removeEventListener("scroll", onScroll);
+      cancelAnimationFrame(scrollDebounceRaf);
+    };
+  }, [previewMarkdownContent, previewDocumentToc]);
+
   // 시험 세션 상세 보기 모달 상태
   const [examDetailSessionId, setExamDetailSessionId] = React.useState<
     string | null
@@ -275,9 +849,7 @@ const MainContent: React.FC<MainContentProps> = ({
   const [examDetailFlipped, setExamDetailFlipped] = React.useState<
     Record<number, boolean>
   >({});
-  const [examAnswerVisible, setExamAnswerVisible] = React.useState<
-    Record<string, boolean>
-  >({});
+  const [flashCardIndex, setFlashCardIndex] = React.useState(0);
   const [fiveChoiceUserAnswers, setFiveChoiceUserAnswers] = React.useState<
     Record<string, string>
   >({});
@@ -288,6 +860,24 @@ const MainContent: React.FC<MainContentProps> = ({
   >({});
   const [shortAnswerLog, setShortAnswerLog] =
     React.useState<ShortAnswerLogData | null>(null);
+  const [shortAnswerKeywordOpen, setShortAnswerKeywordOpen] = React.useState<
+    Record<string, boolean>
+  >({});
+  const [shortAnswerGrading, setShortAnswerGrading] = React.useState(false);
+  const [shortAnswerGradeError, setShortAnswerGradeError] = React.useState<
+    string | null
+  >(null);
+  const [oxUserAnswers, setOxUserAnswers] = React.useState<
+    Record<string, OxUserChoice>
+  >({});
+  const [oxGraded, setOxGraded] = React.useState(false);
+  const [oxExamViewMode, setOxExamViewMode] =
+    React.useState<ExamProblemViewMode>("all");
+  const [fiveChoiceExamViewMode, setFiveChoiceExamViewMode] =
+    React.useState<ExamProblemViewMode>("all");
+  const [oxExamSingleIndex, setOxExamSingleIndex] = React.useState(0);
+  const [fiveChoiceSingleIndex, setFiveChoiceSingleIndex] =
+    React.useState(0);
   const [examProfile, setExamProfile] = React.useState<ExamUserProfile | null>(
     null,
   );
@@ -365,7 +955,7 @@ const MainContent: React.FC<MainContentProps> = ({
           setPreviewLoadError(true);
           return;
         }
-        // 마크다운 파일(.md)은 텍스트로 읽어 ReactMarkdown으로 렌더링
+        // 마크다운 파일(.md)은 텍스트로 읽어 MarkdownContent로 렌더링
         const isMarkdown =
           type.includes("text/markdown") ||
           type.includes("text/x-markdown") ||
@@ -580,19 +1170,24 @@ const MainContent: React.FC<MainContentProps> = ({
   }, [previewFileUrl, previewMaterialId, previewRetryKey]);
 
   React.useEffect(() => {
-    onPreviewStateChange?.(previewFileUrl || previewMaterialId != null ? previewFileName : null);
-  }, [previewFileUrl, previewMaterialId, previewFileName, onPreviewStateChange]);
-
-  React.useEffect(() => {
-    const handleBack = () => {
-      setPreviewFileUrl(null);
-      setPreviewMaterialId(null);
-      setPreviewFileName(null);
-      setPreviewMarkdownContent(null);
-    };
-    window.addEventListener("back-from-preview", handleBack);
-    return () => window.removeEventListener("back-from-preview", handleBack);
-  }, []);
+    const inViewer =
+      !!previewFileUrl ||
+      previewMaterialId != null ||
+      examDetailSessionId != null;
+    const topBarLabel =
+      examDetailSessionId != null
+        ? previewFileName ?? "시험"
+        : previewFileUrl || previewMaterialId != null
+          ? previewFileName
+          : null;
+    onPreviewStateChange?.(inViewer ? topBarLabel : null);
+  }, [
+    previewFileUrl,
+    previewMaterialId,
+    previewFileName,
+    examDetailSessionId,
+    onPreviewStateChange,
+  ]);
 
   const handleOpenPreviewInNewTab = React.useCallback(async () => {
     if (previewMaterialId != null) {
@@ -725,14 +1320,9 @@ const MainContent: React.FC<MainContentProps> = ({
               materialId: m.materialId,
             };
           });
-          const exs: CenterItem[] = (lec.examSessions || []).map((s) => ({
-            id: String(s.examSessionId),
-            type: "exam" as const,
-            title: `${s.examType} · ${s.targetCount}문항`,
-            meta: "시험",
-            createdAt: s.createdAt,
-            examSessionId: String(s.examSessionId),
-          }));
+          const exs: CenterItem[] = (lec.examSessions || []).map(
+            courseExamSessionToCenterItem,
+          );
           if (mats.length > 0) {
             materialsByLecture[lec.lectureId] = mats;
           }
@@ -887,14 +1477,9 @@ const MainContent: React.FC<MainContentProps> = ({
               materialId: m.materialId,
             };
           });
-          const exs: CenterItem[] = (lec.examSessions || []).map((s) => ({
-            id: String(s.examSessionId),
-            type: "exam" as const,
-            title: `${s.examType} · ${s.targetCount}문항`,
-            meta: "시험",
-            createdAt: s.createdAt,
-            examSessionId: String(s.examSessionId),
-          }));
+          const exs: CenterItem[] = (lec.examSessions || []).map(
+            courseExamSessionToCenterItem,
+          );
           if (mats.length > 0) materialsByLecture[lec.lectureId] = mats;
           if (exs.length > 0) examsByLecture[lec.lectureId] = exs;
         }
@@ -1189,6 +1774,7 @@ const MainContent: React.FC<MainContentProps> = ({
     setPreviewFileUrl(null);
     setPreviewMaterialId(null);
     setPreviewFileName(null);
+    setPreviewIsAiGenerationDoc(false);
   }, [selectedLectureId]);
 
   const handleRightSidebarResizeStart = React.useCallback(
@@ -1198,7 +1784,7 @@ const MainContent: React.FC<MainContentProps> = ({
       const startWidth = rightSidebarWidth;
       const onMove = (ev: MouseEvent) => {
         const delta = startX - ev.clientX;
-        setRightSidebarWidth(Math.min(800, Math.max(320, startWidth + delta)));
+        setRightSidebarWidth(Math.min(680, Math.max(280, startWidth + delta)));
       };
       const onUp = () => {
         window.removeEventListener("mousemove", onMove);
@@ -1268,10 +1854,12 @@ const MainContent: React.FC<MainContentProps> = ({
         setPreviewMaterialId(resMaterialId);
         setPreviewFileUrl(null);
         setPreviewFileName(title);
+        setPreviewIsAiGenerationDoc(false);
       } else if (url) {
         setPreviewFileUrl(url);
         setPreviewMaterialId(null);
         setPreviewFileName(title);
+        setPreviewIsAiGenerationDoc(false);
       }
       // 업로드 후에는 모달만 닫고, 강의 콘텐츠 생성은 채팅(/generate)에서 수행
       setUploadModalOpen(false);
@@ -1729,6 +2317,19 @@ const MainContent: React.FC<MainContentProps> = ({
       window.alert("강의를 먼저 선택해주세요.");
       return;
     }
+    const existingExams = localExams[selectedLectureId] ?? [];
+    const resolvedName = resolveNewExamDisplayName(
+      examDisplayName,
+      examType,
+      examCount,
+      existingExams,
+    );
+    if ("error" in resolvedName) {
+      window.alert(
+        "이미 존재하는 시험 이름입니다. 다른 이름으로 수정해 주세요.",
+      );
+      return;
+    }
     setSubmitting(true);
     try {
       const focusSource =
@@ -1774,6 +2375,7 @@ const MainContent: React.FC<MainContentProps> = ({
         lectureContent: examTopic.trim(),
         topic: examTopic.trim(),
         userProfile: finalUserProfile,
+        displayName: resolvedName.title,
       });
       const lines = [
         "시험이 백그라운드에서 생성 중입니다.",
@@ -1792,6 +2394,7 @@ const MainContent: React.FC<MainContentProps> = ({
       window.alert(lines.join("\n"));
       if (courseDetail?.courseId) refetchCourseContents(courseDetail.courseId);
       setExamTopic("");
+      setExamDisplayName("");
       setExamCount(10);
       setProfileFocusAreasInput("");
 
@@ -1838,6 +2441,8 @@ const MainContent: React.FC<MainContentProps> = ({
     examType,
     examTopic,
     examCount,
+    examDisplayName,
+    localExams,
     selectedLectureId,
     examProfile,
     examProfileStatus,
@@ -1855,34 +2460,89 @@ const MainContent: React.FC<MainContentProps> = ({
     refetchCourseContents,
   ]);
 
-  const openExamSessionDetail = React.useCallback(async (sessionId: string) => {
-    setExamDetailSessionId(sessionId);
+  const openExamSessionDetail = React.useCallback(
+    async (sessionId: string, navTitle?: string | null) => {
+      const t = navTitle != null ? String(navTitle).trim() : "";
+      setPreviewFileName(t.length > 0 ? t : "시험");
+      setPreviewIsAiGenerationDoc(false);
+      setExamDetailSessionId(sessionId);
+      setExamDetail(null);
+      setExamDetailError(null);
+      setExamDetailLoading(true);
+      setExamDetailFlipped({});
+      setFlashCardIndex(0);
+      setFiveChoiceUserAnswers({});
+      setFiveChoiceLog(null);
+      setOxUserAnswers({});
+      setOxGraded(false);
+      setOxExamViewMode("all");
+      setFiveChoiceExamViewMode("all");
+      setOxExamSingleIndex(0);
+      setFiveChoiceSingleIndex(0);
+      setShortAnswerUserAnswers({});
+      setShortAnswerLog(null);
+      setShortAnswerKeywordOpen({});
+      setShortAnswerGrading(false);
+      setShortAnswerGradeError(null);
+      try {
+        const numericId = Number(sessionId);
+        if (!Number.isFinite(numericId)) {
+          throw new Error("유효하지 않은 시험 세션 ID입니다.");
+        }
+        const detail = await examGenerationApi.getSession(numericId);
+        setExamDetail(detail);
+      } catch (e) {
+        setExamDetailError(
+          e instanceof Error
+            ? e.message
+            : "시험 세션 정보를 불러오지 못했습니다.",
+        );
+      } finally {
+        setExamDetailLoading(false);
+      }
+    },
+    [],
+  );
+
+  const closeExamSessionDetail = React.useCallback(() => {
+    setExamDetailSessionId(null);
     setExamDetail(null);
     setExamDetailError(null);
-    setExamDetailLoading(true);
     setExamDetailFlipped({});
-    setExamAnswerVisible({});
+    setFlashCardIndex(0);
     setFiveChoiceUserAnswers({});
     setFiveChoiceLog(null);
+    setOxUserAnswers({});
+    setOxGraded(false);
+    setOxExamViewMode("all");
+    setFiveChoiceExamViewMode("all");
+    setOxExamSingleIndex(0);
+    setFiveChoiceSingleIndex(0);
     setShortAnswerUserAnswers({});
     setShortAnswerLog(null);
-    try {
-      const numericId = Number(sessionId);
-      if (!Number.isFinite(numericId)) {
-        throw new Error("유효하지 않은 시험 세션 ID입니다.");
-      }
-      const detail = await examGenerationApi.getSession(numericId);
-      setExamDetail(detail);
-    } catch (e) {
-      setExamDetailError(
-        e instanceof Error
-          ? e.message
-          : "시험 세션 정보를 불러오지 못했습니다.",
-      );
-    } finally {
-      setExamDetailLoading(false);
-    }
+    setShortAnswerKeywordOpen({});
+    setShortAnswerGrading(false);
+    setShortAnswerGradeError(null);
   }, []);
+
+  React.useEffect(() => {
+    const handleBack = () => {
+      closeExamSessionDetail();
+      setPreviewFileUrl(null);
+      setPreviewMaterialId(null);
+      setPreviewFileName(null);
+      setPreviewIsAiGenerationDoc(false);
+      setPreviewMarkdownContent(null);
+      setPreviewBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setPreviewLoadError(false);
+      setPreviewErrorMessage(null);
+    };
+    window.addEventListener("back-from-preview", handleBack);
+    return () => window.removeEventListener("back-from-preview", handleBack);
+  }, [closeExamSessionDetail]);
 
   const handleExamSessionRecoverOpen = React.useCallback(() => {
     if (!selectedLectureId) {
@@ -1996,9 +2656,18 @@ const MainContent: React.FC<MainContentProps> = ({
     setExamDetailFlipped((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const toggleExamAnswerVisible = (key: string) => {
-    setExamAnswerVisible((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
+  const isLikelyMarkdownText = React.useCallback((text: string): boolean => {
+    return /(^|\n)\s{0,3}(#{1,6}\s|[-*+]\s|\d+\.\s|>\s)|```|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\[[^\]]+\]\([^)]+\)/.test(
+      text,
+    );
+  }, []);
+
+  const formatPlainFlashcardText = React.useCallback((text: string): string => {
+    return text
+      .replace(/\.\s*/g, ".\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }, []);
 
   const handleFiveChoiceAnswerChange = (
     problemIndex: number,
@@ -2010,11 +2679,120 @@ const MainContent: React.FC<MainContentProps> = ({
     }));
   };
 
+  const handleOxAnswerChange = (problemIndex: number, choice: OxUserChoice) => {
+    if (oxGraded) return;
+    setOxUserAnswers((prev) => ({
+      ...prev,
+      [String(problemIndex)]: choice,
+    }));
+  };
+
+  const handleOxGrade = () => {
+    if (!examDetail?.oxProblems?.length) return;
+    const allFilled = examDetail.oxProblems.every((_, idx) => {
+      const c = oxUserAnswers[String(idx)];
+      return c === "O" || c === "X";
+    });
+    if (!allFilled) return;
+    setOxGraded(true);
+  };
+
+  const oxExamStats = React.useMemo(() => {
+    const list = examDetail?.oxProblems;
+    if (!list?.length) return null;
+    const allAnswered = list.every((_, idx) => {
+      const c = oxUserAnswers[String(idx)];
+      return c === "O" || c === "X";
+    });
+    let correctCount = 0;
+    if (oxGraded) {
+      for (let i = 0; i < list.length; i++) {
+        const u = oxUserAnswers[String(i)];
+        if (u && isOxAnswerCorrect(u, list[i].correctAnswer)) correctCount++;
+      }
+    }
+    return { list, allAnswered, correctCount, total: list.length };
+  }, [examDetail?.oxProblems, oxUserAnswers, oxGraded]);
+
+  React.useEffect(() => {
+    const n = examDetail?.oxProblems?.length ?? 0;
+    if (n <= 0) return;
+    setOxExamSingleIndex((i) => Math.min(Math.max(0, i), n - 1));
+  }, [examDetail?.oxProblems]);
+
+  React.useEffect(() => {
+    const n = examDetail?.fiveChoiceProblems?.length ?? 0;
+    if (n <= 0) return;
+    setFiveChoiceSingleIndex((i) => Math.min(Math.max(0, i), n - 1));
+  }, [examDetail?.fiveChoiceProblems]);
+
+  /** 시험 뷰어 열림 시 루트·html 세로 스크롤 제거 (패널 내부 스크롤만 사용) */
+  React.useEffect(() => {
+    if (!examDetailSessionId) return;
+    const root = document.getElementById("root");
+    const html = document.documentElement;
+    html.style.overflowY = "hidden";
+    if (root) root.style.overflowY = "hidden";
+    return () => {
+      html.style.removeProperty("overflow-y");
+      root?.style.removeProperty("overflow-y");
+    };
+  }, [examDetailSessionId]);
+
+  const fiveChoiceExamStats = React.useMemo(() => {
+    const list = examDetail?.fiveChoiceProblems;
+    if (!list?.length) return null;
+    const allAnswered = areAllFiveChoiceAnswered(list, fiveChoiceUserAnswers);
+    const graded =
+      fiveChoiceLog != null &&
+      fiveChoiceLog.evaluationItems.length === list.length;
+    const correctCount = graded
+      ? fiveChoiceLog.evaluationItems.filter(
+          (e) => e.resultStatus === "Correct",
+        ).length
+      : 0;
+    return { allAnswered, correctCount, total: list.length, graded };
+  }, [examDetail?.fiveChoiceProblems, fiveChoiceUserAnswers, fiveChoiceLog]);
+
+  const shortAnswerExamStats = React.useMemo(() => {
+    const list = examDetail?.shortAnswerProblems;
+    if (!list?.length) return null;
+    const allAnswered = list.every(
+      (_, idx) => (shortAnswerUserAnswers[String(idx)] ?? "").trim().length > 0,
+    );
+    const graded =
+      shortAnswerLog != null &&
+      shortAnswerLog.evaluationItems.length === list.length;
+    let totalScoreOutOf10: number | null = null;
+    if (graded && shortAnswerLog && list.length > 0) {
+      const sum = shortAnswerLog.evaluationItems.reduce(
+        (acc, e) => acc + e.score,
+        0,
+      );
+      totalScoreOutOf10 = (sum / list.length) * 10;
+    }
+    return {
+      allAnswered,
+      graded,
+      total: list.length,
+      totalScoreOutOf10,
+    };
+  }, [examDetail?.shortAnswerProblems, shortAnswerUserAnswers, shortAnswerLog]);
+
   const handleFiveChoiceGrade = () => {
     if (
       !examDetail ||
       !examDetail.fiveChoiceProblems ||
       examDetail.fiveChoiceProblems.length === 0
+    ) {
+      return;
+    }
+    if (fiveChoiceLog) return;
+    if (
+      !areAllFiveChoiceAnswered(
+        examDetail.fiveChoiceProblems,
+        fiveChoiceUserAnswers,
+      )
     ) {
       return;
     }
@@ -2072,13 +2850,14 @@ const MainContent: React.FC<MainContentProps> = ({
     problemIndex: number,
     value: string,
   ) => {
+    if (shortAnswerLog) return;
     setShortAnswerUserAnswers((prev) => ({
       ...prev,
       [String(problemIndex)]: value,
     }));
   };
 
-  const handleShortAnswerGrade = () => {
+  const handleShortAnswerGrade = React.useCallback(async () => {
     if (
       !examDetail ||
       !examDetail.shortAnswerProblems ||
@@ -2086,81 +2865,88 @@ const MainContent: React.FC<MainContentProps> = ({
     ) {
       return;
     }
+    if (shortAnswerLog) return;
+    const allFilled = examDetail.shortAnswerProblems.every(
+      (_, idx) => (shortAnswerUserAnswers[String(idx)] ?? "").trim().length > 0,
+    );
+    if (!allFilled) return;
 
-    const evaluationItems: ShortAnswerEvaluationItem[] =
-      examDetail.shortAnswerProblems.map((q, idx) => {
-        const key = String(idx);
-        const userResponse = (shortAnswerUserAnswers[key] ?? "").trim();
+    const sessionNum = Number(examDetailSessionId);
+    if (!Number.isFinite(sessionNum)) {
+      setShortAnswerGradeError("유효하지 않은 시험 세션입니다.");
+      return;
+    }
 
-        const rawKeywords = (
-          Array.isArray((q as any).relatedKeywords) &&
-          (q as any).relatedKeywords.length > 0
-            ? (q as any).relatedKeywords
-            : Array.isArray((q as any).keyKeywords)
-              ? (q as any).keyKeywords
-              : []
-        ) as string[];
+    const mats =
+      selectedLectureId != null
+        ? localMaterials[selectedLectureId] ?? []
+        : [];
+    const materialId =
+      mats.find((m) => m.materialId != null)?.materialId ?? null;
 
-        const normalizedUser = userResponse.toLowerCase();
-        const matchedKeywords = rawKeywords.filter((kw) =>
-          normalizedUser.includes(String(kw).toLowerCase()),
-        );
-
-        let resultStatus: ShortAnswerResultStatus = "Incorrect";
-        if (rawKeywords.length === 0) {
-          resultStatus = userResponse ? "Correct" : "Incorrect";
-        } else if (
-          matchedKeywords.length === rawKeywords.length &&
-          rawKeywords.length > 0
-        ) {
-          resultStatus = "Correct";
-        } else if (matchedKeywords.length > 0) {
-          resultStatus = "Partial_Correct";
-        }
-
-        const relatedTopic =
-          (q as any).intentDiagnosis ||
-          (q as any).evaluationCriteria ||
-          (q as any).questionContent ||
-          "";
-
-        let feedbackMessage: string;
-        if (!userResponse) {
-          feedbackMessage =
-            "답안을 입력하지 않아 개념 이해를 평가하기 어렵습니다. 강의 자료와 모범 답안을 참고해 핵심 키워드를 포함해 다시 서술해 보세요.";
-        } else if (resultStatus === "Correct") {
-          const base = "핵심 키워드를 잘 포함해 정확하게 서술했습니다. ";
-          const intentText =
-            (q as any).intentDiagnosis || (q as any).evaluationCriteria || "";
-          feedbackMessage = intentText ? `${base}${intentText}` : base;
-        } else if (resultStatus === "Partial_Correct") {
-          const missing = rawKeywords.filter(
-            (kw) => !matchedKeywords.includes(kw),
-          );
-          const missingText =
-            missing.length > 0
-              ? `누락된 핵심 키워드: ${missing.join(", ")}.`
-              : "";
-          feedbackMessage =
-            "핵심 개념의 일부는 잘 짚었지만, 모범 답안과 비교했을 때 표현이 부족한 부분이 있습니다. " +
-            missingText;
-        } else {
-          feedbackMessage =
-            "모범 답안의 핵심 논리와 키워드가 충분히 반영되지 않았습니다. 강의 자료에서 관련 부분을 다시 읽고, 정의·비교·원인·사례 등을 구조적으로 정리해 보세요.";
-        }
-
-        return {
-          questionId: idx + 1,
-          resultStatus,
-          questionContent: (q as any).questionContent || "",
-          userResponse: userResponse || "No Answer",
-          relatedTopic,
-          feedbackMessage,
-        };
+    setShortAnswerGrading(true);
+    setShortAnswerGradeError(null);
+    try {
+      const res = await examGenerationApi.gradeShortAnswers(sessionNum, {
+        lectureId: selectedLectureId ?? undefined,
+        materialId,
+        problems: examDetail.shortAnswerProblems.map((q, idx) => ({
+          problemNumber: idx + 1,
+          questionContent: q.questionContent ?? "",
+          keyKeywords: getShortAnswerKeywordsFromProblem(q),
+          gradingIntent: getShortAnswerIntentText(q),
+          userAnswer: (shortAnswerUserAnswers[String(idx)] ?? "").trim(),
+        })),
       });
 
-    setShortAnswerLog({ evaluationItems });
-  };
+      const byNum = new Map(
+        res.results.map((r) => [r.problemNumber, r] as const),
+      );
+      const evaluationItems: ShortAnswerEvaluationItem[] =
+        examDetail.shortAnswerProblems.map((q, idx) => {
+          const key = String(idx);
+          const userResponse = (shortAnswerUserAnswers[key] ?? "").trim();
+          const r = byNum.get(idx + 1);
+          if (!r) {
+            return {
+              questionId: idx + 1,
+              questionContent: q.questionContent ?? "",
+              userResponse: userResponse || "",
+              score: 0,
+              gradingReason: "서버 응답에 이 문항 채점 결과가 없습니다.",
+              feedback: "",
+              pointsDeducted: true,
+              deductionReason: "응답 누락",
+            };
+          }
+          return {
+            questionId: idx + 1,
+            questionContent: q.questionContent ?? "",
+            userResponse,
+            score: r.score,
+            gradingReason: r.gradingReason,
+            feedback: r.feedback,
+            pointsDeducted: r.pointsDeducted,
+            deductionReason: r.deductionReason,
+          };
+        });
+
+      setShortAnswerLog({ evaluationItems });
+    } catch (e) {
+      setShortAnswerGradeError(
+        e instanceof Error ? e.message : "채점 요청에 실패했습니다.",
+      );
+    } finally {
+      setShortAnswerGrading(false);
+    }
+  }, [
+    examDetail,
+    examDetailSessionId,
+    shortAnswerLog,
+    shortAnswerUserAnswers,
+    selectedLectureId,
+    localMaterials,
+  ]);
 
   const handleAssessmentSubmit = React.useCallback(async () => {
     if (
@@ -2213,6 +2999,7 @@ const MainContent: React.FC<MainContentProps> = ({
         setPreviewMaterialId(item.materialId);
         setPreviewFileUrl(null);
         setPreviewFileName(item.title || null);
+        setPreviewIsAiGenerationDoc(false);
         return;
       }
       // AI 생성 자료: finalDocument(마크다운 본문)가 있으면 fetch 없이 그대로 표시
@@ -2220,6 +3007,7 @@ const MainContent: React.FC<MainContentProps> = ({
         setPreviewFileUrl(item.finalDocument);
         setPreviewMaterialId(null);
         setPreviewFileName(item.title || null);
+        setPreviewIsAiGenerationDoc(true);
         return;
       }
       // sessionId만 있으면 document API URL로 미리보기
@@ -2229,12 +3017,17 @@ const MainContent: React.FC<MainContentProps> = ({
         );
         setPreviewMaterialId(null);
         setPreviewFileName(item.title || null);
+        setPreviewIsAiGenerationDoc(true);
         return;
       }
       if (item.fileUrl) {
         setPreviewFileUrl(item.fileUrl);
         setPreviewMaterialId(null);
         setPreviewFileName(item.title || null);
+        setPreviewIsAiGenerationDoc(
+          item.fileUrl.includes("materials/generation") &&
+            item.fileUrl.includes("/document"),
+        );
         return;
       }
       if (item.type === "material") {
@@ -2251,7 +3044,7 @@ const MainContent: React.FC<MainContentProps> = ({
         return;
       }
       if (item.examSessionId) {
-        void openExamSessionDetail(item.examSessionId);
+        void openExamSessionDetail(item.examSessionId, item.title ?? null);
       }
     },
     [openExamSessionDetail, getMaterialDocumentPreviewUrl],
@@ -2749,13 +3542,1116 @@ const MainContent: React.FC<MainContentProps> = ({
     });
 
     // 업로드한 자료 미리보기 (좌: 미리보기 | 우: 채팅) — fileUrl 또는 materialId로 표시
-    if (previewFileUrl || previewMaterialId != null) {
+    if (previewFileUrl || previewMaterialId != null || examDetailSessionId) {
       return (
         <div className="flex flex-col h-full min-w-0 overflow-hidden">
           <div className="flex-1 flex min-h-0 min-w-0 overflow-hidden">
             {/* 좌: 미리보기 */}
-            <div className="flex-1 min-h-0 min-w-0 bg-gray-100 dark:bg-zinc-900 flex flex-col overflow-hidden">
-              {previewLoading ? (
+            <div className="flex-1 min-h-0 min-w-0 bg-gray-100 dark:bg-[#141414] flex flex-col overflow-hidden">
+              {examDetailSessionId ? (
+                <div className={`flex-1 min-h-0 min-w-0 flex flex-col ${isDarkMode ? "bg-[#141414] text-gray-100" : "bg-white text-gray-900"}`}>
+                  <div
+                    className="shrink-0 h-10 min-h-10 max-h-10 flex items-center justify-between px-3 border-b box-border"
+                    style={{
+                      backgroundColor: isDarkMode ? "#141414" : "#FFFFFF",
+                      color: isDarkMode ? "#FFFFFF" : "#141414",
+                      borderColor: isDarkMode ? "#404040" : "#e5e7eb",
+                    }}
+                  >
+                    <div className="min-w-0 flex items-center">
+                      <h2 className="text-sm font-semibold leading-none truncate">
+                        {(() => {
+                          const type = String(examDetail?.examType ?? "").toUpperCase();
+                          if (type === "FLASH_CARD") return "플래시카드";
+                          if (type === "OX_PROBLEM") return "OX 문제";
+                          if (type === "FIVE_CHOICE") return "객관식";
+                          if (type === "SHORT_ANSWER") return "주관식";
+                          if (type === "DEBATE") return "토론형";
+                          return examDetail?.examType || "시험";
+                        })()}
+                      </h2>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 min-w-0">
+                      <p className="text-xs opacity-80 leading-none truncate max-w-[min(220px,40vw)]">
+                        세션 ID: {examDetailSessionId}
+                        {examDetail?.examType && ` · 유형: ${examDetail.examType}`}
+                      </p>
+                      {(examDetail?.oxProblems?.length ?? 0) > 0 && (
+                        <ExamSectionViewModeToggle
+                          mode={oxExamViewMode}
+                          onChange={setOxExamViewMode}
+                          isDarkMode={isDarkMode}
+                        />
+                      )}
+                      {(examDetail?.fiveChoiceProblems?.length ?? 0) > 0 && (
+                        <ExamSectionViewModeToggle
+                          mode={fiveChoiceExamViewMode}
+                          onChange={setFiveChoiceExamViewMode}
+                          isDarkMode={isDarkMode}
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={closeExamSessionDetail}
+                        className={`p-1 rounded cursor-pointer shrink-0 ${isDarkMode ? "hover:bg-zinc-800" : "hover:bg-gray-100"}`}
+                        aria-label="시험 보기 닫기"
+                        title="닫기"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                  <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
+                    {examDetailLoading && (
+                      <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
+                        시험 세션 정보를 불러오는 중입니다...
+                      </p>
+                    )}
+                    {examDetailError && (
+                      <p className={`text-sm ${isDarkMode ? "text-red-300" : "text-red-600"}`}>
+                        {examDetailError}
+                      </p>
+                    )}
+                    {!examDetailLoading && !examDetailError && examDetail && (
+                      <>
+                        {examDetail.flashCards?.length ? (
+                          <section className="min-h-[calc(100vh-280px)] flex flex-col">
+                            <div className="flex-1 min-h-0 flex flex-col gap-3">
+                              <p className="text-xs opacity-80 text-center">
+                                {flashCardIndex + 1} / {examDetail.flashCards.length}
+                              </p>
+                              {(() => {
+                                const current = examDetail.flashCards[flashCardIndex];
+                                const id = flashCardIndex + 1;
+                                const flipped = !!examDetailFlipped[id];
+                                const backText = current.backContent ?? "";
+                                const renderBackAsMarkdown = isLikelyMarkdownText(backText);
+                                return (
+                                  <div key={`fc-single-${id}`} className="relative w-full flex-1 min-h-0 px-10">
+                                    <button
+                                      type="button"
+                                      onClick={() => setFlashCardIndex((prev) => Math.max(0, prev - 1))}
+                                      disabled={flashCardIndex <= 0}
+                                      className={`absolute left-0 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-full border flex items-center justify-center disabled:opacity-40 ${
+                                        isDarkMode
+                                          ? "bg-zinc-900/90 border-zinc-700 text-gray-200"
+                                          : "bg-white/95 border-gray-300 text-gray-700"
+                                      }`}
+                                      aria-label="이전 카드"
+                                      title="이전"
+                                    >
+                                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                                        <path d="M15 18l-6-6 6-6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                      </svg>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setFlashCardIndex((prev) =>
+                                          Math.min(examDetail.flashCards.length - 1, prev + 1),
+                                        )
+                                      }
+                                      disabled={flashCardIndex >= examDetail.flashCards.length - 1}
+                                      className={`absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 z-10 w-9 h-9 rounded-full border flex items-center justify-center disabled:opacity-40 ${
+                                        isDarkMode
+                                          ? "bg-zinc-900/90 border-zinc-700 text-gray-200"
+                                          : "bg-white/95 border-gray-300 text-gray-700"
+                                      }`}
+                                      aria-label="다음 카드"
+                                      title="다음"
+                                    >
+                                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                                        <path d="M9 6l6 6-6 6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                      </svg>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleFlashCard(id)}
+                                      className={`w-full h-full min-h-[320px] rounded-xl border p-5 text-left transition-all ${
+                                        isDarkMode
+                                          ? "border-zinc-700 bg-zinc-900/70 hover:bg-zinc-800"
+                                          : "border-gray-200 bg-gray-50 hover:bg-gray-100"
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between mb-3">
+                                        <p className="text-xs opacity-70">{flipped ? "Back" : "Front"}</p>
+                                        <p className="text-xs opacity-70">클릭해서 앞/뒤 전환</p>
+                                      </div>
+                                      {!flipped ? (
+                                        <p className="text-lg leading-8 whitespace-pre-wrap break-words">
+                                          {current.frontContent}
+                                        </p>
+                                      ) : renderBackAsMarkdown ? (
+                                        <article
+                                          className={`prose prose-neutral max-w-none text-base leading-7 break-words prose-headings:font-semibold prose-blockquote:border-l-emerald-600/50 dark:prose-blockquote:border-emerald-400/45 ${
+                                            isDarkMode ? "prose-invert" : ""
+                                          }`}
+                                        >
+                                          <MarkdownContent>{backText}</MarkdownContent>
+                                        </article>
+                                      ) : (
+                                        <p className="text-base leading-7 whitespace-pre-wrap break-words">
+                                          {formatPlainFlashcardText(backText)}
+                                        </p>
+                                      )}
+                                    </button>
+                                  </div>
+                                );
+                              })()}
+                              {examDetail.flashCards.length > 1 && (
+                                <div className="w-full">
+                                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 pb-1">
+                                    {examDetail.flashCards
+                                      .map((card, idx) => ({ card, idx }))
+                                      .filter(({ idx }) => idx !== flashCardIndex)
+                                      .map(({ card, idx }) => (
+                                        <button
+                                          key={`fc-preview-${idx}`}
+                                          type="button"
+                                          onClick={() => setFlashCardIndex(idx)}
+                                          className={`w-full h-20 rounded-lg border p-2 text-left transition-colors ${
+                                            isDarkMode
+                                              ? "border-zinc-700 bg-zinc-900/60 hover:bg-zinc-800 text-gray-200"
+                                              : "border-gray-200 bg-white hover:bg-gray-50 text-gray-800"
+                                          }`}
+                                          title={`카드 ${idx + 1}`}
+                                        >
+                                          <p className="text-[10px] opacity-70 mb-1">
+                                            {idx + 1}
+                                          </p>
+                                          <p className="text-xs line-clamp-2 whitespace-pre-wrap break-words">
+                                            {card.frontContent}
+                                          </p>
+                                        </button>
+                                      ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </section>
+                        ) : null}
+                        {oxExamStats ? (
+                          oxExamViewMode === "single" ? (
+                            <section className="flex min-h-[calc(100vh-280px)] w-full flex-col">
+                              <div className="flex min-h-0 flex-1 flex-col gap-3">
+                                <div className="relative min-h-0 w-full flex-1 px-10">
+                                  <ExamFlashStyleSideArrows
+                                    show={oxExamStats.total > 1}
+                                    isDarkMode={isDarkMode}
+                                    prevDisabled={oxExamSingleIndex <= 0}
+                                    nextDisabled={
+                                      oxExamSingleIndex >=
+                                      oxExamStats.total - 1
+                                    }
+                                    onPrev={() =>
+                                      setOxExamSingleIndex((i) =>
+                                        Math.max(0, i - 1),
+                                      )
+                                    }
+                                    onNext={() =>
+                                      setOxExamSingleIndex((i) =>
+                                        Math.min(
+                                          oxExamStats.total - 1,
+                                          i + 1,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                  {(() => {
+                                    const idx = oxExamSingleIndex;
+                                    const q = oxExamStats.list[idx];
+                                    const choice = oxUserAnswers[String(idx)];
+                                    const userCorrect =
+                                      choice != null &&
+                                      isOxAnswerCorrect(
+                                        choice,
+                                        q.correctAnswer,
+                                      );
+                                    const oxCorrectCanon =
+                                      normalizeExamOxCorrectAnswer(
+                                        q.correctAnswer,
+                                      );
+                                    return (
+                                      <div
+                                        className={examSingleFlashCardShellClass(
+                                          isDarkMode,
+                                        )}
+                                      >
+                                        <div className="mb-3 flex items-center justify-end">
+                                          <p className="text-xs tabular-nums opacity-70">
+                                            {idx + 1}/{oxExamStats.total}
+                                          </p>
+                                        </div>
+                                        <p className="mb-4 text-lg font-medium leading-8 whitespace-pre-wrap break-words">
+                                          {q.questionContent}
+                                        </p>
+                                        <div className="mt-auto flex h-12 shrink-0 flex-wrap items-center justify-center gap-3">
+                                          <label
+                                            className={oxChoiceButtonClass({
+                                              letter: "O",
+                                              choice,
+                                              correctCanonical: oxCorrectCanon,
+                                              graded: oxGraded,
+                                              isDarkMode,
+                                            })}
+                                          >
+                                            <input
+                                              type="radio"
+                                              name={`ox-problem-inline-${idx}`}
+                                              className="sr-only"
+                                              checked={choice === "O"}
+                                              disabled={oxGraded}
+                                              onChange={() =>
+                                                handleOxAnswerChange(idx, "O")
+                                              }
+                                            />
+                                            <span>O</span>
+                                          </label>
+                                          <label
+                                            className={oxChoiceButtonClass({
+                                              letter: "X",
+                                              choice,
+                                              correctCanonical: oxCorrectCanon,
+                                              graded: oxGraded,
+                                              isDarkMode,
+                                            })}
+                                          >
+                                            <input
+                                              type="radio"
+                                              name={`ox-problem-inline-${idx}`}
+                                              className="sr-only"
+                                              checked={choice === "X"}
+                                              disabled={oxGraded}
+                                              onChange={() =>
+                                                handleOxAnswerChange(idx, "X")
+                                              }
+                                            />
+                                            <span>X</span>
+                                          </label>
+                                        </div>
+                                        {oxGraded && choice && (
+                                          <div className="mt-4 space-y-1 border-t border-dashed border-gray-300 pt-3 dark:border-zinc-600">
+                                            <p className="text-[11px]">
+                                              <span className="font-semibold">
+                                                결과:
+                                              </span>{" "}
+                                              <span
+                                                className={
+                                                  userCorrect
+                                                    ? "text-emerald-500 font-medium"
+                                                    : "text-red-500 font-medium"
+                                                }
+                                              >
+                                                {userCorrect ? "정답" : "오답"}
+                                              </span>
+                                            </p>
+                                            <p className="text-[11px] opacity-90">
+                                              <span className="font-semibold">
+                                                정답:
+                                              </span>{" "}
+                                              {normalizeExamOxCorrectAnswer(
+                                                q.correctAnswer,
+                                              ) ?? q.correctAnswer}
+                                            </p>
+                                            {q.explanation ? (
+                                              <p className="text-[11px] opacity-80 whitespace-pre-line">
+                                                <span className="font-semibold">
+                                                  해설:
+                                                </span>{" "}
+                                                {q.explanation}
+                                              </p>
+                                            ) : null}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                                <div className="flex min-h-[4.5rem] w-full shrink-0 flex-col items-center justify-start gap-2 px-2 text-center">
+                                  {(oxExamSingleIndex ===
+                                    oxExamStats.total - 1 ||
+                                    oxExamStats.total <= 1) && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={handleOxGrade}
+                                        disabled={
+                                          !oxExamStats.allAnswered ||
+                                          oxGraded
+                                        }
+                                        className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-[11px] font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                                          isDarkMode
+                                            ? "bg-emerald-600 text-white"
+                                            : "bg-emerald-600 text-white"
+                                        }`}
+                                      >
+                                        채점하기
+                                      </button>
+                                      {oxGraded ? (
+                                        <p
+                                          className={`text-[11px] font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                                        >
+                                          {oxExamStats.total}문제 중{" "}
+                                          {oxExamStats.correctCount}문제 정답
+                                        </p>
+                                      ) : null}
+                                    </>
+                                  )}
+                                </div>
+                                <ExamQuestionProgressDots
+                                  total={oxExamStats.total}
+                                  currentIndex={oxExamSingleIndex}
+                                  isAnswered={(i) => {
+                                    const c = oxUserAnswers[String(i)];
+                                    return c === "O" || c === "X";
+                                  }}
+                                  onSelect={(i) => setOxExamSingleIndex(i)}
+                                  isDarkMode={isDarkMode}
+                                />
+                              </div>
+                            </section>
+                          ) : (
+                            <section className="w-full">
+                              <div className="space-y-3 text-xs">
+                                {oxExamStats.list.map((_, idx) => {
+                                  const q = oxExamStats.list[idx];
+                                  const choice = oxUserAnswers[String(idx)];
+                                  const userCorrect =
+                                    choice != null &&
+                                    isOxAnswerCorrect(
+                                      choice,
+                                      q.correctAnswer,
+                                    );
+                                  const oxCorrectCanon =
+                                    normalizeExamOxCorrectAnswer(
+                                      q.correctAnswer,
+                                    );
+                                  return (
+                                    <div
+                                      key={idx}
+                                      className={`rounded-lg border p-3 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}
+                                    >
+                                      <p className="mb-2 text-sm font-medium whitespace-pre-line">
+                                        <span className="mr-1.5 inline tabular-nums font-semibold">
+                                          {idx + 1}.
+                                        </span>
+                                        {q.questionContent}
+                                      </p>
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <label
+                                          className={oxChoiceButtonClass({
+                                            letter: "O",
+                                            choice,
+                                            correctCanonical: oxCorrectCanon,
+                                            graded: oxGraded,
+                                            isDarkMode,
+                                          })}
+                                        >
+                                          <input
+                                            type="radio"
+                                            name={`ox-problem-inline-all-${idx}`}
+                                            className="sr-only"
+                                            checked={choice === "O"}
+                                            disabled={oxGraded}
+                                            onChange={() =>
+                                              handleOxAnswerChange(idx, "O")
+                                            }
+                                          />
+                                          <span>O</span>
+                                        </label>
+                                        <label
+                                          className={oxChoiceButtonClass({
+                                            letter: "X",
+                                            choice,
+                                            correctCanonical: oxCorrectCanon,
+                                            graded: oxGraded,
+                                            isDarkMode,
+                                          })}
+                                        >
+                                          <input
+                                            type="radio"
+                                            name={`ox-problem-inline-all-${idx}`}
+                                            className="sr-only"
+                                            checked={choice === "X"}
+                                            disabled={oxGraded}
+                                            onChange={() =>
+                                              handleOxAnswerChange(idx, "X")
+                                            }
+                                          />
+                                          <span>X</span>
+                                        </label>
+                                      </div>
+                                      {oxGraded && choice && (
+                                        <div className="mt-2 space-y-1 border-t border-dashed border-gray-300 pt-2 dark:border-zinc-600">
+                                          <p className="text-[11px]">
+                                            <span className="font-semibold">
+                                              결과:
+                                            </span>{" "}
+                                            <span
+                                              className={
+                                                userCorrect
+                                                  ? "text-emerald-500 font-medium"
+                                                  : "text-red-500 font-medium"
+                                              }
+                                            >
+                                              {userCorrect ? "정답" : "오답"}
+                                            </span>
+                                          </p>
+                                          <p className="text-[11px] opacity-90">
+                                            <span className="font-semibold">
+                                              정답:
+                                            </span>{" "}
+                                            {normalizeExamOxCorrectAnswer(
+                                              q.correctAnswer,
+                                            ) ?? q.correctAnswer}
+                                          </p>
+                                          {q.explanation ? (
+                                            <p className="text-[11px] opacity-80 whitespace-pre-line">
+                                              <span className="font-semibold">
+                                                해설:
+                                              </span>{" "}
+                                              {q.explanation}
+                                            </p>
+                                          ) : null}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <div className="mt-2 flex flex-col gap-1.5">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                  <button
+                                    type="button"
+                                    onClick={handleOxGrade}
+                                    disabled={
+                                      !oxExamStats.allAnswered || oxGraded
+                                    }
+                                    className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-[11px] font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                                      isDarkMode
+                                        ? "bg-emerald-600 text-white"
+                                        : "bg-emerald-600 text-white"
+                                    }`}
+                                  >
+                                    채점하기
+                                  </button>
+                                  {oxGraded ? (
+                                    <p
+                                      className={`text-[11px] font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                                    >
+                                      {oxExamStats.total}문제 중{" "}
+                                      {oxExamStats.correctCount}문제 정답
+                                    </p>
+                                  ) : (
+                                    <p className="text-[11px] opacity-70">
+                                      모든 문항에 O 또는 X를 선택하면 채점하기를
+                                      누를 수 있습니다.
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </section>
+                          )
+                        ) : null}
+                        {examDetail.fiveChoiceProblems?.length ? (
+                          fiveChoiceExamViewMode === "single" ? (
+                            <section className="flex min-h-[calc(100vh-280px)] w-full flex-col">
+                              <div className="flex min-h-0 flex-1 flex-col gap-3">
+                                <div className="relative min-h-0 w-full flex-1 px-10">
+                                  <ExamFlashStyleSideArrows
+                                    show={
+                                      examDetail.fiveChoiceProblems.length > 1
+                                    }
+                                    isDarkMode={isDarkMode}
+                                    prevDisabled={fiveChoiceSingleIndex <= 0}
+                                    nextDisabled={
+                                      fiveChoiceSingleIndex >=
+                                      examDetail.fiveChoiceProblems.length - 1
+                                    }
+                                    onPrev={() =>
+                                      setFiveChoiceSingleIndex((i) =>
+                                        Math.max(0, i - 1),
+                                      )
+                                    }
+                                    onNext={() =>
+                                      setFiveChoiceSingleIndex((i) =>
+                                        Math.min(
+                                          examDetail.fiveChoiceProblems
+                                            .length - 1,
+                                          i + 1,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                  {(() => {
+                                    const idx = fiveChoiceSingleIndex;
+                                    const q =
+                                      examDetail.fiveChoiceProblems[idx];
+                                    const gradedItem =
+                                      fiveChoiceLog?.evaluationItems[idx];
+                                    const mcGraded = !!fiveChoiceLog;
+                                    const mcExplanation =
+                                      gradedItem &&
+                                      (gradedItem.resultStatus === "Correct"
+                                        ? (q.intentDiagnosis?.trim() ||
+                                            gradedItem.feedbackMessage ||
+                                            "")
+                                        : (gradedItem.feedbackMessage ||
+                                            q.intentDiagnosis?.trim() ||
+                                            ""));
+                                    return (
+                                      <div
+                                        className={examSingleFlashCardShellClass(
+                                          isDarkMode,
+                                        )}
+                                      >
+                                        <div className="mb-3 flex items-center justify-between">
+                                          <p className="text-xs opacity-70">
+                                            객관식
+                                          </p>
+                                          <p className="text-xs tabular-nums opacity-70">
+                                            문항 {idx + 1}
+                                          </p>
+                                        </div>
+                                        <p className="mb-4 text-lg font-medium leading-8 whitespace-pre-wrap break-words">
+                                          {q.questionContent}
+                                        </p>
+                                        <ul className="mt-auto space-y-2 pl-0 list-none">
+                                          {q.options.map((opt) => {
+                                            const selected =
+                                              fiveChoiceUserAnswers[
+                                                String(idx)
+                                              ] === opt.id;
+                                            return (
+                                              <li key={opt.id}>
+                                                <label
+                                                  className={fiveChoiceOptionLabelClass(
+                                                    selected,
+                                                    mcGraded,
+                                                    !!opt.isCorrect,
+                                                    isDarkMode,
+                                                  )}
+                                                >
+                                                  <input
+                                                    type="radio"
+                                                    name={`five-choice-inline-${idx}`}
+                                                    value={opt.id}
+                                                    className="sr-only"
+                                                    disabled={mcGraded}
+                                                    checked={selected}
+                                                    onChange={() =>
+                                                      handleFiveChoiceAnswerChange(
+                                                        idx,
+                                                        opt.id,
+                                                      )
+                                                    }
+                                                  />
+                                                  <span className="flex min-w-0 flex-1 items-start gap-2 text-sm">
+                                                    <span className="w-5 shrink-0 text-right font-semibold tabular-nums">
+                                                      {opt.id}.
+                                                    </span>
+                                                    <span className="min-w-0">
+                                                      {opt.content}
+                                                    </span>
+                                                    {mcGraded &&
+                                                    opt.isCorrect ? (
+                                                      <span className="ml-auto shrink-0 text-xs font-semibold text-emerald-500">
+                                                        정답
+                                                      </span>
+                                                    ) : null}
+                                                  </span>
+                                                </label>
+                                              </li>
+                                            );
+                                          })}
+                                        </ul>
+                                        {gradedItem && (
+                                          <div className="mt-4 space-y-1 border-t border-dashed border-gray-300 pt-3 dark:border-zinc-600">
+                                            <p className="text-[11px]">
+                                              <span className="font-semibold">
+                                                결과:
+                                              </span>{" "}
+                                              <span
+                                                className={
+                                                  gradedItem.resultStatus ===
+                                                  "Correct"
+                                                    ? "text-emerald-500 font-medium"
+                                                    : "text-red-500 font-medium"
+                                                }
+                                              >
+                                                {gradedItem.resultStatus ===
+                                                "Correct"
+                                                  ? "정답"
+                                                  : "오답"}
+                                              </span>
+                                            </p>
+                                            {mcExplanation ? (
+                                              <p className="text-[11px] opacity-80 whitespace-pre-line">
+                                                <span className="font-semibold">
+                                                  해설:
+                                                </span>{" "}
+                                                {mcExplanation}
+                                              </p>
+                                            ) : null}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
+                                </div>
+                                {(fiveChoiceSingleIndex ===
+                                  examDetail.fiveChoiceProblems.length - 1 ||
+                                  examDetail.fiveChoiceProblems.length <=
+                                    1) && (
+                                  <div className="flex w-full flex-col items-center gap-1.5">
+                                    <div className="flex w-full max-w-md flex-col items-center gap-2 text-center">
+                                      <button
+                                        type="button"
+                                        onClick={handleFiveChoiceGrade}
+                                        disabled={
+                                          !fiveChoiceExamStats?.allAnswered ||
+                                          fiveChoiceExamStats?.graded
+                                        }
+                                        className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-[11px] font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                                          isDarkMode
+                                            ? "bg-emerald-600 text-white"
+                                            : "bg-emerald-600 text-white"
+                                        }`}
+                                      >
+                                        선택한 답안 채점하기
+                                      </button>
+                                      {fiveChoiceExamStats?.graded ? (
+                                        <p
+                                          className={`text-[11px] font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                                        >
+                                          {fiveChoiceExamStats.total}문제 중{" "}
+                                          {
+                                            fiveChoiceExamStats.correctCount
+                                          }
+                                          문제 정답
+                                        </p>
+                                      ) : (
+                                        <p className="text-[11px] opacity-70">
+                                          모든 문항에 답을 선택하면 채점하기를
+                                          누를 수 있습니다.
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                                <ExamQuestionProgressDots
+                                  total={
+                                    examDetail.fiveChoiceProblems.length
+                                  }
+                                  currentIndex={fiveChoiceSingleIndex}
+                                  isAnswered={(i) => {
+                                    const qq =
+                                      examDetail.fiveChoiceProblems[i];
+                                    const id = fiveChoiceUserAnswers[
+                                      String(i)
+                                    ];
+                                    return (
+                                      id != null &&
+                                      id !== "" &&
+                                      (qq.options ?? []).some(
+                                        (o) => o.id === id,
+                                      )
+                                    );
+                                  }}
+                                  onSelect={(i) =>
+                                    setFiveChoiceSingleIndex(i)
+                                  }
+                                  isDarkMode={isDarkMode}
+                                />
+                              </div>
+                            </section>
+                          ) : (
+                            <section className="w-full">
+                              <ExamQuestionProgressDots
+                                total={
+                                  examDetail.fiveChoiceProblems.length
+                                }
+                                currentIndex={null}
+                                isAnswered={(i) => {
+                                  const qq =
+                                    examDetail.fiveChoiceProblems[i];
+                                  const id = fiveChoiceUserAnswers[
+                                    String(i)
+                                  ];
+                                  return (
+                                    id != null &&
+                                    id !== "" &&
+                                    (qq.options ?? []).some(
+                                      (o) => o.id === id,
+                                    )
+                                  );
+                                }}
+                                isDarkMode={isDarkMode}
+                              />
+                              <ol className="divide-y divide-gray-200 text-xs list-decimal list-inside dark:divide-zinc-600">
+                                {examDetail.fiveChoiceProblems.map(
+                                  (_, idx) => {
+                                    const q =
+                                      examDetail.fiveChoiceProblems[idx];
+                                    const gradedItem =
+                                      fiveChoiceLog?.evaluationItems[idx];
+                                    const mcGraded = !!fiveChoiceLog;
+                                    const mcExplanation =
+                                      gradedItem &&
+                                      (gradedItem.resultStatus === "Correct"
+                                        ? (q.intentDiagnosis?.trim() ||
+                                            gradedItem.feedbackMessage ||
+                                            "")
+                                        : (gradedItem.feedbackMessage ||
+                                            q.intentDiagnosis?.trim() ||
+                                            ""));
+                                    return (
+                                      <li
+                                        key={idx}
+                                        className="py-3 first:pt-0"
+                                      >
+                                        <p className="mb-2 font-medium">
+                                          {q.questionContent}
+                                        </p>
+                                        <ul className="space-y-1.5 pl-0 list-none">
+                                          {q.options.map((opt) => {
+                                            const selected =
+                                              fiveChoiceUserAnswers[
+                                                String(idx)
+                                              ] === opt.id;
+                                            return (
+                                              <li key={opt.id}>
+                                                <label
+                                                  className={fiveChoiceOptionLabelClass(
+                                                    selected,
+                                                    mcGraded,
+                                                    !!opt.isCorrect,
+                                                    isDarkMode,
+                                                  )}
+                                                >
+                                                  <input
+                                                    type="radio"
+                                                    name={`five-choice-inline-${idx}`}
+                                                    value={opt.id}
+                                                    className="sr-only"
+                                                    disabled={mcGraded}
+                                                    checked={selected}
+                                                    onChange={() =>
+                                                      handleFiveChoiceAnswerChange(
+                                                        idx,
+                                                        opt.id,
+                                                      )
+                                                    }
+                                                  />
+                                                  <span className="flex min-w-0 flex-1 items-start gap-1.5 text-[11px]">
+                                                    <span className="w-4 shrink-0 text-right font-semibold tabular-nums">
+                                                      {opt.id}.
+                                                    </span>
+                                                    <span className="min-w-0">
+                                                      {opt.content}
+                                                    </span>
+                                                    {mcGraded &&
+                                                    opt.isCorrect ? (
+                                                      <span className="ml-auto shrink-0 text-[10px] font-semibold text-emerald-500">
+                                                        정답
+                                                      </span>
+                                                    ) : null}
+                                                  </span>
+                                                </label>
+                                              </li>
+                                            );
+                                          })}
+                                        </ul>
+                                        {gradedItem && (
+                                          <div className="mt-2 space-y-1 border-t border-dashed border-gray-300 pt-2 dark:border-zinc-600">
+                                            <p className="text-[11px]">
+                                              <span className="font-semibold">
+                                                결과:
+                                              </span>{" "}
+                                              <span
+                                                className={
+                                                  gradedItem.resultStatus ===
+                                                  "Correct"
+                                                    ? "text-emerald-500 font-medium"
+                                                    : "text-red-500 font-medium"
+                                                }
+                                              >
+                                                {gradedItem.resultStatus ===
+                                                "Correct"
+                                                  ? "정답"
+                                                  : "오답"}
+                                              </span>
+                                            </p>
+                                            {mcExplanation ? (
+                                              <p className="text-[11px] opacity-80 whitespace-pre-line">
+                                                <span className="font-semibold">
+                                                  해설:
+                                                </span>{" "}
+                                                {mcExplanation}
+                                              </p>
+                                            ) : null}
+                                          </div>
+                                        )}
+                                      </li>
+                                    );
+                                  },
+                                )}
+                              </ol>
+                              <div className="mt-2 flex flex-col gap-1">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                  <button
+                                    type="button"
+                                    onClick={handleFiveChoiceGrade}
+                                    disabled={
+                                      !fiveChoiceExamStats?.allAnswered ||
+                                      fiveChoiceExamStats?.graded
+                                    }
+                                    className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-[11px] font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                                      isDarkMode
+                                        ? "bg-emerald-600 text-white"
+                                        : "bg-emerald-600 text-white"
+                                    }`}
+                                  >
+                                    선택한 답안 채점하기
+                                  </button>
+                                  {fiveChoiceExamStats?.graded ? (
+                                    <p
+                                      className={`text-[11px] font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                                    >
+                                      {fiveChoiceExamStats.total}문제 중{" "}
+                                      {fiveChoiceExamStats.correctCount}문제
+                                      정답
+                                    </p>
+                                  ) : (
+                                    <p className="text-[11px] opacity-70">
+                                      모든 문항에 답을 선택하면 채점하기를 누를
+                                      수 있습니다.
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            </section>
+                          )
+                        ) : null}
+                        {examDetail.shortAnswerProblems?.length ? (
+                          <section>
+                            <h3 className="text-sm font-semibold mb-2">단답형 / 서술형 ({examDetail.shortAnswerProblems.length}개)</h3>
+                            <ol className="space-y-3 text-xs list-decimal list-inside">
+                              {examDetail.shortAnswerProblems.map((q, idx) => {
+                                const saItem =
+                                  shortAnswerLog?.evaluationItems[idx];
+                                const saGraded = !!shortAnswerLog && !!saItem;
+                                const kKey = String(idx);
+                                const kwOpen = !!shortAnswerKeywordOpen[kKey];
+                                const anyKeywords =
+                                  getShortAnswerKeywordsFromProblem(q);
+                                const intentText = getShortAnswerIntentText(q);
+                                return (
+                                  <li
+                                    key={idx}
+                                    className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}
+                                  >
+                                    <p className="font-medium mb-1">
+                                      {q.questionContent}
+                                    </p>
+                                    <div className="mb-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setShortAnswerKeywordOpen((p) => ({
+                                            ...p,
+                                            [kKey]: !p[kKey],
+                                          }))
+                                        }
+                                        className={`text-[11px] underline cursor-pointer ${isDarkMode ? "text-sky-300" : "text-sky-700"}`}
+                                      >
+                                        {kwOpen
+                                          ? "키워드와 출제의도 접기"
+                                          : "키워드와 출제의도 보기"}
+                                      </button>
+                                      {kwOpen ? (
+                                        <div
+                                          className={`mt-1.5 rounded border p-2 space-y-1 text-[11px] ${
+                                            isDarkMode
+                                              ? "border-zinc-600 bg-zinc-800/50"
+                                              : "border-gray-200 bg-gray-50"
+                                          }`}
+                                        >
+                                          {anyKeywords.length > 0 ? (
+                                            <p>
+                                              <span className="font-semibold">
+                                                핵심 키워드:
+                                              </span>{" "}
+                                              {anyKeywords.join(", ")}
+                                            </p>
+                                          ) : null}
+                                          {intentText ? (
+                                            <p className="whitespace-pre-line opacity-90">
+                                              <span className="font-semibold">
+                                                출제 의도:
+                                              </span>{" "}
+                                              {intentText}
+                                            </p>
+                                          ) : null}
+                                          {anyKeywords.length === 0 &&
+                                          !intentText ? (
+                                            <p className="opacity-70">
+                                              등록된 키워드·출제 의도가 없습니다.
+                                            </p>
+                                          ) : null}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                    <textarea
+                                      value={
+                                        shortAnswerUserAnswers[String(idx)] ??
+                                        ""
+                                      }
+                                      onChange={(e) =>
+                                        handleShortAnswerInputChange(
+                                          idx,
+                                          e.target.value,
+                                        )
+                                      }
+                                      readOnly={saGraded}
+                                      className={`w-full rounded border px-2 py-1 text-xs resize-y min-h-[60px] ${
+                                        saGraded ? "opacity-90" : ""
+                                      } ${
+                                        isDarkMode
+                                          ? "bg-zinc-900 border-zinc-700 text-gray-100"
+                                          : "bg-white border-gray-300 text-gray-900"
+                                      }`}
+                                      placeholder="이 문항에 대한 자신의 답안을 작성해 보세요."
+                                    />
+                                    {saGraded && saItem && (
+                                      <div className="mt-2 space-y-1.5 border-t border-dashed border-gray-300 pt-2 text-[11px] dark:border-zinc-600">
+                                        <p>
+                                          <span className="font-semibold">
+                                            점수:
+                                          </span>{" "}
+                                          <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                                            {(saItem.score * 10).toFixed(1)} / 10
+                                          </span>
+                                        </p>
+                                        {saItem.gradingReason ? (
+                                          <p className="whitespace-pre-line opacity-90">
+                                            <span className="font-semibold">
+                                              채점 이유:
+                                            </span>{" "}
+                                            {saItem.gradingReason}
+                                          </p>
+                                        ) : null}
+                                        {saItem.feedback ? (
+                                          <p className="whitespace-pre-line opacity-90">
+                                            <span className="font-semibold">
+                                              피드백:
+                                            </span>{" "}
+                                            {saItem.feedback}
+                                          </p>
+                                        ) : null}
+                                        {saItem.pointsDeducted &&
+                                        saItem.deductionReason ? (
+                                          <p className="whitespace-pre-line opacity-90">
+                                            <span className="font-semibold">
+                                              감점 사유:
+                                            </span>{" "}
+                                            {saItem.deductionReason}
+                                          </p>
+                                        ) : null}
+                                      </div>
+                                    )}
+                                  </li>
+                                );
+                              })}
+                            </ol>
+                            <div className="mt-2 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+                              <button
+                                type="button"
+                                onClick={handleShortAnswerGrade}
+                                disabled={
+                                  !shortAnswerExamStats?.allAnswered ||
+                                  shortAnswerExamStats?.graded ||
+                                  shortAnswerGrading
+                                }
+                                className={`inline-flex items-center px-3 py-1.5 rounded text-[11px] font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                                  isDarkMode
+                                    ? "bg-emerald-600 text-white"
+                                    : "bg-emerald-600 text-white"
+                                }`}
+                              >
+                                {shortAnswerGrading
+                                  ? "채점 중…"
+                                  : "작성한 단답/서술형 채점하기"}
+                              </button>
+                              {shortAnswerExamStats?.graded &&
+                              shortAnswerExamStats.totalScoreOutOf10 != null ? (
+                                <p
+                                  className={`text-[11px] font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                                >
+                                  총점{" "}
+                                  {shortAnswerExamStats.totalScoreOutOf10.toFixed(
+                                    1,
+                                  )}{" "}
+                                  / 10
+                                </p>
+                              ) : (
+                                <p className="text-[11px] opacity-70">
+                                  모든 문항에 답안을 작성한 뒤 채점하기를 누를
+                                  수 있습니다.
+                                </p>
+                              )}
+                            </div>
+                            {shortAnswerGradeError ? (
+                              <p
+                                className={`mt-1 text-[11px] ${isDarkMode ? "text-red-400" : "text-red-600"}`}
+                              >
+                                {shortAnswerGradeError}
+                              </p>
+                            ) : null}
+                          </section>
+                        ) : null}
+                        {examDetail.debateTopics?.length ? (
+                          <section>
+                            <h3 className="text-sm font-semibold mb-2">토론형 주제 ({examDetail.debateTopics.length}개)</h3>
+                            <ol className="space-y-3 text-xs list-decimal list-inside">
+                              {examDetail.debateTopics.map((d, idx) => (
+                                <li key={idx} className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                                  <p className="font-medium mb-1">{d.topic}</p>
+                                  {d.context && <p className="text-[11px] opacity-80 whitespace-pre-line">맥락: {d.context}</p>}
+                                  <p className="mt-1 text-[11px]"><span className="font-semibold">찬성 입장:</span> {d.proSideStand}</p>
+                                  <p className="mt-1 text-[11px]"><span className="font-semibold">반대 입장:</span> {d.conSideStand}</p>
+                                  {d.evaluationCriteria?.length > 0 && (
+                                    <p className="mt-1 text-[11px] opacity-80">평가 기준: {d.evaluationCriteria.join(", ")}</p>
+                                  )}
+                                </li>
+                              ))}
+                            </ol>
+                          </section>
+                        ) : null}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                  {previewIsAiGenerationDoc ? (
+                    <div
+                      className="box-border flex h-10 max-h-10 min-h-10 shrink-0 items-center border-b px-3"
+                      style={{
+                        backgroundColor: isDarkMode ? "#141414" : "#FFFFFF",
+                        color: isDarkMode ? "#FFFFFF" : "#141414",
+                        borderColor: isDarkMode ? "#404040" : "#e5e7eb",
+                      }}
+                    >
+                      <div className="flex min-w-0 flex-1 items-center">
+                        <h2 className="truncate text-sm font-semibold leading-none">
+                          AI 생성 자료 (문서)
+                        </h2>
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                    {previewLoading ? (
                 <div
                   className={`flex-1 flex items-center justify-center ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}
                 >
@@ -2794,17 +4690,208 @@ const MainContent: React.FC<MainContentProps> = ({
                 </div>
               ) : previewMarkdownContent != null ? (
                 <div
-                  className={`flex-1 min-h-0 min-w-0 overflow-x-hidden overflow-y-auto px-6 py-6 pr-8 sm:px-8 sm:pr-10 lg:px-10 lg:pr-12 ${
-                    isDarkMode ? "text-gray-200" : "bg-[#FFFFFF] text-[#141414] [&_*]:text-[#141414]"
+                  className={`flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden ${
+                    isDarkMode ? "text-gray-200" : "bg-[#FFFFFF]"
                   }`}
                 >
-                  <article className={`prose max-w-none break-words [&_*]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words ${
-                    isDarkMode ? "dark:prose-invert" : ""
-                  }`}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                      {previewMarkdownContent}
-                    </ReactMarkdown>
-                  </article>
+                  <div
+                    ref={previewMarkdownScrollRef}
+                    className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
+                  >
+                    <div className="relative flex min-h-min w-full flex-col gap-5 px-4 py-5 sm:px-6 sm:py-6 lg:grid lg:grid-cols-1 lg:gap-0 lg:px-8">
+                      <article
+                        className={`prose prose-lg prose-neutral relative z-0 max-w-none min-w-0 min-h-min leading-relaxed break-words lg:col-start-1 lg:row-start-1 [&_*]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words prose-headings:scroll-mt-24 prose-headings:font-semibold prose-h1:text-balance prose-blockquote:border-l-4 prose-blockquote:border-emerald-600/45 prose-blockquote:bg-zinc-500/[0.06] dark:prose-blockquote:bg-white/[0.04] ${
+                          previewDocumentToc.length > 0 ? "lg:pr-11 xl:pr-12" : ""
+                        } ${isDarkMode ? "prose-invert" : ""}`}
+                      >
+                        <MarkdownContent>{previewMarkdownContent}</MarkdownContent>
+                      </article>
+                      {previewDocumentToc.length > 0 ? (
+                        <aside
+                          className="relative z-20 w-full lg:col-start-1 lg:row-start-1 lg:w-max lg:max-w-none lg:justify-self-end lg:self-start lg:sticky lg:top-3 lg:ml-2 lg:pr-0"
+                          aria-label="문서 목차 패널"
+                        >
+                        {/** 큰 화면: 우측 세로 막대(위치 표시만, 비클릭) + 호버 시 막대 영역을 덮는 텍스트 목차 */}
+                        <div
+                          className="relative hidden w-full min-w-[1.25rem] justify-end lg:flex"
+                          onMouseEnter={openPreviewTocRailPanel}
+                          onMouseLeave={scheduleClosePreviewTocRailPanel}
+                        >
+                          <div
+                            className={`absolute top-0 right-0 z-30 w-[15rem] max-w-[calc(100vw-5rem)] transition-[opacity,transform,visibility] duration-150 ease-out ${
+                              previewTocRailPanelOpen
+                                ? "visible pointer-events-auto translate-x-1 translate-y-0 opacity-100"
+                                : "invisible pointer-events-none translate-x-1 translate-y-1 opacity-0"
+                            }`}
+                          >
+                            <nav
+                              aria-label="문서 목차"
+                              className={`max-h-[min(100vh-5.5rem,32rem)] overflow-y-auto overflow-x-hidden rounded-xl border px-2.5 py-2.5 shadow-lg ${
+                                isDarkMode
+                                  ? "border-zinc-700/90 bg-zinc-900/98 text-zinc-400 shadow-black/40"
+                                  : "border-gray-200 bg-gray-50/98 text-gray-600 shadow-gray-200/60"
+                              }`}
+                            >
+                              <ul className="m-0 list-none space-y-0.5 p-0">
+                                {previewDocumentToc.map((item) => {
+                                  const isActive =
+                                    activePreviewTocId === item.id;
+                                  const depthPad =
+                                    item.depth === 1
+                                      ? "pl-2"
+                                      : item.depth === 2
+                                        ? "pl-6"
+                                        : "pl-10";
+                                  const depthSize =
+                                    item.depth === 1
+                                      ? "text-[12px] font-semibold leading-snug"
+                                      : item.depth === 2
+                                        ? "text-[11.5px] font-medium leading-snug"
+                                        : "text-[11px] font-normal leading-snug opacity-[0.92]";
+                                  return (
+                                    <li key={item.id} className="m-0 p-0">
+                                      <button
+                                        type="button"
+                                        className={`w-full cursor-pointer rounded-lg border-0 py-1.5 pr-2 text-left font-inherit transition-colors ${depthPad} ${depthSize} ${
+                                          isActive
+                                            ? isDarkMode
+                                              ? "bg-sky-500/15 text-sky-300"
+                                              : "bg-sky-500/12 text-sky-700"
+                                            : isDarkMode
+                                              ? "text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-100"
+                                              : "text-gray-600 hover:bg-white hover:text-gray-900"
+                                        }`}
+                                        onClick={() => {
+                                          setActivePreviewTocId(item.id);
+                                          document
+                                            .getElementById(item.id)
+                                            ?.scrollIntoView({
+                                              behavior: "smooth",
+                                              block: "start",
+                                            });
+                                        }}
+                                      >
+                                        {item.text}
+                                      </button>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </nav>
+                          </div>
+                          <nav
+                            aria-label="문서에서 현재 위치"
+                            className={`flex min-w-[1.25rem] flex-col items-end gap-1.5 overflow-hidden py-1 transition-opacity duration-150 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden ${
+                              previewTocRailPanelOpen
+                                ? "pointer-events-none opacity-0"
+                                : isDarkMode
+                                  ? "opacity-90"
+                                  : "opacity-90"
+                            }`}
+                          >
+                            {previewDocumentToc.map((item) => {
+                              const isActive = activePreviewTocId === item.id;
+                              const barW =
+                                item.depth === 1
+                                  ? "w-10"
+                                  : item.depth === 2
+                                    ? "w-6"
+                                    : "w-3.5";
+                              const depthInset =
+                                item.depth === 1
+                                  ? ""
+                                  : item.depth === 2
+                                    ? "mr-0.5"
+                                    : "mr-1";
+                              return (
+                                <span
+                                  key={item.id}
+                                  aria-hidden="true"
+                                  className={`pointer-events-none shrink-0 ${depthInset}`}
+                                >
+                                  <span
+                                    className={`block h-0.5 rounded-full ${barW} ${
+                                      isActive
+                                        ? isDarkMode
+                                          ? "bg-sky-400/95"
+                                          : "bg-sky-600"
+                                        : isDarkMode
+                                          ? "bg-zinc-500/55"
+                                          : "bg-gray-400/65"
+                                    }`}
+                                  />
+                                </span>
+                              );
+                            })}
+                          </nav>
+                        </div>
+                        {/** 작은 화면: 터치·좁은 폭에서 항상 텍스트 목차 */}
+                        <nav
+                          aria-label="문서 목차"
+                          className={`rounded-xl border p-3 shadow-md lg:hidden ${
+                            isDarkMode
+                              ? "border-zinc-700/90 bg-zinc-900/95 text-zinc-400 shadow-black/30"
+                              : "border-gray-200 bg-gray-50/95 text-gray-600 shadow-gray-200/60"
+                          }`}
+                        >
+                          <p
+                            className={`mb-2 border-b pb-2 text-[11px] font-semibold tracking-tight ${
+                              isDarkMode
+                                ? "border-zinc-700 text-zinc-500"
+                                : "border-gray-200 text-gray-500"
+                            }`}
+                          >
+                            목차
+                          </p>
+                          <ul className="m-0 list-none space-y-0.5 p-0">
+                            {previewDocumentToc.map((item) => {
+                              const isActive = activePreviewTocId === item.id;
+                              const depthPad =
+                                item.depth === 1
+                                  ? "pl-1"
+                                  : item.depth === 2
+                                    ? "pl-2.5"
+                                    : "pl-4";
+                              const depthSize =
+                                item.depth === 1
+                                  ? "text-[12px] font-semibold leading-snug"
+                                  : item.depth === 2
+                                    ? "text-[11.5px] font-medium leading-snug"
+                                    : "text-[11px] font-normal leading-snug opacity-[0.92]";
+                              return (
+                                <li key={item.id} className="m-0 p-0">
+                                  <button
+                                    type="button"
+                                    className={`w-full cursor-pointer rounded-lg border-0 px-2 py-1.5 text-left font-inherit transition-colors ${depthPad} ${depthSize} ${
+                                      isActive
+                                        ? isDarkMode
+                                          ? "bg-sky-500/15 text-sky-300"
+                                          : "bg-sky-500/12 text-sky-700"
+                                        : isDarkMode
+                                          ? "text-zinc-400 hover:bg-zinc-800/80 hover:text-zinc-100"
+                                          : "text-gray-600 hover:bg-white hover:text-gray-900"
+                                    }`}
+                                    onClick={() => {
+                                      setActivePreviewTocId(item.id);
+                                      document
+                                        .getElementById(item.id)
+                                        ?.scrollIntoView({
+                                          behavior: "smooth",
+                                          block: "start",
+                                        });
+                                    }}
+                                  >
+                                    {item.text}
+                                  </button>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        </nav>
+                        </aside>
+                      ) : null}
+                    </div>
+                  </div>
                 </div>
               ) : previewBlobUrl ? (
                 <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
@@ -2816,6 +4903,9 @@ const MainContent: React.FC<MainContentProps> = ({
                   />
                 </div>
               ) : null}
+                  </div>
+                </div>
+              )}
             </div>
             {/* 채팅창 리사이즈 핸들 */}
             <div
@@ -2859,6 +4949,8 @@ const MainContent: React.FC<MainContentProps> = ({
                       setExamTopic,
                       examCount,
                       setExamCount,
+                      examDisplayName,
+                      setExamDisplayName,
                       profileProficiencyLevel,
                       setProfileProficiencyLevel,
                       profileTargetDepth,
@@ -2874,7 +4966,12 @@ const MainContent: React.FC<MainContentProps> = ({
                       recoverExams: localExams[selectedLectureId ?? 0] ?? [],
                       onRecoverSubmit: handleExamSessionRecoverSubmit,
                       setRecoverOpen: setExamRecoverOpen,
-                      onExamClick: (id) => void openExamSessionDetail(id),
+                      onExamClick: (id) => {
+                        const ex = (
+                          localExams[selectedLectureId ?? 0] ?? []
+                        ).find((e) => String(e.examSessionId) === String(id));
+                        void openExamSessionDetail(id, ex?.title ?? null);
+                      },
                       examEditMode,
                       onExamEditModeChange: (v) => {
                         setExamEditMode(v);
@@ -2920,7 +5017,7 @@ const MainContent: React.FC<MainContentProps> = ({
           }`}
         >
           <div
-            className={`flex items-center justify-between gap-3 shrink-0 pb-3 border-b ${
+            className={`flex items-center justify-between gap-3 shrink-0 pb-2 border-b ${
               isDarkMode ? "border-zinc-700" : "border-gray-200"
             }`}
           >
@@ -3249,7 +5346,7 @@ const MainContent: React.FC<MainContentProps> = ({
         {renderSettingsHeader()}
         <div className="flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col">
           <div
-            className={`flex-1 min-h-0 min-w-0 ${(previewFileUrl || previewMaterialId != null) ? "overflow-hidden" : "overflow-y-auto"} ${selectedMenu === "settings" || selectedMenu === "report" ? "pr-5 sm:pr-6 lg:pr-8" : ""}`}
+            className={`flex-1 min-h-0 min-w-0 ${(previewFileUrl || previewMaterialId != null || examDetailSessionId) ? "overflow-hidden" : "overflow-y-auto"} ${selectedMenu === "settings" || selectedMenu === "report" ? "pr-5 sm:pr-6 lg:pr-8" : ""}`}
           >
             {selectedMenu === "settings" ? (
               <SettingsPage />
@@ -4281,10 +6378,14 @@ const MainContent: React.FC<MainContentProps> = ({
                           <div
                             className={`flex-1 min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-3 text-sm ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}
                           >
-                            <article className="prose prose-sm max-w-none dark:prose-invert break-words [&_*]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words">
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            <article
+                              className={`prose prose-sm prose-neutral max-w-none break-words [&_*]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words prose-headings:font-semibold prose-blockquote:border-l-emerald-600/45 ${
+                                isDarkMode ? "prose-invert" : ""
+                              }`}
+                            >
+                              <MarkdownContent>
                                 {streamedMaterialContent}
-                              </ReactMarkdown>
+                              </MarkdownContent>
                             </article>
                           </div>
                         </div>
@@ -4420,10 +6521,14 @@ const MainContent: React.FC<MainContentProps> = ({
                         <div
                           className={`rounded border overflow-x-hidden overflow-y-auto max-h-48 p-3 text-left min-w-0 ${isDarkMode ? "bg-zinc-800 border-zinc-600 text-gray-200" : "bg-gray-50 border-gray-200 text-gray-900"}`}
                         >
-                          <article className="prose prose-sm max-w-none dark:prose-invert break-words [&_*]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          <article
+                            className={`prose prose-sm prose-neutral max-w-none break-words [&_*]:break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words prose-headings:font-semibold prose-blockquote:border-l-emerald-600/45 ${
+                              isDarkMode ? "prose-invert" : ""
+                            }`}
+                          >
+                            <MarkdownContent>
                               {materialFinalDocument}
-                            </ReactMarkdown>
+                            </MarkdownContent>
                           </article>
                         </div>
                       )}
@@ -4492,9 +6597,9 @@ const MainContent: React.FC<MainContentProps> = ({
       )}
 
       {/* 시험 세션 상세 모달 */}
-      {examDetailSessionId && (
+      {examDetailSessionId && examDetail && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          className="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
           role="dialog"
           aria-modal="true"
           onClick={() => {
@@ -4503,9 +6608,20 @@ const MainContent: React.FC<MainContentProps> = ({
               setExamDetail(null);
               setExamDetailError(null);
               setExamDetailFlipped({});
-              setExamAnswerVisible({});
+              setFlashCardIndex(0);
               setFiveChoiceUserAnswers({});
               setFiveChoiceLog(null);
+              setShortAnswerUserAnswers({});
+              setShortAnswerLog(null);
+              setShortAnswerKeywordOpen({});
+              setShortAnswerGrading(false);
+              setShortAnswerGradeError(null);
+              setOxUserAnswers({});
+              setOxGraded(false);
+              setOxExamViewMode("all");
+              setFiveChoiceExamViewMode("all");
+              setOxExamSingleIndex(0);
+              setFiveChoiceSingleIndex(0);
             }
           }}
         >
@@ -4518,32 +6634,59 @@ const MainContent: React.FC<MainContentProps> = ({
             onClick={(e) => e.stopPropagation()}
           >
             <div
-              className={`flex items-center justify-between px-5 py-4 border-b ${isDarkMode ? "border-zinc-700/60" : "border-gray-200"}`}
+              className={`flex items-center justify-between gap-3 px-5 py-4 border-b ${isDarkMode ? "border-zinc-700/60" : "border-gray-200"}`}
             >
-              <div>
+              <div className="min-w-0">
                 <h2 className="text-lg font-semibold">시험 세션 상세</h2>
-                <p className="text-xs mt-0.5 opacity-80">
+                <p className="text-xs mt-0.5 opacity-80 truncate">
                   세션 ID: {examDetailSessionId}
                   {examDetail?.examType && ` · 유형: ${examDetail.examType}`}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!examDetailLoading) {
-                    setExamDetailSessionId(null);
-                    setExamDetail(null);
-                    setExamDetailError(null);
-                    setExamDetailFlipped({});
-                    setExamAnswerVisible({});
-                    setFiveChoiceUserAnswers({});
-                    setFiveChoiceLog(null);
-                  }
-                }}
-                className={`p-1.5 rounded cursor-pointer ${isDarkMode ? "hover:bg-zinc-800" : "hover:bg-gray-100"}`}
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {(examDetail.oxProblems?.length ?? 0) > 0 && (
+                  <ExamSectionViewModeToggle
+                    mode={oxExamViewMode}
+                    onChange={setOxExamViewMode}
+                    isDarkMode={isDarkMode}
+                  />
+                )}
+                {(examDetail.fiveChoiceProblems?.length ?? 0) > 0 && (
+                  <ExamSectionViewModeToggle
+                    mode={fiveChoiceExamViewMode}
+                    onChange={setFiveChoiceExamViewMode}
+                    isDarkMode={isDarkMode}
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!examDetailLoading) {
+                      setExamDetailSessionId(null);
+                      setExamDetail(null);
+                      setExamDetailError(null);
+                      setExamDetailFlipped({});
+                      setFlashCardIndex(0);
+                      setFiveChoiceUserAnswers({});
+                      setFiveChoiceLog(null);
+                      setShortAnswerUserAnswers({});
+                      setShortAnswerLog(null);
+                      setShortAnswerKeywordOpen({});
+                      setShortAnswerGrading(false);
+                      setShortAnswerGradeError(null);
+                      setOxUserAnswers({});
+                      setOxGraded(false);
+                      setOxExamViewMode("all");
+                      setFiveChoiceExamViewMode("all");
+                      setOxExamSingleIndex(0);
+                      setFiveChoiceSingleIndex(0);
+                    }
+                  }}
+                  className={`p-1.5 rounded cursor-pointer ${isDarkMode ? "hover:bg-zinc-800" : "hover:bg-gray-100"}`}
+                >
+                  ✕
+                </button>
+              </div>
             </div>
             <div className="px-5 py-4 space-y-4 max-h-[70vh] overflow-y-auto">
               {examDetailLoading && (
@@ -4670,149 +6813,644 @@ const MainContent: React.FC<MainContentProps> = ({
                         </div>
                       </div>
                     )}
-                  {examDetail.oxProblems &&
-                    examDetail.oxProblems.length > 0 && (
-                      <div className="space-y-2">
-                        <h3 className="text-sm font-semibold">
-                          O/X 문제 ({examDetail.oxProblems.length}개)
-                        </h3>
-                        <ol className="space-y-2 text-xs list-decimal list-inside">
-                          {examDetail.oxProblems.map((q, idx) => {
-                            const key = `ox-${idx}`;
-                            const show = !!examAnswerVisible[key];
+                  {oxExamStats &&
+                    (oxExamViewMode === "single" ? (
+                      <div className="flex w-full flex-col gap-2 pb-1">
+                        <div className="relative w-full px-8">
+                          <ExamFlashStyleSideArrows
+                            show={oxExamStats.total > 1}
+                            isDarkMode={isDarkMode}
+                            prevDisabled={oxExamSingleIndex <= 0}
+                            nextDisabled={
+                              oxExamSingleIndex >= oxExamStats.total - 1
+                            }
+                            onPrev={() =>
+                              setOxExamSingleIndex((i) => Math.max(0, i - 1))
+                            }
+                            onNext={() =>
+                              setOxExamSingleIndex((i) =>
+                                Math.min(oxExamStats.total - 1, i + 1),
+                              )
+                            }
+                          />
+                          {(() => {
+                            const idx = oxExamSingleIndex;
+                            const q = oxExamStats.list[idx];
+                            const choice = oxUserAnswers[String(idx)];
+                            const userCorrect =
+                              choice != null &&
+                              isOxAnswerCorrect(choice, q.correctAnswer);
+                            const oxCorrectCanon = normalizeExamOxCorrectAnswer(
+                              q.correctAnswer,
+                            );
                             return (
-                              <li
-                                key={idx}
-                                className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}
+                              <div
+                                className={examModalFlashCardShellClass(
+                                  isDarkMode,
+                                )}
                               >
-                                <p className="font-medium mb-1">
+                                <div className="mb-2 flex items-center justify-end">
+                                  <p className="text-xs tabular-nums opacity-70">
+                                    {idx + 1}/{oxExamStats.total}
+                                  </p>
+                                </div>
+                                <p className="mb-3 text-base font-medium leading-7 whitespace-pre-wrap break-words">
                                   {q.questionContent}
                                 </p>
-                                <button
-                                  type="button"
-                                  onClick={() => toggleExamAnswerVisible(key)}
-                                  className={`mt-1 inline-flex items-center px-2 py-1 rounded text-[11px] cursor-pointer ${
-                                    isDarkMode
-                                      ? "bg-zinc-800 text-gray-200"
-                                      : "bg-gray-100 text-gray-700"
-                                  }`}
-                                >
-                                  {show ? "정답/해설 숨기기" : "정답/해설 보기"}
-                                </button>
-                                {show && (
-                                  <>
-                                    <p className="mt-1 text-[11px]">
+                                <div className="mt-auto flex h-12 shrink-0 flex-wrap items-center justify-center gap-3">
+                                  <label
+                                    className={oxChoiceButtonClass({
+                                      letter: "O",
+                                      choice,
+                                      correctCanonical: oxCorrectCanon,
+                                      graded: oxGraded,
+                                      isDarkMode,
+                                    })}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name={`ox-problem-${idx}`}
+                                      className="sr-only"
+                                      checked={choice === "O"}
+                                      disabled={oxGraded}
+                                      onChange={() =>
+                                        handleOxAnswerChange(idx, "O")
+                                      }
+                                    />
+                                    <span>O</span>
+                                  </label>
+                                  <label
+                                    className={oxChoiceButtonClass({
+                                      letter: "X",
+                                      choice,
+                                      correctCanonical: oxCorrectCanon,
+                                      graded: oxGraded,
+                                      isDarkMode,
+                                    })}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name={`ox-problem-${idx}`}
+                                      className="sr-only"
+                                      checked={choice === "X"}
+                                      disabled={oxGraded}
+                                      onChange={() =>
+                                        handleOxAnswerChange(idx, "X")
+                                      }
+                                    />
+                                    <span>X</span>
+                                  </label>
+                                </div>
+                                {oxGraded && choice && (
+                                  <div className="mt-3 space-y-1 border-t border-dashed border-gray-300 pt-2 dark:border-zinc-600">
+                                    <p className="text-[11px]">
+                                      <span className="font-semibold">
+                                        결과:
+                                      </span>{" "}
+                                      <span
+                                        className={
+                                          userCorrect
+                                            ? "text-emerald-500 font-medium"
+                                            : "text-red-500 font-medium"
+                                        }
+                                      >
+                                        {userCorrect ? "정답" : "오답"}
+                                      </span>
+                                    </p>
+                                    <p className="text-[11px] opacity-90">
                                       <span className="font-semibold">
                                         정답:
                                       </span>{" "}
-                                      {q.correctAnswer}
+                                      {normalizeExamOxCorrectAnswer(
+                                        q.correctAnswer,
+                                      ) ?? q.correctAnswer}
                                     </p>
-                                    {q.explanation && (
-                                      <p className="mt-1 text-[11px] opacity-80 whitespace-pre-line">
-                                        해설: {q.explanation}
+                                    {q.explanation ? (
+                                      <p className="text-[11px] opacity-80 whitespace-pre-line">
+                                        <span className="font-semibold">
+                                          해설:
+                                        </span>{" "}
+                                        {q.explanation}
                                       </p>
-                                    )}
-                                  </>
+                                    ) : null}
+                                  </div>
                                 )}
-                              </li>
+                              </div>
+                            );
+                          })()}
+                        </div>
+                        <div className="flex min-h-[4.5rem] w-full shrink-0 flex-col items-center justify-start gap-2 px-2 text-center">
+                          {(oxExamSingleIndex === oxExamStats.total - 1 ||
+                            oxExamStats.total <= 1) && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={handleOxGrade}
+                                disabled={
+                                  !oxExamStats.allAnswered || oxGraded
+                                }
+                                className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-[11px] font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                                  isDarkMode
+                                    ? "bg-emerald-600 text-white"
+                                    : "bg-emerald-600 text-white"
+                                }`}
+                              >
+                                채점하기
+                              </button>
+                              {oxGraded ? (
+                                <p
+                                  className={`text-[11px] font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                                >
+                                  {oxExamStats.total}문제 중{" "}
+                                  {oxExamStats.correctCount}문제 정답
+                                </p>
+                              ) : null}
+                            </>
+                          )}
+                        </div>
+                        <ExamQuestionProgressDots
+                          total={oxExamStats.total}
+                          currentIndex={oxExamSingleIndex}
+                          isAnswered={(i) => {
+                            const c = oxUserAnswers[String(i)];
+                            return c === "O" || c === "X";
+                          }}
+                          onSelect={(i) => setOxExamSingleIndex(i)}
+                          isDarkMode={isDarkMode}
+                        />
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="space-y-3 text-xs">
+                          {oxExamStats.list.map((_, idx) => {
+                            const q = oxExamStats.list[idx];
+                            const choice = oxUserAnswers[String(idx)];
+                            const userCorrect =
+                              choice != null &&
+                              isOxAnswerCorrect(choice, q.correctAnswer);
+                            const oxCorrectCanon = normalizeExamOxCorrectAnswer(
+                              q.correctAnswer,
+                            );
+                            return (
+                              <div
+                                key={idx}
+                                className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}
+                              >
+                                <p className="mb-1 font-medium whitespace-pre-line">
+                                  <span className="mr-1.5 inline tabular-nums font-semibold">
+                                    {idx + 1}.
+                                  </span>
+                                  {q.questionContent}
+                                </p>
+                                <div className="mt-1 flex flex-wrap items-center gap-2">
+                                  <label
+                                    className={oxChoiceButtonClass({
+                                      letter: "O",
+                                      choice,
+                                      correctCanonical: oxCorrectCanon,
+                                      graded: oxGraded,
+                                      isDarkMode,
+                                    })}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name={`ox-problem-modal-all-${idx}`}
+                                      className="sr-only"
+                                      checked={choice === "O"}
+                                      disabled={oxGraded}
+                                      onChange={() =>
+                                        handleOxAnswerChange(idx, "O")
+                                      }
+                                    />
+                                    <span>O</span>
+                                  </label>
+                                  <label
+                                    className={oxChoiceButtonClass({
+                                      letter: "X",
+                                      choice,
+                                      correctCanonical: oxCorrectCanon,
+                                      graded: oxGraded,
+                                      isDarkMode,
+                                    })}
+                                  >
+                                    <input
+                                      type="radio"
+                                      name={`ox-problem-modal-all-${idx}`}
+                                      className="sr-only"
+                                      checked={choice === "X"}
+                                      disabled={oxGraded}
+                                      onChange={() =>
+                                        handleOxAnswerChange(idx, "X")
+                                      }
+                                    />
+                                    <span>X</span>
+                                  </label>
+                                </div>
+                                {oxGraded && choice && (
+                                  <div className="mt-2 space-y-1 border-t border-dashed border-gray-300 pt-2 dark:border-zinc-600">
+                                    <p className="text-[11px]">
+                                      <span className="font-semibold">
+                                        결과:
+                                      </span>{" "}
+                                      <span
+                                        className={
+                                          userCorrect
+                                            ? "text-emerald-500 font-medium"
+                                            : "text-red-500 font-medium"
+                                        }
+                                      >
+                                        {userCorrect ? "정답" : "오답"}
+                                      </span>
+                                    </p>
+                                    <p className="text-[11px] opacity-90">
+                                      <span className="font-semibold">
+                                        정답:
+                                      </span>{" "}
+                                      {normalizeExamOxCorrectAnswer(
+                                        q.correctAnswer,
+                                      ) ?? q.correctAnswer}
+                                    </p>
+                                    {q.explanation ? (
+                                      <p className="text-[11px] opacity-80 whitespace-pre-line">
+                                        <span className="font-semibold">
+                                          해설:
+                                        </span>{" "}
+                                        {q.explanation}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                )}
+                              </div>
                             );
                           })}
-                        </ol>
+                        </div>
+                        <div className="mt-2 flex flex-col gap-1.5">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <button
+                              type="button"
+                              onClick={handleOxGrade}
+                              disabled={
+                                !oxExamStats.allAnswered || oxGraded
+                              }
+                              className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-[11px] font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                                isDarkMode
+                                  ? "bg-emerald-600 text-white"
+                                  : "bg-emerald-600 text-white"
+                              }`}
+                            >
+                              채점하기
+                            </button>
+                            {oxGraded ? (
+                              <p
+                                className={`text-[11px] font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                              >
+                                {oxExamStats.total}문제 중{" "}
+                                {oxExamStats.correctCount}문제 정답
+                              </p>
+                            ) : (
+                              <p className="text-[11px] opacity-70">
+                                모든 문항에 O 또는 X를 선택하면 채점하기를 누를
+                                수 있습니다.
+                              </p>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    )}
+                    ))}
                   {examDetail.fiveChoiceProblems &&
-                    examDetail.fiveChoiceProblems.length > 0 && (
+                    examDetail.fiveChoiceProblems.length > 0 &&
+                    (fiveChoiceExamViewMode === "single" ? (
+                      <div className="flex w-full flex-col gap-2 pb-1">
+                        <div className="relative w-full px-8">
+                          <ExamFlashStyleSideArrows
+                            show={
+                              examDetail.fiveChoiceProblems.length > 1
+                            }
+                            isDarkMode={isDarkMode}
+                            prevDisabled={fiveChoiceSingleIndex <= 0}
+                            nextDisabled={
+                              fiveChoiceSingleIndex >=
+                              examDetail.fiveChoiceProblems.length - 1
+                            }
+                            onPrev={() =>
+                              setFiveChoiceSingleIndex((i) =>
+                                Math.max(0, i - 1),
+                              )
+                            }
+                            onNext={() =>
+                              setFiveChoiceSingleIndex((i) =>
+                                Math.min(
+                                  examDetail.fiveChoiceProblems.length - 1,
+                                  i + 1,
+                                ),
+                              )
+                            }
+                          />
+                          {(() => {
+                            const idx = fiveChoiceSingleIndex;
+                            const q =
+                              examDetail.fiveChoiceProblems[idx];
+                            const gradedItem =
+                              fiveChoiceLog?.evaluationItems[idx];
+                            const mcGraded = !!fiveChoiceLog;
+                            const mcExplanation =
+                              gradedItem &&
+                              (gradedItem.resultStatus === "Correct"
+                                ? (q.intentDiagnosis?.trim() ||
+                                    gradedItem.feedbackMessage ||
+                                    "")
+                                : (gradedItem.feedbackMessage ||
+                                    q.intentDiagnosis?.trim() ||
+                                    ""));
+                            return (
+                              <div
+                                className={examModalFlashCardShellClass(
+                                  isDarkMode,
+                                )}
+                              >
+                                <div className="mb-2 flex items-center justify-between">
+                                  <p className="text-xs opacity-70">
+                                    객관식
+                                  </p>
+                                  <p className="text-xs tabular-nums opacity-70">
+                                    문항 {idx + 1}
+                                  </p>
+                                </div>
+                                <p className="mb-3 text-base font-medium leading-7 whitespace-pre-wrap break-words">
+                                  {q.questionContent}
+                                </p>
+                                <ul className="mt-auto space-y-1.5 pl-0 list-none">
+                                  {q.options.map((opt) => {
+                                    const selected =
+                                      fiveChoiceUserAnswers[
+                                        String(idx)
+                                      ] === opt.id;
+                                    return (
+                                      <li key={opt.id}>
+                                        <label
+                                          className={fiveChoiceOptionLabelClass(
+                                            selected,
+                                            mcGraded,
+                                            !!opt.isCorrect,
+                                            isDarkMode,
+                                          )}
+                                        >
+                                          <input
+                                            type="radio"
+                                            name={`five-choice-${idx}`}
+                                            value={opt.id}
+                                            className="sr-only"
+                                            disabled={mcGraded}
+                                            checked={selected}
+                                            onChange={() =>
+                                              handleFiveChoiceAnswerChange(
+                                                idx,
+                                                opt.id,
+                                              )
+                                            }
+                                          />
+                                          <span className="flex min-w-0 flex-1 items-start gap-2 text-sm">
+                                            <span className="w-5 shrink-0 text-right font-semibold tabular-nums">
+                                              {opt.id}.
+                                            </span>
+                                            <span className="min-w-0">
+                                              {opt.content}
+                                            </span>
+                                            {mcGraded && opt.isCorrect ? (
+                                              <span className="ml-auto shrink-0 text-xs font-semibold text-emerald-500">
+                                                정답
+                                              </span>
+                                            ) : null}
+                                          </span>
+                                        </label>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                                {gradedItem && (
+                                  <div className="mt-3 space-y-1 border-t border-dashed border-gray-300 pt-2 dark:border-zinc-600">
+                                    <p className="text-[11px]">
+                                      <span className="font-semibold">
+                                        결과:
+                                      </span>{" "}
+                                      <span
+                                        className={
+                                          gradedItem.resultStatus ===
+                                          "Correct"
+                                            ? "text-emerald-500 font-medium"
+                                            : "text-red-500 font-medium"
+                                        }
+                                      >
+                                        {gradedItem.resultStatus === "Correct"
+                                          ? "정답"
+                                          : "오답"}
+                                      </span>
+                                    </p>
+                                    {mcExplanation ? (
+                                      <p className="text-[11px] opacity-80 whitespace-pre-line">
+                                        <span className="font-semibold">
+                                          해설:
+                                        </span>{" "}
+                                        {mcExplanation}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                        {(fiveChoiceSingleIndex ===
+                          examDetail.fiveChoiceProblems.length - 1 ||
+                          examDetail.fiveChoiceProblems.length <= 1) && (
+                          <div className="flex w-full flex-col items-center gap-1.5">
+                            <div className="flex w-full max-w-md flex-col items-center gap-2 text-center">
+                              <button
+                                type="button"
+                                onClick={handleFiveChoiceGrade}
+                                disabled={
+                                  !fiveChoiceExamStats?.allAnswered ||
+                                  fiveChoiceExamStats?.graded
+                                }
+                                className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-[11px] font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                                  isDarkMode
+                                    ? "bg-emerald-600 text-white"
+                                    : "bg-emerald-600 text-white"
+                                }`}
+                              >
+                                선택한 답안 채점하기
+                              </button>
+                              {fiveChoiceExamStats?.graded ? (
+                                <p
+                                  className={`text-[11px] font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                                >
+                                  {fiveChoiceExamStats.total}문제 중{" "}
+                                  {fiveChoiceExamStats.correctCount}문제 정답
+                                </p>
+                              ) : (
+                                <p className="text-[11px] opacity-70">
+                                  모든 문항에 답을 선택하면 채점하기를 누를 수
+                                  있습니다.
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        <ExamQuestionProgressDots
+                          total={
+                            examDetail.fiveChoiceProblems.length
+                          }
+                          currentIndex={fiveChoiceSingleIndex}
+                          isAnswered={(i) => {
+                            const qq =
+                              examDetail.fiveChoiceProblems[i];
+                            const id = fiveChoiceUserAnswers[String(i)];
+                            return (
+                              id != null &&
+                              id !== "" &&
+                              (qq.options ?? []).some((o) => o.id === id)
+                            );
+                          }}
+                          onSelect={(i) => setFiveChoiceSingleIndex(i)}
+                          isDarkMode={isDarkMode}
+                        />
+                      </div>
+                    ) : (
                       <div className="space-y-2">
-                        <h3 className="text-sm font-semibold">
-                          5지선다 ({examDetail.fiveChoiceProblems.length}개)
-                        </h3>
-                        <ol className="space-y-3 text-xs list-decimal list-inside">
-                          {examDetail.fiveChoiceProblems.map((q, idx) => {
-                            const key = `mc-${idx}`;
-                            const show = !!examAnswerVisible[key];
+                        <ExamQuestionProgressDots
+                          total={
+                            examDetail.fiveChoiceProblems.length
+                          }
+                          currentIndex={null}
+                          isAnswered={(i) => {
+                            const qq =
+                              examDetail.fiveChoiceProblems[i];
+                            const id = fiveChoiceUserAnswers[String(i)];
+                            return (
+                              id != null &&
+                              id !== "" &&
+                              (qq.options ?? []).some((o) => o.id === id)
+                            );
+                          }}
+                          isDarkMode={isDarkMode}
+                        />
+                        <ol className="divide-y divide-gray-200 text-xs list-decimal list-inside dark:divide-zinc-600">
+                          {examDetail.fiveChoiceProblems.map((_, idx) => {
+                            const q =
+                              examDetail.fiveChoiceProblems[idx];
+                            const gradedItem =
+                              fiveChoiceLog?.evaluationItems[idx];
+                            const mcGraded = !!fiveChoiceLog;
+                            const mcExplanation =
+                              gradedItem &&
+                              (gradedItem.resultStatus === "Correct"
+                                ? (q.intentDiagnosis?.trim() ||
+                                    gradedItem.feedbackMessage ||
+                                    "")
+                                : (gradedItem.feedbackMessage ||
+                                    q.intentDiagnosis?.trim() ||
+                                    ""));
                             return (
                               <li
                                 key={idx}
-                                className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}
+                                className="py-3 first:pt-0"
                               >
-                                <p className="font-medium mb-1">
+                                <p className="mb-2 font-medium">
                                   {q.questionContent}
                                 </p>
-                                <ul className="space-y-0.5 mt-1">
-                                  {q.options.map((opt) => (
-                                    <li
-                                      key={opt.id}
-                                      className="flex items-start gap-2"
-                                    >
-                                      <label className="inline-flex items-start gap-1 cursor-pointer">
-                                        <input
-                                          type="radio"
-                                          name={`five-choice-${idx}`}
-                                          value={opt.id}
-                                          className="mt-0.5"
-                                          checked={
-                                            fiveChoiceUserAnswers[
-                                              String(idx)
-                                            ] === opt.id
-                                          }
-                                          onChange={() =>
-                                            handleFiveChoiceAnswerChange(
-                                              idx,
-                                              opt.id,
-                                            )
-                                          }
-                                        />
-                                        <span className="text-[11px]">
-                                          <span className="font-semibold mr-1">
-                                            {opt.id}.
-                                          </span>
-                                          <span>{opt.content}</span>
-                                          {show && opt.isCorrect && (
-                                            <span className="ml-1 text-[10px] text-emerald-500">
-                                              (정답)
-                                            </span>
+                                <ul className="space-y-1.5 pl-0 list-none">
+                                  {q.options.map((opt) => {
+                                    const selected =
+                                      fiveChoiceUserAnswers[
+                                        String(idx)
+                                      ] === opt.id;
+                                    return (
+                                      <li key={opt.id}>
+                                        <label
+                                          className={fiveChoiceOptionLabelClass(
+                                            selected,
+                                            mcGraded,
+                                            !!opt.isCorrect,
+                                            isDarkMode,
                                           )}
-                                        </span>
-                                      </label>
-                                    </li>
-                                  ))}
+                                        >
+                                          <input
+                                            type="radio"
+                                            name={`five-choice-${idx}`}
+                                            value={opt.id}
+                                            className="sr-only"
+                                            disabled={mcGraded}
+                                            checked={selected}
+                                            onChange={() =>
+                                              handleFiveChoiceAnswerChange(
+                                                idx,
+                                                opt.id,
+                                              )
+                                            }
+                                          />
+                                          <span className="flex min-w-0 flex-1 items-start gap-1.5 text-[11px]">
+                                            <span className="w-4 shrink-0 text-right font-semibold tabular-nums">
+                                              {opt.id}.
+                                            </span>
+                                            <span className="min-w-0">
+                                              {opt.content}
+                                            </span>
+                                            {mcGraded &&
+                                            opt.isCorrect ? (
+                                              <span className="ml-auto shrink-0 text-[10px] font-semibold text-emerald-500">
+                                                정답
+                                              </span>
+                                            ) : null}
+                                          </span>
+                                        </label>
+                                      </li>
+                                    );
+                                  })}
                                 </ul>
-                                <button
-                                  type="button"
-                                  onClick={() => toggleExamAnswerVisible(key)}
-                                  className={`mt-1 inline-flex items-center px-2 py-1 rounded text-[11px] cursor-pointer ${
-                                    isDarkMode
-                                      ? "bg-zinc-800 text-gray-200"
-                                      : "bg-gray-100 text-gray-700"
-                                  }`}
-                                >
-                                  {show ? "정답/해설 숨기기" : "정답/해설 보기"}
-                                </button>
-                                {show && (
-                                  <>
-                                    <p className="mt-1 text-[11px]">
+                                {gradedItem && (
+                                  <div className="mt-2 space-y-1 border-t border-dashed border-gray-300 pt-2 dark:border-zinc-600">
+                                    <p className="text-[11px]">
                                       <span className="font-semibold">
-                                        정답:
+                                        결과:
                                       </span>{" "}
-                                      {q.correctAnswer}
+                                      <span
+                                        className={
+                                          gradedItem.resultStatus ===
+                                          "Correct"
+                                            ? "text-emerald-500 font-medium"
+                                            : "text-red-500 font-medium"
+                                        }
+                                      >
+                                        {gradedItem.resultStatus ===
+                                        "Correct"
+                                          ? "정답"
+                                          : "오답"}
+                                      </span>
                                     </p>
-                                    {q.intentDiagnosis && (
-                                      <p className="mt-1 text-[11px] opacity-80 whitespace-pre-line">
-                                        출제 의도: {q.intentDiagnosis}
+                                    {mcExplanation ? (
+                                      <p className="text-[11px] opacity-80 whitespace-pre-line">
+                                        <span className="font-semibold">
+                                          해설:
+                                        </span>{" "}
+                                        {mcExplanation}
                                       </p>
-                                    )}
-                                  </>
+                                    ) : null}
+                                  </div>
                                 )}
                               </li>
                             );
                           })}
                         </ol>
                         <div className="mt-2 flex flex-col gap-1">
-                          <div className="flex items-center justify-between gap-2">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                             <button
                               type="button"
                               onClick={handleFiveChoiceGrade}
-                              className={`inline-flex items-center px-3 py-1.5 rounded text-[11px] font-medium cursor-pointer ${
+                              disabled={
+                                !fiveChoiceExamStats?.allAnswered ||
+                                fiveChoiceExamStats?.graded
+                              }
+                              className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-[11px] font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
                                 isDarkMode
                                   ? "bg-emerald-600 text-white"
                                   : "bg-emerald-600 text-white"
@@ -4820,69 +7458,23 @@ const MainContent: React.FC<MainContentProps> = ({
                             >
                               선택한 답안 채점하기
                             </button>
-                            <p className="text-[11px] opacity-70">
-                              각 문항에 대해 하나의 선택지를 고른 뒤 채점 버튼을
-                              눌러주세요.
-                            </p>
-                          </div>
-                          {fiveChoiceLog &&
-                            fiveChoiceLog.evaluationItems.length > 0 && (
-                              <div
-                                className={`mt-2 rounded-lg border p-2 text-[11px] ${
-                                  isDarkMode
-                                    ? "border-zinc-700 bg-zinc-900/60"
-                                    : "border-gray-200 bg-gray-50"
-                                }`}
+                            {fiveChoiceExamStats?.graded ? (
+                              <p
+                                className={`text-[11px] font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
                               >
-                                <p className="font-semibold mb-1">
-                                  5지선다 채점 결과 및 피드백
-                                </p>
-                                <ul className="space-y-1.5">
-                                  {fiveChoiceLog.evaluationItems.map((item) => (
-                                    <li
-                                      key={item.questionId}
-                                      className="border-b last:border-b-0 pb-1 last:pb-0 border-dashed border-gray-300 dark:border-zinc-700"
-                                    >
-                                      <div className="flex items-center justify-between">
-                                        <span className="font-medium">
-                                          문항 {item.questionId} —{" "}
-                                          <span
-                                            className={
-                                              item.resultStatus === "Correct"
-                                                ? "text-emerald-500"
-                                                : "text-red-500"
-                                            }
-                                          >
-                                            {item.resultStatus === "Correct"
-                                              ? "정답"
-                                              : "오답"}
-                                          </span>
-                                        </span>
-                                        {item.relatedTopic && (
-                                          <span className="text-[10px] opacity-70">
-                                            주제: {item.relatedTopic}
-                                          </span>
-                                        )}
-                                      </div>
-                                      <p className="mt-0.5">
-                                        <span className="font-semibold">
-                                          선택한 답:
-                                        </span>{" "}
-                                        {item.userResponse}
-                                      </p>
-                                      {item.feedbackMessage && (
-                                        <p className="mt-0.5 opacity-80 whitespace-pre-line">
-                                          {item.feedbackMessage}
-                                        </p>
-                                      )}
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
+                                {fiveChoiceExamStats.total}문제 중{" "}
+                                {fiveChoiceExamStats.correctCount}문제 정답
+                              </p>
+                            ) : (
+                              <p className="text-[11px] opacity-70">
+                                모든 문항에 답을 선택하면 채점하기를 누를 수
+                                있습니다.
+                              </p>
                             )}
+                          </div>
                         </div>
                       </div>
-                    )}
+                    ))}
                   {examDetail.shortAnswerProblems &&
                     examDetail.shortAnswerProblems.length > 0 && (
                       <div className="space-y-2">
@@ -4892,25 +7484,18 @@ const MainContent: React.FC<MainContentProps> = ({
                         </h3>
                         <ol className="space-y-3 text-xs list-decimal list-inside">
                           {examDetail.shortAnswerProblems.map((q, idx) => {
-                            const key = `sa-${idx}`;
-                            const show = !!examAnswerVisible[key];
-                            const anyKeywords = (
-                              Array.isArray((q as any).relatedKeywords) &&
-                              (q as any).relatedKeywords.length > 0
-                                ? (q as any).relatedKeywords
-                                : Array.isArray((q as any).keyKeywords)
-                                  ? (q as any).keyKeywords
-                                  : []
-                            ) as string[];
                             const type = (q as any).type as
                               | "Short_Keyword"
                               | "Descriptive"
                               | undefined;
-                            const modelAnswer =
-                              (q as any).modelAnswer || (q as any).bestAnswer;
-                            const intentText =
-                              (q as any).intentDiagnosis ||
-                              (q as any).evaluationCriteria;
+                            const kKey = String(idx);
+                            const kwOpen = !!shortAnswerKeywordOpen[kKey];
+                            const anyKeywords =
+                              getShortAnswerKeywordsFromProblem(q);
+                            const intentText = getShortAnswerIntentText(q);
+                            const saItem =
+                              shortAnswerLog?.evaluationItems[idx];
+                            const saGraded = !!shortAnswerLog && !!saItem;
 
                             return (
                               <li
@@ -4921,16 +7506,16 @@ const MainContent: React.FC<MainContentProps> = ({
                                     : "border-gray-200"
                                 }`}
                               >
-                                <div className="flex items-start justify-between gap-2 mb-1">
-                                  <p className="font-medium flex-1">
+                                <div className="mb-1 flex items-start justify-between gap-2">
+                                  <p className="flex-1 font-medium">
                                     {q.questionContent}
                                   </p>
                                   {type && (
                                     <span
-                                      className={`px-2 py-0.5 rounded-full text-[10px] shrink-0 ${
+                                      className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] ${
                                         isDarkMode
-                                          ? "bg-zinc-800 text-gray-200 border border-zinc-600"
-                                          : "bg-gray-100 text-gray-700 border border-gray-300"
+                                          ? "border-zinc-600 bg-zinc-800 text-gray-200"
+                                          : "border-gray-300 bg-gray-100 text-gray-700"
                                       }`}
                                     >
                                       {type === "Short_Keyword"
@@ -4939,23 +7524,62 @@ const MainContent: React.FC<MainContentProps> = ({
                                     </span>
                                   )}
                                 </div>
-                                {anyKeywords.length > 0 && (
-                                  <p className="text-[11px] opacity-80">
-                                    핵심 키워드: {anyKeywords.join(", ")}
-                                  </p>
-                                )}
-                                {intentText && (
-                                  <p className="mt-0.5 text-[11px] opacity-80 whitespace-pre-line">
-                                    출제 의도: {intentText}
-                                  </p>
-                                )}
+                                <div className="mb-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setShortAnswerKeywordOpen((p) => ({
+                                        ...p,
+                                        [kKey]: !p[kKey],
+                                      }))
+                                    }
+                                    className={`text-[11px] underline cursor-pointer ${isDarkMode ? "text-sky-300" : "text-sky-700"}`}
+                                  >
+                                    {kwOpen
+                                      ? "키워드와 출제의도 접기"
+                                      : "키워드와 출제의도 보기"}
+                                  </button>
+                                  {kwOpen ? (
+                                    <div
+                                      className={`mt-1.5 rounded border p-2 space-y-1 text-[11px] ${
+                                        isDarkMode
+                                          ? "border-zinc-600 bg-zinc-800/50"
+                                          : "border-gray-200 bg-gray-50"
+                                      }`}
+                                    >
+                                      {anyKeywords.length > 0 ? (
+                                        <p>
+                                          <span className="font-semibold">
+                                            핵심 키워드:
+                                          </span>{" "}
+                                          {anyKeywords.join(", ")}
+                                        </p>
+                                      ) : null}
+                                      {intentText ? (
+                                        <p className="whitespace-pre-line opacity-90">
+                                          <span className="font-semibold">
+                                            출제 의도:
+                                          </span>{" "}
+                                          {intentText}
+                                        </p>
+                                      ) : null}
+                                      {anyKeywords.length === 0 &&
+                                      !intentText ? (
+                                        <p className="opacity-70">
+                                          등록된 키워드·출제 의도가 없습니다.
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
+                                </div>
                                 <div className="mt-2">
-                                  <label className="block text-[11px] font-semibold mb-1">
+                                  <label className="mb-1 block text-[11px] font-semibold">
                                     나의 답안
                                   </label>
                                   <textarea
                                     value={
-                                      shortAnswerUserAnswers[String(idx)] ?? ""
+                                      shortAnswerUserAnswers[String(idx)] ??
+                                      ""
                                     }
                                     onChange={(e) =>
                                       handleShortAnswerInputChange(
@@ -4963,127 +7587,103 @@ const MainContent: React.FC<MainContentProps> = ({
                                         e.target.value,
                                       )
                                     }
-                                    className={`w-full rounded border px-2 py-1 text-xs resize-y min-h-[60px] ${
+                                    readOnly={saGraded}
+                                    className={`min-h-[60px] w-full resize-y rounded border px-2 py-1 text-xs ${
+                                      saGraded ? "opacity-90" : ""
+                                    } ${
                                       isDarkMode
-                                        ? "bg-zinc-900 border-zinc-700 text-gray-100"
-                                        : "bg-white border-gray-300 text-gray-900"
+                                        ? "border-zinc-700 bg-zinc-900 text-gray-100"
+                                        : "border-gray-300 bg-white text-gray-900"
                                     }`}
                                     placeholder="이 문항에 대한 자신의 답안을 작성해 보세요."
                                   />
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() => toggleExamAnswerVisible(key)}
-                                  className={`mt-1 inline-flex items-center px-2 py-1 rounded text-[11px] cursor-pointer ${
-                                    isDarkMode
-                                      ? "bg-zinc-800 text-gray-200"
-                                      : "bg-gray-100 text-gray-700"
-                                  }`}
-                                >
-                                  {show
-                                    ? "모범 답안/기준 숨기기"
-                                    : "모범 답안/기준 보기"}
-                                </button>
-                                {show && modelAnswer && (
-                                  <>
-                                    <p className="mt-1 text-[11px]">
+                                {saGraded && saItem && (
+                                  <div className="mt-2 space-y-1.5 border-t border-dashed border-gray-300 pt-2 text-[11px] dark:border-zinc-600">
+                                    <p>
                                       <span className="font-semibold">
-                                        모범 답안:
+                                        점수:
                                       </span>{" "}
-                                      {modelAnswer}
+                                      <span className="font-medium text-emerald-600 dark:text-emerald-400">
+                                        {(saItem.score * 10).toFixed(1)} / 10
+                                      </span>
                                     </p>
-                                    {intentText && (
-                                      <p className="mt-1 text-[11px] opacity-80 whitespace-pre-line">
-                                        평가 기준/의도: {intentText}
+                                    {saItem.gradingReason ? (
+                                      <p className="whitespace-pre-line opacity-90">
+                                        <span className="font-semibold">
+                                          채점 이유:
+                                        </span>{" "}
+                                        {saItem.gradingReason}
                                       </p>
-                                    )}
-                                  </>
+                                    ) : null}
+                                    {saItem.feedback ? (
+                                      <p className="whitespace-pre-line opacity-90">
+                                        <span className="font-semibold">
+                                          피드백:
+                                        </span>{" "}
+                                        {saItem.feedback}
+                                      </p>
+                                    ) : null}
+                                    {saItem.pointsDeducted &&
+                                    saItem.deductionReason ? (
+                                      <p className="whitespace-pre-line opacity-90">
+                                        <span className="font-semibold">
+                                          감점 사유:
+                                        </span>{" "}
+                                        {saItem.deductionReason}
+                                      </p>
+                                    ) : null}
+                                  </div>
                                 )}
                               </li>
                             );
                           })}
                         </ol>
-                        <div className="mt-2 flex flex-col gap-1">
-                          <div className="flex items-center justify-between gap-2">
+                        <div className="mt-2 flex flex-col gap-1.5">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                             <button
                               type="button"
                               onClick={handleShortAnswerGrade}
-                              className={`inline-flex items-center px-3 py-1.5 rounded text-[11px] font-medium cursor-pointer ${
+                              disabled={
+                                !shortAnswerExamStats?.allAnswered ||
+                                shortAnswerExamStats?.graded ||
+                                shortAnswerGrading
+                              }
+                              className={`inline-flex items-center rounded px-3 py-1.5 text-[11px] font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
                                 isDarkMode
                                   ? "bg-emerald-600 text-white"
                                   : "bg-emerald-600 text-white"
                               }`}
                             >
-                              작성한 단답/서술형 채점하기
+                              {shortAnswerGrading
+                                ? "채점 중…"
+                                : "작성한 단답/서술형 채점하기"}
                             </button>
-                            <p className="text-[11px] opacity-70">
-                              각 문항에 대해 답안을 작성한 뒤 채점 버튼을 누르면
-                              키워드 기반으로 결과와 피드백을 제공합니다.
-                            </p>
-                          </div>
-                          {shortAnswerLog &&
-                            shortAnswerLog.evaluationItems.length > 0 && (
-                              <div
-                                className={`mt-2 rounded-lg border p-2 text-[11px] ${
-                                  isDarkMode
-                                    ? "border-zinc-700 bg-zinc-900/60"
-                                    : "border-gray-200 bg-gray-50"
-                                }`}
+                            {shortAnswerExamStats?.graded &&
+                            shortAnswerExamStats.totalScoreOutOf10 != null ? (
+                              <p
+                                className={`text-[11px] font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
                               >
-                                <p className="font-semibold mb-1">
-                                  단답/서술형 채점 결과 및 피드백
-                                </p>
-                                <ul className="space-y-1.5">
-                                  {shortAnswerLog.evaluationItems.map(
-                                    (item) => (
-                                      <li
-                                        key={item.questionId}
-                                        className="border-b last:border-b-0 pb-1 last:pb-0 border-dashed border-gray-300 dark:border-zinc-700"
-                                      >
-                                        <div className="flex items-center justify-between">
-                                          <span className="font-medium">
-                                            문항 {item.questionId} —{" "}
-                                            <span
-                                              className={
-                                                item.resultStatus === "Correct"
-                                                  ? "text-emerald-500"
-                                                  : item.resultStatus ===
-                                                      "Partial_Correct"
-                                                    ? "text-amber-500"
-                                                    : "text-red-500"
-                                              }
-                                            >
-                                              {item.resultStatus === "Correct"
-                                                ? "정답"
-                                                : item.resultStatus ===
-                                                    "Partial_Correct"
-                                                  ? "부분 정답"
-                                                  : "오답"}
-                                            </span>
-                                          </span>
-                                          {item.relatedTopic && (
-                                            <span className="text-[10px] opacity-70">
-                                              주제: {item.relatedTopic}
-                                            </span>
-                                          )}
-                                        </div>
-                                        <p className="mt-0.5">
-                                          <span className="font-semibold">
-                                            작성한 답안:
-                                          </span>{" "}
-                                          {item.userResponse}
-                                        </p>
-                                        {item.feedbackMessage && (
-                                          <p className="mt-0.5 opacity-80 whitespace-pre-line">
-                                            {item.feedbackMessage}
-                                          </p>
-                                        )}
-                                      </li>
-                                    ),
-                                  )}
-                                </ul>
-                              </div>
+                                총점{" "}
+                                {shortAnswerExamStats.totalScoreOutOf10.toFixed(
+                                  1,
+                                )}{" "}
+                                / 10
+                              </p>
+                            ) : (
+                              <p className="text-[11px] opacity-70">
+                                모든 문항에 답안을 작성한 뒤 채점하기를 누르면
+                                문항별로 채점 결과가 표시됩니다.
+                              </p>
                             )}
+                          </div>
+                          {shortAnswerGradeError ? (
+                            <p
+                              className={`text-[11px] ${isDarkMode ? "text-red-400" : "text-red-600"}`}
+                            >
+                              {shortAnswerGradeError}
+                            </p>
+                          ) : null}
                         </div>
                       </div>
                     )}
@@ -5127,11 +7727,6 @@ const MainContent: React.FC<MainContentProps> = ({
                         </ol>
                       </div>
                     )}
-                  {examDetail.totalCount != null && (
-                    <p className="text-[11px] opacity-70">
-                      총 문항 수: {examDetail.totalCount}
-                    </p>
-                  )}
                 </>
               )}
             </div>

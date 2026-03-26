@@ -99,6 +99,8 @@ export interface CourseContentsLectureExamSession {
   status: string;
   targetCount: number;
   createdAt: string;
+  /** 목록 표시 이름. 없으면 FE에서 `${examType} · N문항`으로 표시 */
+  displayName?: string | null;
 }
 
 export interface CourseContentsLecture {
@@ -1199,6 +1201,11 @@ export interface StreamAnswerResponse {
   supplementary?: string;
 }
 
+interface LearningSessionState {
+  sessionId: string;
+  lectureId: number;
+}
+
 export const lectureMaterialApi = {
   // 파일 업로드 및 강의 자료 생성
   uploadAndGenerate: async (file: File): Promise<LectureMaterialResponse> => {
@@ -1434,33 +1441,235 @@ export const monitoringApi = {
   },
 };
 
-// 스트리밍 학습 세션 API
+const learningSessionByLecture = new Map<number, LearningSessionState>();
+
+const normalizeSseData = (value: unknown): Record<string, unknown> | null => {
+  if (value == null) return null;
+  if (typeof value === "object") return value as Record<string, unknown>;
+  if (typeof value !== "string") return null;
+  try {
+    return JSON.parse(value) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+};
+
+const toBool = (value: unknown): boolean | undefined => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const lowered = value.toLowerCase();
+    if (lowered === "true") return true;
+    if (lowered === "false") return false;
+  }
+  return undefined;
+};
+
+const pickFirstString = (obj: Record<string, unknown>, keys: string[]): string | undefined => {
+  for (const key of keys) {
+    const v = obj[key];
+    if (typeof v === "string" && v.trim().length > 0) return v;
+  }
+  return undefined;
+};
+
+const ensureLearningSession = async (lectureId: number, pdfPath?: string): Promise<LearningSessionState> => {
+  const cached = learningSessionByLecture.get(lectureId);
+  if (cached) return cached;
+
+  const query = pdfPath ? `?pdfPath=${encodeURIComponent(pdfPath)}` : "";
+  const raw = await apiRequest<Record<string, unknown>>(`/api/learning/sessions/${lectureId}${query}`, {
+    method: "POST",
+  });
+
+  const rawSessionId = raw.session_id ?? raw.sessionId;
+  if (rawSessionId == null) {
+    throw new Error("학습 세션 생성 응답에 session_id가 없습니다.");
+  }
+  const session = { sessionId: String(rawSessionId), lectureId };
+  learningSessionByLecture.set(lectureId, session);
+  return session;
+};
+
+const postLearningEventAndCollect = async (
+  sessionId: string,
+  eventBody: Record<string, unknown>,
+  lectureId?: number
+): Promise<Record<string, unknown>[]> => {
+  const endpoint =
+    lectureId != null
+      ? `/api/learning/sessions/${encodeURIComponent(sessionId)}/event?lectureId=${encodeURIComponent(lectureId)}`
+      : `/api/learning/sessions/${encodeURIComponent(sessionId)}/event`;
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(eventBody),
+    mode: "cors",
+    credentials: "omit",
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`API Error (${res.status}): ${text || "학습 이벤트 요청 실패"}`);
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) return [];
+  const decoder = new TextDecoder();
+  const events: Record<string, unknown>[] = [];
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line.startsWith("data:")) continue;
+      const payload = line.slice(5).trim();
+      const parsed = normalizeSseData(payload);
+      if (!parsed) continue;
+      const eventType = String(parsed.type ?? "");
+      if (eventType === "heartbeat") continue;
+      events.push(parsed);
+      if (eventType === "done" || toBool(parsed.final) === true) {
+        return events;
+      }
+      if (eventType === "error") {
+        return events;
+      }
+    }
+  }
+
+  return events;
+};
+
+const mapLearningEventsToNextResponse = (
+  lectureId: number,
+  events: Record<string, unknown>[]
+): StreamNextResponse => {
+  let waitingForAnswer = false;
+  let aiQuestionId: string | undefined;
+  let hasMore = true;
+  let status = "COMPLETED";
+  let contentType: ContentType | string = "CONCEPT";
+  const chunks: string[] = [];
+
+  for (const event of events) {
+    const type = String(event.type ?? "").toLowerCase();
+    const message =
+      pickFirstString(event, ["delta", "content", "message", "text", "main", "thought"]) ??
+      pickFirstString((event.payload as Record<string, unknown>) ?? {}, ["delta", "content", "message", "text"]);
+    if (message) chunks.push(message);
+
+    const boolWaiting = toBool(event.waiting_for_answer ?? event.waitingForAnswer);
+    if (boolWaiting != null) waitingForAnswer = boolWaiting;
+    const qid = pickFirstString(event, ["ai_question_id", "aiQuestionId", "question_id", "questionId"]);
+    if (qid) aiQuestionId = qid;
+
+    if (type.includes("question") || boolWaiting === true || qid) {
+      contentType = "QUESTION";
+    } else if (type.includes("supplement")) {
+      contentType = "SUPPLEMENTARY";
+    }
+
+    if (type === "error") {
+      status = "ERROR";
+      hasMore = false;
+      break;
+    }
+    if (type === "done" || toBool(event.final) === true) {
+      hasMore = false;
+      status = "COMPLETED";
+      break;
+    }
+  }
+
+  return {
+    status,
+    lectureId,
+    contentType,
+    contentData: chunks.join("\n").trim(),
+    hasMore,
+    waitingForAnswer,
+    ...(aiQuestionId ? { aiQuestionId } : {}),
+  };
+};
+
+// 스트리밍 학습 세션 API (v3 통합 세션 기반)
 export const streamingApi = {
   getSession: async (lectureId: number): Promise<StreamSessionState> => {
-    return apiRequest<StreamSessionState>(`/api/lectures/${lectureId}/stream/session`);
+    const session = await ensureLearningSession(lectureId);
+    return {
+      status: "ACTIVE",
+      lectureId,
+      serviceStatus: "V3_INTEGRATED",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      chapters: { sessionId: session.sessionId },
+    };
   },
-  initialize: async (lectureId: number, options?: { pageNumber?: number }): Promise<StreamInitializeResponse> => {
-    return apiRequest<StreamInitializeResponse>(`/api/lectures/${lectureId}/stream/initialize`, {
-      method: 'POST',
-      ...(options?.pageNumber != null && { body: JSON.stringify({ pageNumber: options.pageNumber }) }),
-    });
+  initialize: async (lectureId: number, _options?: { pageNumber?: number }): Promise<StreamInitializeResponse> => {
+    const session = await ensureLearningSession(lectureId);
+    await postLearningEventAndCollect(
+      session.sessionId,
+      {
+        type: "SESSION_ENTERED",
+      },
+      lectureId
+    );
+    return {
+      status: "ACTIVE",
+      lectureId,
+      totalChapters: 0,
+      chapters: [],
+    };
   },
   next: async (lectureId: number, options?: { pageNumber?: number }): Promise<StreamNextResponse> => {
-    return apiRequest<StreamNextResponse>(`/api/lectures/${lectureId}/stream/next`, {
-      method: 'POST',
-      ...(options?.pageNumber != null && { body: JSON.stringify({ pageNumber: options.pageNumber }) }),
-    });
+    const session = await ensureLearningSession(lectureId);
+    const eventType = options?.pageNumber != null ? "PAGE_CHANGED" : "NEXT_PAGE_DECISION";
+    const body: Record<string, unknown> = { type: eventType };
+    if (options?.pageNumber != null) {
+      body.page = options.pageNumber;
+      body.pageNumber = options.pageNumber;
+    }
+    const events = await postLearningEventAndCollect(session.sessionId, body, lectureId);
+    return mapLearningEventsToNextResponse(lectureId, events);
   },
   answer: async (lectureId: number, payload: StreamAnswerRequest): Promise<StreamAnswerResponse> => {
-    return apiRequest<StreamAnswerResponse>(`/api/lectures/${lectureId}/stream/answer`, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+    const session = await ensureLearningSession(lectureId);
+    await postLearningEventAndCollect(
+      session.sessionId,
+      {
+        type: "QUIZ_SUBMITTED",
+        aiQuestionId: payload.aiQuestionId,
+        answer: payload.answer,
+      },
+      lectureId
+    );
+    return {
+      status: "COMPLETED",
+      lectureId,
+      aiQuestionId: payload.aiQuestionId,
+      canContinue: true,
+    };
   },
   cancel: async (lectureId: number): Promise<void> => {
-    return apiRequest<void>(`/api/lectures/${lectureId}/stream/cancel`, {
-      method: 'POST',
-    });
+    const session = learningSessionByLecture.get(lectureId);
+    if (!session) return;
+    try {
+      await postLearningEventAndCollect(session.sessionId, { type: "SAVE_AND_EXIT" }, lectureId);
+    } finally {
+      learningSessionByLecture.delete(lectureId);
+    }
   },
 };
 
@@ -1533,6 +1742,8 @@ export interface ExamGenerationAsyncRequest {
   lectureContent: string;
   topic?: string;
   userProfile?: ExamUserProfile;
+  /** 시험 목록 표시용 이름(선택). 미전달 시 BE 기본 규칙에 따름 */
+  displayName?: string;
 }
 
 export interface ExamGenerationAsyncResponse {
@@ -1591,6 +1802,8 @@ export interface ExamShortAnswerProblem {
   relatedKeywords: string[];
   bestAnswer: string;
   evaluationCriteria: string;
+  /** 백엔드가 내려주는 경우 출제 의도(진단) 텍스트 */
+  intentDiagnosis?: string;
 }
 
 export interface ExamDebateTopic {
@@ -1658,6 +1871,71 @@ export interface ExamSessionRecoverResponse {
   [key: string]: string;
 }
 
+/** 단답형 Gemini 채점 요청 — 문제별 입력(JSON). BE는 lectureId/materialId로 강의자료 PDF 경로를 해석 */
+export interface ExamShortAnswerGradeProblemPayload {
+  problemNumber: number;
+  questionContent: string;
+  keyKeywords: string[];
+  gradingIntent: string;
+  userAnswer: string;
+}
+
+export interface ExamShortAnswerGradeRequest {
+  lectureId?: number;
+  materialId?: number | null;
+  problems: ExamShortAnswerGradeProblemPayload[];
+}
+
+export interface ExamShortAnswerGradeResultItem {
+  problemNumber: number;
+  /** 0~1, 0.1 단위 권장 */
+  score: number;
+  gradingReason: string;
+  feedback: string;
+  pointsDeducted?: boolean;
+  deductionReason?: string;
+}
+
+export interface ExamShortAnswerGradeResponse {
+  results: ExamShortAnswerGradeResultItem[];
+}
+
+function normalizeExamShortAnswerGradeResponse(
+  raw: Record<string, unknown>,
+): ExamShortAnswerGradeResponse {
+  const pickArray = (): unknown[] => {
+    const v =
+      raw.results ??
+      raw.gradingResults ??
+      raw.grading_results ??
+      (raw.data as Record<string, unknown> | undefined)?.results ??
+      (raw.data as Record<string, unknown> | undefined)?.gradingResults;
+    return Array.isArray(v) ? v : [];
+  };
+  const results: ExamShortAnswerGradeResultItem[] = pickArray().map((item) => {
+    const o = item as Record<string, unknown>;
+    const scoreRaw = Number(o.score ?? 0);
+    const score = Math.min(1, Math.max(0, Number.isFinite(scoreRaw) ? scoreRaw : 0));
+    return {
+      problemNumber: Number(o.problemNumber ?? o.problem_number ?? 0),
+      score,
+      gradingReason: String(o.gradingReason ?? o.grading_reason ?? ""),
+      feedback: String(o.feedback ?? ""),
+      pointsDeducted:
+        o.pointsDeducted === true ||
+        o.points_deducted === true ||
+        o.pointsDeducted === "true",
+      deductionReason:
+        o.deductionReason != null
+          ? String(o.deductionReason)
+          : o.deduction_reason != null
+            ? String(o.deduction_reason)
+            : undefined,
+    };
+  });
+  return { results };
+}
+
 /** 시험 생성 API 요청 본문: API 문서 기준 camelCase */
 function buildExamGenerationBody(payload: ExamGenerationRequest): string {
   const body: Record<string, unknown> = {
@@ -1671,7 +1949,10 @@ function buildExamGenerationBody(payload: ExamGenerationRequest): string {
   return JSON.stringify(body);
 }
 
-/** 시험 생성/조회/삭제는 메인 백엔드와 동일 URL 사용(apiRequest). 로컬 개발 시 프록시로 BE 로그 확인 가능 */
+/**
+ * 시험 생성/조회/삭제는 메인 백엔드만 호출(apiRequest → VITE_API_URL 또는 /api 프록시).
+ * 응답에 ai-service/bridge 등이 보이면 그건 BE 내부 호출 실패 메시지이며, FE에서 bridge URL을 쓰지 않음.
+ */
 export const examGenerationApi = {
   createExam: async (payload: ExamGenerationRequest): Promise<ExamGenerationResponse> => {
     return apiRequest<ExamGenerationResponse>('/api/exams/generation', {
@@ -1707,5 +1988,30 @@ export const examGenerationApi = {
     return apiRequest<void>(`/api/exams/generation/${encodeURIComponent(examSessionId)}`, {
       method: 'DELETE',
     });
+  },
+  /**
+   * 단답형/서술형 Gemini 채점. POST /api/exams/generation/{examSessionId}/short-answer/grade
+   * BE가 다른 경로를 쓰면 이 메서드만 수정하면 됨.
+   */
+  gradeShortAnswers: async (
+    examSessionId: number,
+    payload: ExamShortAnswerGradeRequest,
+  ): Promise<ExamShortAnswerGradeResponse> => {
+    const raw = await apiRequest<unknown>(
+      `/api/exams/generation/${encodeURIComponent(examSessionId)}/short-answer/grade`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      },
+    );
+    const obj =
+      raw && typeof raw === 'object'
+        ? (raw as Record<string, unknown>)
+        : {};
+    const inner =
+      obj.data != null && typeof obj.data === 'object' && !Array.isArray(obj.data)
+        ? (obj.data as Record<string, unknown>)
+        : obj;
+    return normalizeExamShortAnswerGradeResponse(inner);
   },
 };

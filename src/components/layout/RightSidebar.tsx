@@ -1,10 +1,9 @@
 import React, { useState, useRef, useCallback, useEffect } from "react";
 import { CloseIcon, EditIcon, TrashIcon } from "../common/Icons";
 import { useParams } from "react-router-dom";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
+import { MarkdownContent } from "../common/MarkdownContent";
 import {
   lectureApi,
   getAuthToken,
@@ -26,6 +25,46 @@ interface ChatMessage {
 
 type ViewMode = "course-list" | "course-detail";
 
+function examTypeMaxQuestionCount(examType: string): number {
+  if (examType === "FLASH_CARD") return 30;
+  if (examType === "FIVE_CHOICE") return 15;
+  if (examType === "SHORT_ANSWER") return 20;
+  return 50;
+}
+
+/** blur / Enter 시에만 검증·반영 (입력 중 강제 보정 금지) */
+function commitExamQuestionCountInput(
+  raw: string,
+  examType: string,
+  setExamCount: (n: number) => void,
+): void {
+  const trimmed = raw.trim();
+  const upper = examTypeMaxQuestionCount(examType);
+  if (trimmed === "") {
+    window.alert(
+      "문항 수가 비어 있습니다. 1 이상의 정수를 입력해 주세요.",
+    );
+    setExamCount(10);
+    return;
+  }
+  const n = Number.parseInt(trimmed, 10);
+  if (!Number.isFinite(n) || n <= 0) {
+    window.alert(
+      "비정상 입력입니다. 1 이상의 정수만 입력할 수 있습니다.",
+    );
+    setExamCount(10);
+    return;
+  }
+  if (n > upper) {
+    window.alert(
+      `문항 수가 너무 많습니다. 이 유형은 최대 ${upper}문항까지 가능합니다.`,
+    );
+    setExamCount(upper);
+    return;
+  }
+  setExamCount(n);
+}
+
 /** 시험 만들기 모드일 때 오른쪽 패널에 표시할 옵션/생성 관련 props */
 export interface RightSidebarExamProps {
   examMode: boolean;
@@ -37,6 +76,9 @@ export interface RightSidebarExamProps {
   setExamTopic: (value: string) => void;
   examCount: number;
   setExamCount: (value: number) => void;
+  /** 시험 목록 표시 이름(선택) */
+  examDisplayName: string;
+  setExamDisplayName: (value: string) => void;
   /** 난이도 */
   profileProficiencyLevel: "Beginner" | "Intermediate" | "Advanced";
   setProfileProficiencyLevel: (value: "Beginner" | "Intermediate" | "Advanced") => void;
@@ -101,7 +143,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
-  const [isGeneratingContent, setIsGeneratingContent] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [isFetchingNext, setIsFetchingNext] = useState(false);
   const [waitingForAnswer, setWaitingForAnswer] = useState(false);
@@ -116,6 +157,16 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragCounterRef = useRef<number>(0);
   const previewObjectUrlRef = useRef<string | null>(null);
+  /** 시험 문항 수: 키보드 입력 중에는 초안만 두고 blur/Enter에서 확정 */
+  const examCountFieldFocusedRef = useRef(false);
+  const [examCountFieldFocused, setExamCountFieldFocused] = useState(false);
+  const [examCountDraft, setExamCountDraft] = useState("");
+  useEffect(() => {
+    if (!examProps?.examMode) {
+      examCountFieldFocusedRef.current = false;
+      setExamCountFieldFocused(false);
+    }
+  }, [examProps?.examMode]);
   const actionMenuContainerRef = useRef<HTMLDivElement>(null);
   const shouldAbortPollingRef = useRef<boolean>(false);
   const answeredQuestionIdsRef = useRef<Set<string>>(new Set());
@@ -385,7 +436,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       const successMessage: ChatMessage = {
         id: Date.now() + 1,
         text:
-          "파일이 업로드되었습니다.\n\n- 강의 콘텐츠 생성: `/generate`\n- 스트리밍 학습 시작: Enter (빈 입력)\n- 현재 세션 상태 조회: `/status`\n- 스트리밍 중단: `/cancel`",
+          "파일이 업로드되었습니다.\n\n- 스트리밍 학습 시작: Enter (빈 입력)\n- 현재 세션 상태 조회: `/status`\n- 스트리밍 중단: `/cancel`",
         isUser: false,
         isLoading: false,
       };
@@ -816,65 +867,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       return;
     }
 
-    // 강의가 선택되었고 스트리밍이 시작되지 않았을 때 (이미 업로드된 파일/자료 사용):
-    // - /generate: generate-content 실행 후 ai-status 완료까지 폴링
-    // - Enter(빈 입력): 스트리밍 시작
+    // 강의가 선택되었고 스트리밍이 시작되지 않았을 때:
+    // - Enter(빈 입력): v3 세션 초기화 + 스트리밍 학습 시작
     if (!isStreaming && currentLectureId) {
-      if (trimmed === "/generate" || trimmed === "강의 생성") {
-        if (isGeneratingContent) {
-          resetInputText();
-          setMessages((prev) => [...prev, { id: Date.now(), text: "이미 강의 콘텐츠 생성을 진행 중입니다.", isUser: false }]);
-          return;
-        }
-        resetInputText();
-        setIsGeneratingContent(true);
-        const loadingId = Date.now();
-        setMessages((prev) => [...prev, { id: loadingId, text: "", isUser: false, isLoading: true }]);
-        lectureApi.generateContent(currentLectureId)
-          .then(async () => {
-            // ai-status 폴링
-            const pollMs = 2500;
-            const maxAttempts = 720; // 30분
-            for (let i = 0; i < maxAttempts; i++) {
-              const st = await lectureApi.getAiStatus(currentLectureId);
-              const s = (st.status || "").toUpperCase();
-              if (s === "COMPLETED" || s === "DONE" || s === "SUCCESS") {
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === loadingId
-                      ? { ...m, text: "강의 콘텐츠 생성 완료", isLoading: false }
-                      : m
-                  )
-                );
-                setMessages((prev) => [...prev, { id: Date.now() + 1, text: "Enter를 눌러 스트리밍 학습을 시작하세요.", isUser: false }]);
-                return;
-              }
-              if (s === "FAILED" || s === "ERROR") {
-                setMessages((prev) =>
-                  prev.map((m) =>
-                    m.id === loadingId
-                      ? { ...m, text: `생성 실패: ${st.message || "알 수 없는 오류"}`, isLoading: false }
-                      : m
-                  )
-                );
-                return;
-              }
-              await sleep(pollMs);
-            }
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === loadingId ? { ...m, text: "생성 시간이 초과되었습니다. `/status`로 상태를 확인하세요.", isLoading: false } : m
-              )
-            );
-          })
-          .catch((e) => {
-            const msg = e instanceof Error ? e.message : "강의 콘텐츠 생성 시작 실패";
-            setMessages((prev) => prev.map((m) => (m.id === loadingId ? { ...m, text: `오류: ${msg}`, isLoading: false } : m)));
-          })
-          .finally(() => setIsGeneratingContent(false));
-        return;
-      }
-
       resetInputText(); // 입력창 비우기
       const initMessageId = Date.now();
       setMessages((prev) => [
@@ -953,11 +948,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       {/* 강의 학습 | 시험 만들기 탭 - 설정페이지 모바일 스타일 (항상) */}
       {examProps && viewMode === "course-detail" && examProps.isTeacher && (
         <nav
-          className="pl-3 shrink-0 border-b"
-          style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}
+          className="pl-3 shrink-0 h-10 min-h-10 max-h-10 flex items-center border-b box-border"
+          style={{ borderColor: isDarkMode ? "#404040" : "#e5e7eb" }}
         >
-          <ul className="w-full flex gap-6">
-            <li className="grid h-10 content-center">
+          <ul className="w-full flex items-center gap-6 min-h-0">
+            <li className="flex items-center">
               <button
                 type="button"
                 onClick={() => examProps.onExamModeChange(false)}
@@ -972,7 +967,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 강의 학습
               </button>
             </li>
-            <li className="grid h-10 content-center">
+            <li className="flex items-center">
               <button
                 type="button"
                 onClick={() => examProps.onExamModeChange(true)}
@@ -1034,21 +1029,52 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 <label className="block text-[14px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>문항 수</label>
                 <input
                   type="number"
-                  min={1}
-                  max={examProps.examType === "FLASH_CARD" ? 30 : examProps.examType === "FIVE_CHOICE" ? 15 : examProps.examType === "SHORT_ANSWER" ? 20 : 50}
-                  value={examProps.examCount}
+                  inputMode="numeric"
+                  value={
+                    examCountFieldFocused
+                      ? examCountDraft
+                      : String(examProps.examCount)
+                  }
+                  onFocus={() => {
+                    examCountFieldFocusedRef.current = true;
+                    setExamCountFieldFocused(true);
+                    setExamCountDraft(String(examProps.examCount));
+                  }}
                   onChange={(e) => {
-                    const n = Number(e.target.value);
-                    if (!Number.isFinite(n) || n <= 0) examProps.setExamCount(10);
-                    else {
-                      const upper = examProps.examType === "FLASH_CARD" ? 30 : examProps.examType === "FIVE_CHOICE" ? 15 : examProps.examType === "SHORT_ANSWER" ? 20 : 50;
-                      examProps.setExamCount(Math.min(n, upper));
-                    }
+                    if (!examCountFieldFocusedRef.current) return;
+                    setExamCountDraft(e.target.value);
+                  }}
+                  onBlur={(e) => {
+                    examCountFieldFocusedRef.current = false;
+                    setExamCountFieldFocused(false);
+                    commitExamQuestionCountInput(
+                      e.target.value,
+                      examProps.examType,
+                      examProps.setExamCount,
+                    );
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter") return;
+                    e.preventDefault();
+                    (e.currentTarget as HTMLInputElement).blur();
                   }}
                   className="w-full px-2 py-1.5 text-sm rounded-2xl border"
                   style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}
                 />
               </div>
+            </div>
+            <div>
+              <label className="block text-[14px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>
+                시험 이름 <span className="font-normal opacity-70">(선택)</span>
+              </label>
+              <input
+                type="text"
+                value={examProps.examDisplayName}
+                onChange={(e) => examProps.setExamDisplayName(e.target.value)}
+                placeholder="예: 개념 정리를 위한 플래시카드 · 중간고사 대비 암기용 문제 · 빠른 복습용 테스트"
+                className="block w-full px-2 py-1.5 text-sm rounded-2xl border m-0"
+                style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}
+              />
             </div>
             <div>
               <label className="block text-[14px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>주제</label>
@@ -1331,18 +1357,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   <div className="min-w-0 overflow-hidden break-words">
                     <div className="mb-2 font-semibold break-words">{message.text}</div>
                     <div
-                      className={`prose prose-sm max-w-none overflow-hidden break-words [&_strong]:font-bold [&_strong]:text-inherit [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words ${
+                      className={`prose prose-sm prose-neutral max-w-none overflow-hidden break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words prose-headings:font-semibold ${
                         isDarkMode ? "prose-invert" : ""
                       }`}
                     >
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        components={{
-                          strong: ({ children }) => <strong className="font-bold">{children}</strong>,
-                        }}
-                      >
-                        {message.markdown}
-                      </ReactMarkdown>
+                      <MarkdownContent>{message.markdown}</MarkdownContent>
                     </div>
                   </div>
                 ) : (

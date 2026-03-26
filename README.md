@@ -135,11 +135,13 @@ capstone/
 | **lectureMaterialApi** | 강의 자료 생성(파일 업로드·에이전트) |
 | **materialGenerationApi** | AI 자료 생성 Phase 1~5 |
 | **streamingApi** | 강의 스트리밍 세션/초기화/next/answer/cancel |
-| **examGenerationApi** | 시험 생성 (AI 서비스, `lectureId`, `examType`, `targetCount`, `lectureContent` 등) |
+| **examGenerationApi** | 시험 생성 — 메인 백엔드 `POST /api/exams/generation/async` (`lectureId`, `examType`, `targetCount`, `lectureContent` 등) |
 | **monitoringApi** | 모니터링 개요, rate-limit, cache, agents |
 | **checkServerStatus** | 서버 상태 확인 |
 
-시험 생성은 `VITE_AI_SERVICE_URL`이 있으면 해당 URL로 요청하며, 없으면 `VITE_API_URL`(또는 기본 백엔드)을 사용합니다.
+시험 생성(`examGenerationApi`)은 **항상 메인 백엔드**(`VITE_API_URL` 또는 개발 시 Vite 프록시의 `/api`)로만 요청합니다. `VITE_AI_SERVICE_URL`은 시험 생성에 사용되지 않습니다(코드에 예약된 `aiServiceRequest`와 별개).
+
+에러 메시지에 `http://ai-service:8000/bridge/quiz` 같은 URL이 보이면, 그건 **브라우저가 직접 호출한 주소가 아니라** 메인 백엔드가 AI 쪽으로 호출하다 실패한 **내부 URL이 응답 본문에 포함된 것**입니다. 프론트에서 `bridge` 경로로 바꿀 설정은 없고, 메인 API 서버 쪽 연동 URL을 고치거나 `VITE_API_URL`을 올바른 메인 API 서버로 두면 됩니다.
 
 ---
 
@@ -200,14 +202,14 @@ yarn lint
 
 | 변수 | 설명 | 기본값 |
 |------|------|--------|
-| `VITE_API_URL` | 백엔드 API 기본 URL | `https://uouaitutor.duckdns.org` |
-| `VITE_AI_SERVICE_URL` | AI 서비스(예: 시험 생성) URL | `VITE_API_URL`과 동일 |
+| `VITE_API_URL` | 백엔드 API 기본 URL(시험 생성 포함 **모든** `apiRequest` 호출) | `https://uouaitutor.duckdns.org` |
+| `VITE_AI_SERVICE_URL` | (현재 코드에서 시험 생성 미사용) `aiServiceRequest`용 예비 URL | `VITE_API_URL`과 동일 |
 
 `.env` 예시:
 
 ```env
 VITE_API_URL=https://uouaitutor.duckdns.org
-VITE_AI_SERVICE_URL=https://your-ai-service.example.com
+# 시험 생성은 위 URL의 /api/exams/generation/async 만 사용합니다.
 ```
 
 ---

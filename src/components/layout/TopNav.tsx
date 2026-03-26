@@ -72,7 +72,16 @@ interface TopNavProps {
   onBackFromPreview?: () => void;
 }
 
-const TopNav: React.FC<TopNavProps> = ({ isCourseDetail, isSettingsPage, isReportPage, onNavigateHome, onOpenSettings, onOpenReport, previewFileName, onBackFromPreview }) => {
+const TopNav: React.FC<TopNavProps> = ({
+  isCourseDetail,
+  isSettingsPage,
+  isReportPage,
+  onNavigateHome,
+  onOpenSettings,
+  onOpenReport,
+  previewFileName,
+  onBackFromPreview,
+}) => {
   const { isDarkMode, themeMode, setThemeMode } = useTheme();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -168,13 +177,7 @@ const TopNav: React.FC<TopNavProps> = ({ isCourseDetail, isSettingsPage, isRepor
           AI Tutor LMS
         </button>
       </div>
-      <div className="flex items-center justify-center min-w-0 flex-1">
-        {isPreviewMode && (
-          <span className={`h-9 flex items-center text-sm font-medium truncate max-w-[200px] sm:max-w-[300px] ${isDarkMode ? "text-gray-200" : "text-gray-700"}`} title={previewFileName}>
-            {previewFileName}
-          </span>
-        )}
-      </div>
+      <div className="min-w-0 flex-1" aria-hidden="true" />
       <div className="flex items-center gap-4 justify-end min-w-0 flex-1">
         {isPreviewMode && (
           <button

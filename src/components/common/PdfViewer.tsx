@@ -326,7 +326,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       {/* 상단 툴바 - 라이트: bg #FFFFFF / 메뉴 #141414, 다크: bg #141414 / 메뉴 #FFFFFF (ThemeContext 기준) */}
       {numPages != null && (
         <div
-          className="shrink-0 flex items-center justify-center gap-2 px-3 py-1 border-b"
+          className="shrink-0 h-10 min-h-10 max-h-10 flex items-center justify-center gap-2 px-3 border-b box-border"
           style={{
             backgroundColor: isDarkMode ? "#141414" : "#FFFFFF",
             color: isDarkMode ? "#FFFFFF" : "#141414",
