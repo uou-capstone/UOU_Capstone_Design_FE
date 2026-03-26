@@ -72,13 +72,10 @@ export interface RightSidebarExamProps {
   isTeacher: boolean;
   examType: string;
   setExamType: (value: string) => void;
-  examTopic: string;
-  setExamTopic: (value: string) => void;
   examCount: number;
   setExamCount: (value: number) => void;
-  /** 시험 목록 표시 이름(선택) */
-  examDisplayName: string;
-  setExamDisplayName: (value: string) => void;
+  /** 생성 성공·주차 변경 시 폼 초기화용 (값이 바뀌면 시험 이름·주제 입력란 리셋) */
+  examFormKey: number;
   /** 난이도 */
   profileProficiencyLevel: "Beginner" | "Intermediate" | "Advanced";
   setProfileProficiencyLevel: (value: "Beginner" | "Intermediate" | "Advanced") => void;
@@ -88,8 +85,8 @@ export interface RightSidebarExamProps {
   /** 문제 스타일 */
   profileQuestionModality: "Mathematical" | "Theoretical" | "Balance";
   setProfileQuestionModality: (value: "Mathematical" | "Theoretical" | "Balance") => void;
-  /** 백그라운드 비동기 시험 생성 */
-  onCreateExam: () => void;
+  /** 백그라운드 비동기 시험 생성 (이름·주제는 입력란 로컬 값으로 전달 — MainContent 리렌더 최소화) */
+  onCreateExam: (topic: string, displayName: string) => void;
   submitting: boolean;
   onRecoverSession: () => void;
   recoverOpen: boolean;
@@ -111,7 +108,12 @@ export interface RightSidebarExamProps {
 }
 
 interface RightSidebarProps {
-  onLectureDataChange: (markdown: string, fileUrl: string, fileName: string) => void;
+  onLectureDataChange: (
+    markdown: string,
+    fileUrl: string,
+    fileName: string,
+    materialId?: number | null,
+  ) => void;
   width?: number;
   lectureId?: number;
   courseId?: number;
@@ -161,12 +163,43 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const examCountFieldFocusedRef = useRef(false);
   const [examCountFieldFocused, setExamCountFieldFocused] = useState(false);
   const [examCountDraft, setExamCountDraft] = useState("");
+  /** 시험 이름·주제: 부모(MainContent)로 끌어올리지 않고 로컬에서만 관리 → 마크다운 미리보기 전체 리렌더 방지 */
+  const [localExamTopic, setLocalExamTopic] = useState("");
+  const [localExamDisplayName, setLocalExamDisplayName] = useState("");
   useEffect(() => {
     if (!examProps?.examMode) {
       examCountFieldFocusedRef.current = false;
       setExamCountFieldFocused(false);
     }
   }, [examProps?.examMode]);
+
+  const adjustExamQuestionCountByStep = useCallback(
+    (delta: number) => {
+      if (!examProps?.examMode) return;
+      const upper = examTypeMaxQuestionCount(examProps.examType);
+      let base = examProps.examCount;
+      if (examCountFieldFocusedRef.current) {
+        const t = examCountDraft.trim();
+        if (t !== "") {
+          const n = Number.parseInt(t, 10);
+          if (Number.isFinite(n)) base = n;
+        }
+      }
+      const next = Math.min(upper, Math.max(1, base + delta));
+      examProps.setExamCount(next);
+      if (examCountFieldFocusedRef.current) {
+        setExamCountDraft(String(next));
+      }
+    },
+    [examProps, examCountDraft],
+  );
+
+  useEffect(() => {
+    if (!examProps) return;
+    setLocalExamTopic("");
+    setLocalExamDisplayName("");
+    // examProps 객체 참조는 매 렌더마다 바뀔 수 있으므로 examFormKey·lectureId만 의존
+  }, [lectureId, examProps?.examFormKey]);
   const actionMenuContainerRef = useRef<HTMLDivElement>(null);
   const shouldAbortPollingRef = useRef<boolean>(false);
   const answeredQuestionIdsRef = useRef<Set<string>>(new Set());
@@ -199,12 +232,22 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   // 로컬 스토리지 키 생성
   const getUploadStorageKey = (lectureId: number) => `lecture_upload_${lectureId}`;
 
-  // 업로드 정보 저장
-  const saveUploadToStorage = (lectureId: number, fileName: string, fileUrl: string) => {
+  // 업로드 정보 저장 (materialId: 시험 생성 sourceMaterialId 복구용)
+  const saveUploadToStorage = (
+    lectureId: number,
+    fileName: string,
+    fileUrl: string,
+    materialId?: number | null,
+  ) => {
     try {
       localStorage.setItem(
         getUploadStorageKey(lectureId),
-        JSON.stringify({ fileName, fileUrl, timestamp: Date.now() })
+        JSON.stringify({
+          fileName,
+          fileUrl,
+          timestamp: Date.now(),
+          ...(materialId != null && materialId > 0 ? { materialId } : {}),
+        }),
       );
     } catch (error) {
       console.error('Failed to save upload to storage:', error);
@@ -219,7 +262,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         const data = JSON.parse(stored);
         // 24시간 이내 데이터만 유효
         if (Date.now() - data.timestamp < 24 * 60 * 60 * 1000) {
-          return { fileName: data.fileName, fileUrl: data.fileUrl };
+          const mid =
+            typeof data.materialId === "number" && data.materialId > 0
+              ? data.materialId
+              : undefined;
+          return { fileName: data.fileName, fileUrl: data.fileUrl, materialId: mid };
         }
       }
     } catch (error) {
@@ -238,14 +285,14 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   useEffect(() => {
     setCurrentLectureId(lectureId ?? null);
     
-    // 강의 변경 시 저장된 업로드 정보 불러오기
+    // 강의 변경 시 저장된 업로드 정보 불러오기 (채팅 패널 표시만 — 부모 미리보기는 자료 목록 클릭으로 맞춤.
+    // 이전에는 여기서 onLectureDataChange로 이전 PDF를 강제해 시험이 잘못된 sourceMaterialId로 생성됨.)
     if (lectureId) {
       const stored = loadUploadFromStorage(lectureId);
       if (stored) {
         setUploadedFileName(stored.fileName);
         setUploadedFileDisplayUrl(stored.fileUrl);
         setHasUploadedMaterial(true);
-        onLectureDataChange("", stored.fileUrl, stored.fileName);
       } else {
         // 저장된 정보가 없으면 초기화
         setHasUploadedMaterial(false);
@@ -400,7 +447,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     setUploadedFileDisplayUrl(previewUrl);
     setUploadedFileName(file.name);
     setHasUploadedMaterial(false);
-    onLectureDataChange("", previewUrl, file.name);
+    onLectureDataChange("", previewUrl, file.name, null);
 
     setIsUploading(true);
 
@@ -416,7 +463,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
     try {
       const result = await lectureApi.uploadMaterial(targetLectureId!, file);
-      const { fileUrl, displayName } = result;
+      const { fileUrl, displayName, materialId: uploadedMaterialId } = result;
       const displayFileName = displayName ?? file.name;
 
       setHasUploadedMaterial(true);
@@ -424,12 +471,22 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       if (typeof fileUrl === "string" && fileUrl.length > 0 && isValidHttpUrl(fileUrl)) {
         revokePreviewUrl();
         setUploadedFileDisplayUrl(fileUrl);
-        onLectureDataChange("", fileUrl, displayFileName);
-        saveUploadToStorage(targetLectureId, displayFileName, fileUrl);
+        onLectureDataChange("", fileUrl, displayFileName, uploadedMaterialId ?? null);
+        saveUploadToStorage(
+          targetLectureId,
+          displayFileName,
+          fileUrl,
+          uploadedMaterialId ?? null,
+        );
       } else {
         setUploadedFileDisplayUrl(previewUrl);
-        onLectureDataChange("", previewUrl, displayFileName);
-        saveUploadToStorage(targetLectureId, displayFileName, previewUrl);
+        onLectureDataChange("", previewUrl, displayFileName, uploadedMaterialId ?? null);
+        saveUploadToStorage(
+          targetLectureId,
+          displayFileName,
+          previewUrl,
+          uploadedMaterialId ?? null,
+        );
       }
 
       // 업로드 완료 메시지 추가
@@ -1027,40 +1084,72 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               </div>
               <div className="flex-1 min-w-0">
                 <label className="block text-[14px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>문항 수</label>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={
-                    examCountFieldFocused
-                      ? examCountDraft
-                      : String(examProps.examCount)
-                  }
-                  onFocus={() => {
-                    examCountFieldFocusedRef.current = true;
-                    setExamCountFieldFocused(true);
-                    setExamCountDraft(String(examProps.examCount));
-                  }}
-                  onChange={(e) => {
-                    if (!examCountFieldFocusedRef.current) return;
-                    setExamCountDraft(e.target.value);
-                  }}
-                  onBlur={(e) => {
-                    examCountFieldFocusedRef.current = false;
-                    setExamCountFieldFocused(false);
-                    commitExamQuestionCountInput(
-                      e.target.value,
-                      examProps.examType,
-                      examProps.setExamCount,
-                    );
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key !== "Enter") return;
-                    e.preventDefault();
-                    (e.currentTarget as HTMLInputElement).blur();
-                  }}
-                  className="w-full px-2 py-1.5 text-sm rounded-2xl border"
-                  style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}
-                />
+                <div className="flex gap-1 items-stretch min-w-0">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={
+                      examCountFieldFocused
+                        ? examCountDraft
+                        : String(examProps.examCount)
+                    }
+                    onFocus={() => {
+                      examCountFieldFocusedRef.current = true;
+                      setExamCountFieldFocused(true);
+                      setExamCountDraft(String(examProps.examCount));
+                    }}
+                    onChange={(e) => {
+                      if (!examCountFieldFocusedRef.current) return;
+                      setExamCountDraft(e.target.value.replace(/\D/g, ""));
+                    }}
+                    onBlur={(e) => {
+                      examCountFieldFocusedRef.current = false;
+                      setExamCountFieldFocused(false);
+                      commitExamQuestionCountInput(
+                        e.target.value,
+                        examProps.examType,
+                        examProps.setExamCount,
+                      );
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      (e.currentTarget as HTMLInputElement).blur();
+                    }}
+                    className="min-w-0 flex-1 px-2 py-1.5 text-sm rounded-2xl border"
+                    style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}
+                  />
+                  <div className="flex flex-col shrink-0 w-8 rounded-2xl border overflow-hidden" style={{ borderColor: isDarkMode ? "#52525b" : "#d1d5db" }}>
+                    <button
+                      type="button"
+                      aria-label="문항 수 1 증가"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => adjustExamQuestionCountByStep(1)}
+                      className="flex-1 px-0 text-sm font-medium leading-none border-b cursor-pointer"
+                      style={{
+                        backgroundColor: isDarkMode ? "#3f3f46" : "#f4f4f5",
+                        borderBottomColor: isDarkMode ? "#52525b" : "#d1d5db",
+                        color: isDarkMode ? "#FFFFFF" : "#141414",
+                      }}
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="문항 수 1 감소"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => adjustExamQuestionCountByStep(-1)}
+                      className="flex-1 px-0 text-sm font-medium leading-none cursor-pointer"
+                      style={{
+                        backgroundColor: isDarkMode ? "#3f3f46" : "#f4f4f5",
+                        color: isDarkMode ? "#FFFFFF" : "#141414",
+                      }}
+                    >
+                      −
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
             <div>
@@ -1069,8 +1158,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               </label>
               <input
                 type="text"
-                value={examProps.examDisplayName}
-                onChange={(e) => examProps.setExamDisplayName(e.target.value)}
+                value={localExamDisplayName}
+                onChange={(e) => setLocalExamDisplayName(e.target.value)}
                 placeholder="예: 개념 정리를 위한 플래시카드 · 중간고사 대비 암기용 문제 · 빠른 복습용 테스트"
                 className="block w-full px-2 py-1.5 text-sm rounded-2xl border m-0"
                 style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}
@@ -1080,8 +1169,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               <label className="block text-[14px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>주제</label>
               <textarea
                 rows={1}
-                value={examProps.examTopic}
-                onChange={(e) => examProps.setExamTopic(e.target.value)}
+                value={localExamTopic}
+                onChange={(e) => setLocalExamTopic(e.target.value)}
                 placeholder="이 시험이 다룰 내용"
                 className="block w-full px-2 py-1.5 text-sm rounded-2xl border resize-none m-0"
                 style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}
@@ -1262,8 +1351,13 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             </button>
             <button
               type="button"
-              onClick={examProps.onCreateExam}
-              disabled={examProps.submitting || !examProps.examTopic.trim()}
+              onClick={() =>
+                examProps.onCreateExam(
+                  localExamTopic.trim(),
+                  localExamDisplayName.trim(),
+                )
+              }
+              disabled={examProps.submitting || !localExamTopic.trim()}
               className={`shrink-0 px-3 py-1.5 text-sm rounded-2xl font-medium disabled:opacity-50 cursor-pointer transition-colors ${
                 isDarkMode ? "bg-[#FFFFFF] text-[#141414] hover:bg-white/90" : "bg-[#141414] text-white hover:bg-black"
               }`}

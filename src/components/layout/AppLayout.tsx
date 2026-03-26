@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { useNavigate, useParams, useLocation } from "react-router-dom";
+import { useNavigate, useParams, useLocation, useSearchParams } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import MainContent from "./MainContent.tsx";
 import TopNav from "./TopNav.tsx";
@@ -17,6 +17,7 @@ const AppLayout: React.FC = () => {
   const { isDarkMode } = useTheme();
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { courseId: courseIdParam } = useParams<{ courseId?: string }>();
   const selectedCourseId = courseIdParam
     ? (() => {
@@ -35,7 +36,12 @@ const AppLayout: React.FC = () => {
   } = useCourses();
 
   const [courseDetail, setCourseDetail] = useState<CourseDetail | null>(null);
-  const [isCourseDetailLoading, setIsCourseDetailLoading] = useState(false);
+  /** /courses/:id 직접 진입·새로고침 시 첫 프레임에 !detail && !loading 로 오류 UI가 깜빡이지 않도록 */
+  const [isCourseDetailLoading, setIsCourseDetailLoading] = useState(() => {
+    if (!courseIdParam) return false;
+    const p = Number(courseIdParam);
+    return Number.isFinite(p);
+  });
   const [courseDetailError, setCourseDetailError] = useState<string | null>(null);
 
   const [currentCourseId, setCurrentCourseId] = useState<number | null>(null);
@@ -88,6 +94,7 @@ const AppLayout: React.FC = () => {
 
   useEffect(() => {
     if (!selectedCourseId) {
+      setIsCourseDetailLoading(false);
       setCourseDetail(null);
       setCourseDetailError(null);
       setCurrentCourseId(null);
@@ -118,26 +125,66 @@ const AppLayout: React.FC = () => {
 
   useEffect(() => {
     if (!selectedCourseId || !courseDetail?.lectures?.length) return;
-    try {
-      const key = getLastLectureStorageKey(selectedCourseId);
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        const lectureId = Number(raw);
-        if (Number.isFinite(lectureId)) {
-          const exists = courseDetail.lectures.some((l) => l.lectureId === lectureId);
-          if (exists) {
-            setCurrentLectureId(lectureId);
-            return;
+
+    let lectureIdToUse: number | null = null;
+    const fromUrl = searchParams.get("lecture");
+    if (fromUrl) {
+      const n = Number(fromUrl);
+      if (
+        Number.isFinite(n) &&
+        courseDetail.lectures.some((l) => l.lectureId === n)
+      ) {
+        lectureIdToUse = n;
+      }
+    }
+
+    if (lectureIdToUse == null) {
+      try {
+        const key = getLastLectureStorageKey(selectedCourseId);
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const lectureId = Number(raw);
+          if (Number.isFinite(lectureId)) {
+            const exists = courseDetail.lectures.some(
+              (l) => l.lectureId === lectureId,
+            );
+            if (exists) lectureIdToUse = lectureId;
           }
         }
+      } catch {
+        // ignore
       }
-      // 저장된 강의가 없거나 유효하지 않으면 OT(0주차)로 진입
-      const otLecture = courseDetail.lectures.find((l) => l.weekNumber === 0);
-      if (otLecture) setCurrentLectureId(otLecture.lectureId);
-    } catch {
-      // ignore
     }
-  }, [selectedCourseId, courseDetail]);
+
+    if (lectureIdToUse == null) {
+      const otLecture = courseDetail.lectures.find((l) => l.weekNumber === 0);
+      if (otLecture) lectureIdToUse = otLecture.lectureId;
+    }
+
+    if (lectureIdToUse != null) {
+      setCurrentLectureId(lectureIdToUse);
+      const coursePath = `/courses/${selectedCourseId}`;
+      if (
+        pathname.startsWith(coursePath) &&
+        searchParams.get("lecture") !== String(lectureIdToUse)
+      ) {
+        setSearchParams(
+          (prev) => {
+            const next = new URLSearchParams(prev);
+            next.set("lecture", String(lectureIdToUse));
+            return next;
+          },
+          { replace: true },
+        );
+      }
+    }
+  }, [
+    selectedCourseId,
+    courseDetail,
+    searchParams,
+    pathname,
+    setSearchParams,
+  ]);
 
   const handleSelectCourse = (courseId: number) => {
     navigate(`/courses/${courseId}`);
@@ -203,6 +250,19 @@ const AppLayout: React.FC = () => {
       } catch {
         // ignore
       }
+    }
+    if (selectedCourseId != null && pathname.startsWith(`/courses/${selectedCourseId}`)) {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("lecture", String(lectureId));
+          next.delete("material");
+          next.delete("gen");
+          next.delete("exam");
+          return next;
+        },
+        { replace: true },
+      );
     }
   };
 
@@ -384,6 +444,12 @@ const AppLayout: React.FC = () => {
           selectedLectureId={currentLectureId}
           onSelectLecture={handleLectureSelect}
           onEditCourse={handleCourseEdit}
+          onUpdateCourse={updateCourse}
+          onReloadCourseDetail={async () => {
+            if (selectedCourseId != null) {
+              await loadCourseDetail(selectedCourseId);
+            }
+          }}
           onDeleteCourse={handleCourseDelete}
           onEditLecture={handleLectureEdit}
           onDeleteLecture={handleLectureDelete}

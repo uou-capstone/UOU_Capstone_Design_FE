@@ -1,11 +1,16 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
+import { common } from "lowlight";
 import { defaultSchema } from "hast-util-sanitize";
 import type { Components } from "react-markdown";
 import type { Schema } from "hast-util-sanitize";
+import { rehypeMarkEqualsHighlight } from "../../rehype/rehypeMarkEqualsHighlight";
+import { normalizeMarkdownInput } from "../../utils/normalizeMarkdown";
+import "highlight.js/styles/stackoverflow-dark.min.css";
 
 function escapeHtml(s: string): string {
   return s
@@ -16,8 +21,7 @@ function escapeHtml(s: string): string {
 }
 
 /**
- * `==핵심 내용==` → `<mark class="md-key">` (코드 펜스 ``` … ``` 안은 그대로 둠)
- * AI/작성자가 강조할 문장만 직접 표시할 때 사용.
+ * (선처리용) `==핵심 내용==` → `<mark>` HTML 삽입. 렌더링은 `rehypeMarkEqualsHighlight`가 담당.
  */
 export function applyHighlightMarkers(md: string): string {
   const parts = md.split(/(```[\s\S]*?```)/g);
@@ -35,8 +39,8 @@ export function applyHighlightMarkers(md: string): string {
 const markdownSanitizeSchema: Schema = {
   ...defaultSchema,
   /** 목차·스크롤 연동을 위해 헤딩 id 유지 (기본은 user-content- 접두사로 변조됨) */
-  clobber: defaultSchema.clobber.filter((p) => p !== "id"),
-  tagNames: [...defaultSchema.tagNames, "mark"],
+  clobber: (defaultSchema.clobber ?? []).filter((p) => p !== "id"),
+  tagNames: [...(defaultSchema.tagNames ?? []), "mark"],
   attributes: {
     ...defaultSchema.attributes,
     mark: [["className", "md-key"]],
@@ -84,14 +88,25 @@ const markdownBodyComponents: Components = {
   hr: () => (
     <hr className="my-10 border-0 border-t border-black/10 dark:border-white/12" />
   ),
+  /* 바깥 pre는 래퍼만: 테두리·배경 없음 (hljs 테마가 code 한 덩어리만 칠함 → 이중 박스 방지) */
+  pre: ({ children, className, ...props }) => (
+    <pre
+      {...props}
+      className={["my-4 max-w-full p-0 mx-0 bg-transparent border-0 shadow-none ring-0", className ?? ""]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {children}
+    </pre>
+  ),
 };
 
 type MarkdownContentProps = {
   children: string;
 };
 
-export function MarkdownContent({ children }: MarkdownContentProps) {
-  const source = applyHighlightMarkers(children);
+function MarkdownContentImpl({ children }: MarkdownContentProps) {
+  const source = normalizeMarkdownInput(children);
   const headingIdxRef = React.useRef(0);
   headingIdxRef.current = 0;
 
@@ -128,10 +143,19 @@ export function MarkdownContent({ children }: MarkdownContentProps) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
-      rehypePlugins={[rehypeRaw, [rehypeSanitize, markdownSanitizeSchema]]}
+      rehypePlugins={[
+        rehypeRaw,
+        rehypeMarkEqualsHighlight,
+        [rehypeSanitize, markdownSanitizeSchema],
+        // sanitize 이후에 적용: hljs span 삽입 (IDE 스타일 토큰 색)
+        [rehypeHighlight, { languages: common, detect: true, plainText: ["txt", "text", "plain"] }],
+      ]}
       components={components}
     >
       {source}
     </ReactMarkdown>
   );
 }
+
+/** 부모가 자주 리렌더되어도 children(마크다운 문자열)이 같으면 재파싱·재렌더 생략 */
+export const MarkdownContent = React.memo(MarkdownContentImpl);

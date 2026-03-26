@@ -3,10 +3,12 @@ import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
 import { visit } from "unist-util-visit";
 import type { Heading, PhrasingContent, Root } from "mdast";
+import { normalizeMarkdownInput } from "./normalizeMarkdown";
 
 /** 마크다운 인라인 표식을 목차 라벨에서 제거 (표시용) */
 export function stripInlineMdForToc(s: string): string {
   return s
+    .replace(/==([^=\n]+)==/g, "$1")
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/\*([^*]+)\*/g, "$1")
     .replace(/__([^_]+)__/g, "$1")
@@ -42,7 +44,10 @@ function plainFromPhrasing(nodes: PhrasingContent[]): string {
  */
 export function parseMarkdownToc(md: string): MarkdownTocItem[] {
   if (!md || !md.trim()) return [];
-  const tree = unified().use(remarkParse).use(remarkGfm).parse(md) as Root;
+  const tree = unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .parse(normalizeMarkdownInput(md)) as Root;
   const items: MarkdownTocItem[] = [];
   let n = 0;
   visit(tree, "heading", (node: Heading) => {

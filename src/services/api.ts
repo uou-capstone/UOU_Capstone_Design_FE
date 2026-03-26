@@ -101,6 +101,39 @@ export interface CourseContentsLectureExamSession {
   createdAt: string;
   /** 목록 표시 이름. 없으면 FE에서 `${examType} · N문항`으로 표시 */
   displayName?: string | null;
+  /** 시험 출제 기준 업로드 PDF(material). BE가 내려주면 자료별 목록 필터에 사용 */
+  sourceMaterialId?: number | null;
+  sourceGenerationSessionId?: number | null;
+}
+
+/** GET /courses/.../contents 시험 항목에서 자료 식별자 추출 (camelCase·snake_case·구 필드 호환) */
+export function readCourseExamSessionResourceIds(
+  raw: CourseContentsLectureExamSession & Record<string, unknown>,
+): {
+  sourceMaterialId?: number;
+  sourceGenerationSessionId?: number;
+} {
+  const num = (x: unknown): number | undefined =>
+    typeof x === "number" && Number.isFinite(x) ? x : undefined;
+  const mid =
+    num(raw.sourceMaterialId) ??
+    num(raw.source_material_id) ??
+    num(raw.materialId) ??
+    num(raw.material_id);
+  const gid =
+    num(raw.sourceGenerationSessionId) ??
+    num(raw.source_generation_session_id) ??
+    num(raw.materialGenerationSessionId) ??
+    num(raw.material_generation_session_id) ??
+    num(raw.generationSessionId) ??
+    num(raw.generation_session_id);
+  const out: {
+    sourceMaterialId?: number;
+    sourceGenerationSessionId?: number;
+  } = {};
+  if (mid != null) out.sourceMaterialId = mid;
+  if (gid != null) out.sourceGenerationSessionId = gid;
+  return out;
 }
 
 export interface CourseContentsLecture {
@@ -1725,6 +1758,10 @@ export interface ExamGenerationRequest {
   lectureContent: string;
   topic?: string;
   userProfile?: ExamUserProfile;
+  /** 출제 기준 업로드 PDF (선택). BE가 저장·목록 필터에 반영 */
+  sourceMaterialId?: number;
+  /** 출제 기준 AI 생성 문서 세션 (선택) */
+  sourceGenerationSessionId?: number;
 }
 
 export interface ExamGenerationResponse {
@@ -1744,6 +1781,13 @@ export interface ExamGenerationAsyncRequest {
   userProfile?: ExamUserProfile;
   /** 시험 목록 표시용 이름(선택). 미전달 시 BE 기본 규칙에 따름 */
   displayName?: string;
+  sourceMaterialId?: number;
+  sourceGenerationSessionId?: number;
+  /**
+   * 업로드 PDF 미리보기 기준 출제 시: 사용자가 보고 있는 페이지(1-based).
+   * BE가 해당 필드를 지원하면 이 페이지 범위만 출제에 사용할 수 있음.
+   */
+  sourcePdfPage?: number;
 }
 
 export interface ExamGenerationAsyncResponse {
@@ -1946,6 +1990,14 @@ function buildExamGenerationBody(payload: ExamGenerationRequest): string {
   };
   if (payload.topic != null && payload.topic !== '') body.topic = payload.topic;
   if (payload.userProfile != null) body.userProfile = payload.userProfile;
+  if (payload.sourceMaterialId != null) {
+    body.sourceMaterialId = payload.sourceMaterialId;
+    body.source_material_id = payload.sourceMaterialId;
+  }
+  if (payload.sourceGenerationSessionId != null) {
+    body.sourceGenerationSessionId = payload.sourceGenerationSessionId;
+    body.source_generation_session_id = payload.sourceGenerationSessionId;
+  }
   return JSON.stringify(body);
 }
 
@@ -1961,9 +2013,32 @@ export const examGenerationApi = {
     });
   },
   runAsync: async (payload: ExamGenerationAsyncRequest): Promise<ExamGenerationAsyncResponse> => {
+    const body: Record<string, unknown> = { ...payload };
+    if (payload.sourceMaterialId != null) {
+      body.source_material_id = payload.sourceMaterialId;
+    }
+    if (payload.sourceGenerationSessionId != null) {
+      body.source_generation_session_id = payload.sourceGenerationSessionId;
+    }
+    if (
+      payload.sourcePdfPage != null &&
+      Number.isFinite(payload.sourcePdfPage) &&
+      payload.sourcePdfPage >= 1
+    ) {
+      const p = Math.floor(payload.sourcePdfPage);
+      body.sourcePdfPage = p;
+      body.source_pdf_page = p;
+      body.pageNumber = p;
+      body.page_number = p;
+      body.page = p;
+    }
+    /** 목록 표시명: snake_case 바인딩만 쓰는 BE 대비 (camelCase는 spread로 이미 포함) */
+    if (payload.displayName != null && String(payload.displayName).trim() !== "") {
+      body.display_name = String(payload.displayName).trim();
+    }
     return apiRequest<ExamGenerationAsyncResponse>('/api/exams/generation/async', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
   },
   generateProfile: async (payload: ExamProfileGenerationRequest): Promise<ExamProfileGenerationResponse> => {
