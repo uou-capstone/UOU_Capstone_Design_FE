@@ -1239,6 +1239,15 @@ interface LearningSessionState {
   lectureId: number;
 }
 
+export interface IntegratedLearningMessage {
+  type: string;
+  text: string;
+  waitingForAnswer?: boolean;
+  questionId?: string;
+  final?: boolean;
+  raw?: Record<string, unknown>;
+}
+
 export const lectureMaterialApi = {
   // 파일 업로드 및 강의 자료 생성
   uploadAndGenerate: async (file: File): Promise<LectureMaterialResponse> => {
@@ -1361,7 +1370,8 @@ export const materialGenerationApi = {
 
   /**
    * Phase N 스트리밍 (GET /api/materials/generation/phaseN/stream?sessionId=...)
-   * SSE 또는 청크 스트림으로 진행률·내용을 실시간 수신. 인증 필요.
+   * 인증이 필요하므로 SSE도 EventSource가 아닌 fetch + ReadableStream(`iterateSseDataPayloadsFromResponse`)로 수신.
+   * 비-SSE 응답은 동일하게 fetch 본문을 reader로 읽는다.
    */
   streamPhase: (
     sessionId: number,
@@ -1395,6 +1405,40 @@ export const materialGenerationApi = {
         }
         const contentType = (res.headers.get("Content-Type") || "").toLowerCase();
         const isSSE = contentType.includes("text/event-stream");
+        if (isSSE) {
+          try {
+            for await (const eventData of iterateSseDataPayloadsFromResponse(res, {
+              signal: abortController.signal,
+            })) {
+              if (cancelled) break;
+              try {
+                const data = eventData ? (JSON.parse(eventData) as Record<string, unknown>) : {};
+                if (data.finalDocument != null || data.documentUrl != null) {
+                  callbacks.onDone?.({
+                    finalDocument: typeof data.finalDocument === "string" ? data.finalDocument : undefined,
+                    documentUrl: typeof data.documentUrl === "string" ? data.documentUrl : undefined,
+                  });
+                } else if (data.progressPercentage != null || data.message != null || data.currentPhase != null) {
+                  callbacks.onProgress?.({
+                    progressPercentage: typeof data.progressPercentage === "number" ? data.progressPercentage : undefined,
+                    message: typeof data.message === "string" ? data.message : undefined,
+                    currentPhase: typeof data.currentPhase === "string" ? data.currentPhase : undefined,
+                  });
+                } else if (typeof data.chunk === "string") {
+                  callbacks.onContent?.(data.chunk);
+                }
+              } catch {
+                /* ignore parse error for non-JSON lines */
+              }
+            }
+          } catch (e) {
+            if (!cancelled && e instanceof Error && e.name !== "AbortError") {
+              callbacks.onError?.(e);
+            }
+          }
+          return;
+        }
+
         const reader = res.body?.getReader();
         if (!reader) {
           callbacks.onError?.(new Error("스트림 본문을 읽을 수 없습니다."));
@@ -1406,40 +1450,10 @@ export const materialGenerationApi = {
           const { done, value } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
-          if (isSSE) {
-            const lines = buffer.split("\n");
-            buffer = lines.pop() ?? "";
-            let eventData = "";
-            for (const line of lines) {
-              if (line.startsWith("data:")) {
-                try {
-                  eventData = line.slice(5).trim();
-                  const data = eventData ? (JSON.parse(eventData) as Record<string, unknown>) : {};
-                  if (data.finalDocument != null || data.documentUrl != null) {
-                    callbacks.onDone?.({
-                      finalDocument: typeof data.finalDocument === "string" ? data.finalDocument : undefined,
-                      documentUrl: typeof data.documentUrl === "string" ? data.documentUrl : undefined,
-                    });
-                  } else if (data.progressPercentage != null || data.message != null || data.currentPhase != null) {
-                    callbacks.onProgress?.({
-                      progressPercentage: typeof data.progressPercentage === "number" ? data.progressPercentage : undefined,
-                      message: typeof data.message === "string" ? data.message : undefined,
-                      currentPhase: typeof data.currentPhase === "string" ? data.currentPhase : undefined,
-                    });
-                  } else if (typeof data.chunk === "string") {
-                    callbacks.onContent?.(data.chunk);
-                  }
-                } catch {
-                  /* ignore parse error for non-JSON lines */
-                }
-              }
-            }
-          } else {
-            callbacks.onContent?.(buffer);
-            buffer = "";
-          }
+          callbacks.onContent?.(buffer);
+          buffer = "";
         }
-        if (buffer.trim() && !isSSE) callbacks.onContent?.(buffer);
+        if (buffer.trim()) callbacks.onContent?.(buffer);
       } catch (e) {
         if (!cancelled && e instanceof Error && e.name !== "AbortError") callbacks.onError?.(e);
       }
@@ -1476,6 +1490,170 @@ export const monitoringApi = {
 
 const learningSessionByLecture = new Map<number, LearningSessionState>();
 
+/**
+ * 인증(Authorization) 헤더가 필요한 SSE는 브라우저 `EventSource`로 설정할 수 없다.
+ * `fetch` 후 `Response.body`(ReadableStream)에서 `getReader()`로 읽고 `data:` 줄만 파싱한다.
+ */
+async function* iterateSseDataPayloadsFromResponse(
+  response: Response,
+  options?: { signal?: AbortSignal },
+): AsyncGenerator<string, void, undefined> {
+  const stream = response.body;
+  if (!stream) return;
+
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      if (options?.signal?.aborted) {
+        await reader.cancel();
+        return;
+      }
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n");
+      buffer = parts.pop() ?? "";
+      for (const rawLine of parts) {
+        const line = rawLine.replace(/\r$/, "").trimEnd();
+        if (!line.startsWith("data:")) continue;
+        yield line.slice("data:".length).trimStart();
+      }
+    }
+
+    const tail = buffer.replace(/\r$/, "").trimEnd();
+    if (tail.startsWith("data:")) {
+      yield tail.slice("data:".length).trimStart();
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/** Spring `Flux<ServerSentEvent>` / 표준 SSE: `event:` + `data:` 블록이 빈 줄(`\\n\\n`)로 구분됨 */
+type LegacyLectureNextSseYield =
+  | { kind: "delta"; text: string; raw: Record<string, unknown> }
+  | { kind: "done"; payload: Record<string, unknown> }
+  | { kind: "error"; message: string; raw?: Record<string, unknown> };
+
+function consumeDoubleNewlineBlock(buffer: string): { block: string; rest: string } | null {
+  const rn = buffer.indexOf("\r\n\r\n");
+  const n = buffer.indexOf("\n\n");
+  let end = -1;
+  let sep = 2;
+  if (rn !== -1 && (n === -1 || rn <= n)) {
+    end = rn;
+    sep = 4;
+  } else if (n !== -1) {
+    end = n;
+    sep = 2;
+  } else {
+    return null;
+  }
+  return { block: buffer.slice(0, end), rest: buffer.slice(end + sep) };
+}
+
+function mapLegacyNextSseBlock(eventName: string, dataJoined: string): LegacyLectureNextSseYield[] {
+  const ev = eventName.trim().toLowerCase();
+  let parsed: Record<string, unknown> | null = null;
+  if (dataJoined.trim()) {
+    try {
+      parsed = JSON.parse(dataJoined) as Record<string, unknown>;
+    } catch {
+      if (ev === "error") {
+        return [{ kind: "error", message: dataJoined.trim() }];
+      }
+      return [{ kind: "delta", text: dataJoined, raw: { type: "delta", delta: dataJoined } }];
+    }
+  } else {
+    parsed = {};
+  }
+
+  const t = String(parsed?.type ?? "").toLowerCase();
+  if (ev === "error" || t === "error") {
+    const msg =
+      pickFirstString(parsed ?? {}, ["message", "error"]) ?? "스트림 오류";
+    return [{ kind: "error", message: msg, raw: parsed ?? undefined }];
+  }
+  if (ev === "done" || t === "done") {
+    return [{ kind: "done", payload: parsed ?? {} }];
+  }
+
+  const delta =
+    pickFirstString(parsed ?? {}, ["delta", "text", "content", "chunk"]) ?? "";
+  if (delta) {
+    return [{ kind: "delta", text: delta, raw: parsed ?? {} }];
+  }
+  if (t === "delta") {
+    return [{ kind: "delta", text: "", raw: parsed ?? {} }];
+  }
+  return [];
+}
+
+async function* iterateLegacyLectureNextSse(
+  response: Response,
+  options?: { signal?: AbortSignal },
+): AsyncGenerator<LegacyLectureNextSseYield, void, undefined> {
+  const stream = response.body;
+  if (!stream) return;
+
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const flushBlock = function* (block: string): Generator<LegacyLectureNextSseYield, void, undefined> {
+    let ev = "";
+    const dataLines: string[] = [];
+    for (const rawLine of block.split(/\r?\n/)) {
+      const line = rawLine.replace(/\r$/, "");
+      if (line.startsWith("event:")) {
+        ev = line.slice("event:".length).trim();
+        continue;
+      }
+      if (line.startsWith("data:")) {
+        dataLines.push(line.slice("data:".length).trimStart());
+        continue;
+      }
+    }
+    const dataJoined = dataLines.join("\n");
+    for (const y of mapLegacyNextSseBlock(ev, dataJoined)) {
+      yield y;
+    }
+  };
+
+  try {
+    while (true) {
+      if (options?.signal?.aborted) {
+        await reader.cancel();
+        return;
+      }
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      for (;;) {
+        const consumed = consumeDoubleNewlineBlock(buffer);
+        if (!consumed) break;
+        buffer = consumed.rest;
+        if (consumed.block.trim()) {
+          for (const y of flushBlock(consumed.block)) {
+            yield y;
+          }
+        }
+      }
+    }
+    const tail = buffer.trim();
+    if (tail) {
+      for (const y of flushBlock(buffer)) {
+        yield y;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 const normalizeSseData = (value: unknown): Record<string, unknown> | null => {
   if (value == null) return null;
   if (typeof value === "object") return value as Record<string, unknown>;
@@ -1509,10 +1687,13 @@ const ensureLearningSession = async (lectureId: number, pdfPath?: string): Promi
   const cached = learningSessionByLecture.get(lectureId);
   if (cached) return cached;
 
-  const query = pdfPath ? `?pdfPath=${encodeURIComponent(pdfPath)}` : "";
-  const raw = await apiRequest<Record<string, unknown>>(`/api/learning/sessions/${lectureId}${query}`, {
-    method: "POST",
-  });
+  const query = pdfPath ? `?pdf_path=${encodeURIComponent(pdfPath)}` : "";
+  const raw = await apiRequest<Record<string, unknown>>(
+    `/api/v3/session/by-lecture/${encodeURIComponent(lectureId)}${query}`,
+    {
+      method: "GET",
+    },
+  );
 
   const rawSessionId = raw.session_id ?? raw.sessionId;
   if (rawSessionId == null) {
@@ -1525,24 +1706,36 @@ const ensureLearningSession = async (lectureId: number, pdfPath?: string): Promi
 
 const postLearningEventAndCollect = async (
   sessionId: string,
-  eventBody: Record<string, unknown>,
+  eventBody: {
+    type: string;
+    lectureId?: number;
+    payload?: Record<string, unknown>;
+  },
   lectureId?: number
 ): Promise<Record<string, unknown>[]> => {
-  const endpoint =
-    lectureId != null
-      ? `/api/learning/sessions/${encodeURIComponent(sessionId)}/event?lectureId=${encodeURIComponent(lectureId)}`
-      : `/api/learning/sessions/${encodeURIComponent(sessionId)}/event`;
+  const endpoint = `/api/v3/session/${encodeURIComponent(sessionId)}/event/stream`;
   const token = getAuthToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    Accept: "text/event-stream",
+    Accept: "application/x-ndjson, text/event-stream",
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
+  const requestBody: Record<string, unknown> = {
+    type: eventBody.type,
+    payload: eventBody.payload ?? {},
+  };
+  if (eventBody.lectureId != null) {
+    requestBody.lecture_id = eventBody.lectureId;
+  } else if (lectureId != null) {
+    requestBody.lecture_id = lectureId;
+  }
+
+  // EventSource는 Authorization 헤더를 붙일 수 없으므로 fetch + ReadableStream.
   const res = await fetch(`${API_BASE_URL}${endpoint}`, {
     method: "POST",
     headers,
-    body: JSON.stringify(eventBody),
+    body: JSON.stringify(requestBody),
     mode: "cors",
     credentials: "omit",
   });
@@ -1566,8 +1759,10 @@ const postLearningEventAndCollect = async (
 
     for (const rawLine of lines) {
       const line = rawLine.trim();
-      if (!line.startsWith("data:")) continue;
-      const payload = line.slice(5).trim();
+      if (!line) continue;
+      const payload = line.startsWith("data:")
+        ? line.slice(5).trim()
+        : line;
       const parsed = normalizeSseData(payload);
       if (!parsed) continue;
       const eventType = String(parsed.type ?? "");
@@ -1580,6 +1775,13 @@ const postLearningEventAndCollect = async (
         return events;
       }
     }
+  }
+
+  const tail = buffer.trim();
+  if (tail.length > 0) {
+    const payload = tail.startsWith("data:") ? tail.slice(5).trim() : tail;
+    const parsed = normalizeSseData(payload);
+    if (parsed) events.push(parsed);
   }
 
   return events;
@@ -1637,6 +1839,308 @@ const mapLearningEventsToNextResponse = (
   };
 };
 
+const mapLearningEventsToIntegratedMessages = (
+  events: Record<string, unknown>[],
+): IntegratedLearningMessage[] => {
+  const out: IntegratedLearningMessage[] = [];
+  for (const event of events) {
+    const type = String(event.type ?? event.event ?? "message").toLowerCase();
+    if (type === "heartbeat") continue;
+    const payload =
+      (event.payload as Record<string, unknown> | undefined) ?? {};
+    const text =
+      pickFirstString(event, [
+        "delta",
+        "content",
+        "message",
+        "text",
+        "answer",
+        "main",
+        "thought",
+      ]) ??
+      pickFirstString(payload, [
+        "delta",
+        "content",
+        "message",
+        "text",
+        "answer",
+        "main",
+        "thought",
+      ]) ??
+      "";
+    const doneData =
+      event.data != null && typeof event.data === "object"
+        ? (event.data as Record<string, unknown>)
+        : {};
+    const doneUi =
+      doneData.ui != null && typeof doneData.ui === "object"
+        ? (doneData.ui as Record<string, unknown>)
+        : {};
+    const widget = pickFirstString(doneUi, ["widget"]);
+    const modal = pickFirstString(doneUi, ["modal"]);
+    const doneUiText =
+      widget != null
+        ? `다음 단계: ${widget}`
+        : modal != null
+          ? `선택 필요: ${modal}`
+          : "";
+    out.push({
+      type,
+      text: text || doneUiText,
+      waitingForAnswer:
+        toBool(event.waiting_for_answer ?? event.waitingForAnswer) ?? false,
+      questionId: pickFirstString(event, [
+        "ai_question_id",
+        "aiQuestionId",
+        "question_id",
+        "questionId",
+      ]),
+      final: toBool(event.final) ?? type === "done",
+      raw: event,
+    });
+  }
+  return out;
+};
+
+const unwrapLegacyLecturePayload = (raw: unknown): Record<string, unknown> => {
+  if (!raw || typeof raw !== "object") return {};
+  const o = raw as Record<string, unknown>;
+  if (o.data != null && typeof o.data === "object" && !Array.isArray(o.data)) {
+    return { ...o, ...(o.data as Record<string, unknown>) };
+  }
+  return o;
+};
+
+const normalizeLegacyStreamNext = (raw: unknown, lectureId: number): StreamNextResponse => {
+  const r = unwrapLegacyLecturePayload(raw);
+  return {
+    status: String(r.status ?? "OK"),
+    lectureId: Number(r.lectureId ?? r.lecture_id ?? lectureId),
+    contentType: String(r.contentType ?? r.content_type ?? "SCRIPT") as ContentType | string,
+    contentData: String(r.contentData ?? r.content_data ?? r.message ?? r.text ?? ""),
+    chapterTitle: pickFirstString(r, ["chapterTitle", "chapter_title"]),
+    hasMore: toBool(r.hasMore ?? r.has_more) ?? false,
+    waitingForAnswer: toBool(r.waitingForAnswer ?? r.waiting_for_answer) ?? false,
+    aiQuestionId: pickFirstString(r, ["aiQuestionId", "ai_question_id", "questionId", "question_id"]),
+  };
+};
+
+/** GET /stream/next SSE 마지막 `done` 이벤트 + 누적 delta → StreamNextResponse */
+const legacySseDoneToStreamNext = (
+  done: Record<string, unknown>,
+  lectureId: number,
+  accumulatedDelta: string,
+): StreamNextResponse => {
+  const waiting = toBool(done.waitingForAnswer ?? done.waiting_for_answer) ?? false;
+  const statusRaw = String(done.status ?? "").toUpperCase();
+  const status =
+    statusRaw === "WAITING_FOR_ANSWER" || waiting
+    ? "WAITING_FOR_ANSWER"
+    : String(done.status ?? "COMPLETED");
+  return {
+    status,
+    lectureId: Number(done.lectureId ?? done.lecture_id ?? lectureId),
+    contentType: String(done.contentType ?? done.content_type ?? "SCRIPT") as ContentType | string,
+    contentData:
+      accumulatedDelta.trim().length > 0
+        ? accumulatedDelta
+        : String(done.contentData ?? done.content_data ?? ""),
+    chapterTitle: pickFirstString(done, ["chapterTitle", "chapter_title"]),
+    hasMore: toBool(done.hasMore ?? done.has_more) ?? false,
+    waitingForAnswer: waiting,
+    aiQuestionId: pickFirstString(done, ["aiQuestionId", "ai_question_id", "questionId", "question_id"]),
+  };
+};
+
+function buildLectureLegacyStreamNextUrl(
+  lectureId: number,
+  query: { pageNumber?: string; page?: string; userMessage?: string },
+): string {
+  const path = `/api/lectures/${encodeURIComponent(lectureId)}/stream/next`;
+  const sp = new URLSearchParams();
+  if (query.pageNumber != null && query.pageNumber !== "") {
+    sp.set("pageNumber", query.pageNumber);
+  }
+  if (query.page != null && query.page !== "") {
+    sp.set("page", query.page);
+  }
+  if (query.userMessage != null && query.userMessage !== "") {
+    sp.set("userMessage", query.userMessage);
+  }
+  const qs = sp.toString();
+  const withQuery = qs ? `${path}?${qs}` : path;
+  const isDevHost =
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+  if (isDevHost && withQuery.startsWith("/api")) return withQuery;
+  return `${String(API_BASE_URL).replace(/\/$/, "")}${withQuery}`;
+}
+
+/**
+ * 강의 AI Legacy (`/api/lectures/{lectureId}/stream/*`).
+ * - `stream/next`: GET + `text/event-stream` (Spring SSE `message` / `done` / `error`), fetch+ReadableStream
+ * - 그 외: 기존 initialize/answer/cancel 등 POST/GET
+ */
+export const lectureAiLegacyStreamApi = {
+  getSession: async (lectureId: number): Promise<StreamSessionState> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/lectures/${encodeURIComponent(lectureId)}/stream/session`,
+      { method: "GET" },
+    );
+    const r = unwrapLegacyLecturePayload(raw);
+    return {
+      status: String(r.status ?? "ACTIVE"),
+      lectureId: Number(r.lectureId ?? r.lecture_id ?? lectureId),
+      serviceStatus: "LEGACY_STREAM",
+      chapters: r.chapters as Record<string, unknown> | undefined,
+      createdAt:
+        typeof r.createdAt === "string"
+          ? r.createdAt
+          : typeof r.created_at === "string"
+            ? r.created_at
+            : undefined,
+      updatedAt:
+        typeof r.updatedAt === "string"
+          ? r.updatedAt
+          : typeof r.updated_at === "string"
+            ? r.updated_at
+            : undefined,
+      error:
+        (r.error as Record<string, unknown> | null | undefined) === undefined
+          ? null
+          : (r.error as Record<string, unknown> | null),
+    };
+  },
+  initialize: async (
+    lectureId: number,
+    options?: { pageNumber?: number; materialId?: number },
+  ): Promise<StreamInitializeResponse> => {
+    const body: Record<string, unknown> = {};
+    if (options?.pageNumber != null) {
+      body.pageNumber = options.pageNumber;
+      body.page = options.pageNumber;
+    }
+    if (options?.materialId != null) {
+      body.materialId = options.materialId;
+    }
+    const raw = await apiRequest<unknown>(
+      `/api/lectures/${encodeURIComponent(lectureId)}/stream/initialize`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+    const r = unwrapLegacyLecturePayload(raw);
+    const chaptersRaw = r.chapters;
+    const chapters = Array.isArray(chaptersRaw)
+      ? (chaptersRaw as Array<Record<string, unknown>>).map((c) => ({
+          title: String(c.title ?? ""),
+          startPage: Number(c.startPage ?? c.start_page ?? 0),
+          endPage: Number(c.endPage ?? c.end_page ?? 0),
+        }))
+      : [];
+    return {
+      status: String(r.status ?? "ACTIVE"),
+      lectureId: Number(r.lectureId ?? r.lecture_id ?? lectureId),
+      totalChapters: Number(r.totalChapters ?? r.total_chapters ?? chapters.length),
+      chapters,
+    };
+  },
+  /**
+   * GET `text/event-stream` — Spring SSE(`message`/`done`/`error`).
+   * EventSource 대신 fetch + ReadableStream + Authorization.
+   */
+  next: async (
+    lectureId: number,
+    options?: {
+      pageNumber?: number;
+      userMessage?: string | null;
+      signal?: AbortSignal;
+      /** NDJSON 청크마다 호출 → 타이핑 UX */
+      onDelta?: (chunk: string) => void;
+    },
+  ): Promise<StreamNextResponse> => {
+    const page = options?.pageNumber;
+    const um = options?.userMessage?.trim();
+    const url = buildLectureLegacyStreamNextUrl(lectureId, {
+      ...(page != null ? { page: String(page), pageNumber: String(page) } : {}),
+      ...(um ? { userMessage: um } : {}),
+    });
+    const token = getAuthToken();
+    const headers: Record<string, string> = {
+      Accept: "text/event-stream",
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(url, {
+      method: "GET",
+      headers,
+      mode: "cors",
+      credentials: "omit",
+      signal: options?.signal,
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(`API Error (${res.status}): ${t || "stream/next 요청 실패"}`);
+    }
+    let accumulated = "";
+    let lastDone: Record<string, unknown> | null = null;
+    for await (const ev of iterateLegacyLectureNextSse(res, { signal: options?.signal })) {
+      if (ev.kind === "delta") {
+        if (ev.text) {
+          accumulated += ev.text;
+          options?.onDelta?.(ev.text);
+        }
+      } else if (ev.kind === "done") {
+        lastDone = ev.payload;
+        break;
+      } else {
+        throw new Error(ev.message);
+      }
+    }
+    if (lastDone) {
+      return legacySseDoneToStreamNext(lastDone, lectureId, accumulated);
+    }
+    return normalizeLegacyStreamNext(
+      {
+        status: "COMPLETED",
+        type: "done",
+        lectureId,
+        contentData: accumulated,
+        hasMore: false,
+        waitingForAnswer: false,
+      },
+      lectureId,
+    );
+  },
+  answer: async (
+    lectureId: number,
+    payload: StreamAnswerRequest,
+  ): Promise<StreamAnswerResponse> => {
+    const raw = await apiRequest<unknown>(
+      `/api/lectures/${encodeURIComponent(lectureId)}/stream/answer`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+    const r = unwrapLegacyLecturePayload(raw);
+    return {
+      status: String(r.status ?? "COMPLETED"),
+      lectureId: Number(r.lectureId ?? r.lecture_id ?? lectureId),
+      aiQuestionId: String(r.aiQuestionId ?? r.ai_question_id ?? payload.aiQuestionId),
+      question: pickFirstString(r, ["question", "questionText", "question_text"]),
+      chapterTitle: pickFirstString(r, ["chapterTitle", "chapter_title"]),
+      canContinue: toBool(r.canContinue ?? r.can_continue) ?? true,
+      supplementary:
+        typeof r.supplementary === "string"
+          ? r.supplementary
+          : typeof r.supplementaryContent === "string"
+            ? r.supplementaryContent
+            : undefined,
+    };
+  },
+  cancel: async (lectureId: number): Promise<void> => {
+    await apiRequest(`/api/lectures/${encodeURIComponent(lectureId)}/stream/cancel`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  },
+};
+
 // 스트리밍 학습 세션 API (v3 통합 세션 기반)
 export const streamingApi = {
   getSession: async (lectureId: number): Promise<StreamSessionState> => {
@@ -1656,6 +2160,8 @@ export const streamingApi = {
       session.sessionId,
       {
         type: "SESSION_ENTERED",
+        lectureId,
+        payload: {},
       },
       lectureId
     );
@@ -1669,12 +2175,17 @@ export const streamingApi = {
   next: async (lectureId: number, options?: { pageNumber?: number }): Promise<StreamNextResponse> => {
     const session = await ensureLearningSession(lectureId);
     const eventType = options?.pageNumber != null ? "PAGE_CHANGED" : "NEXT_PAGE_DECISION";
-    const body: Record<string, unknown> = { type: eventType };
+    const payload: Record<string, unknown> = {};
     if (options?.pageNumber != null) {
-      body.page = options.pageNumber;
-      body.pageNumber = options.pageNumber;
+      payload.page = options.pageNumber;
+    } else {
+      payload.accept = true;
     }
-    const events = await postLearningEventAndCollect(session.sessionId, body, lectureId);
+    const events = await postLearningEventAndCollect(
+      session.sessionId,
+      { type: eventType, lectureId, payload },
+      lectureId,
+    );
     return mapLearningEventsToNextResponse(lectureId, events);
   },
   answer: async (lectureId: number, payload: StreamAnswerRequest): Promise<StreamAnswerResponse> => {
@@ -1683,8 +2194,11 @@ export const streamingApi = {
       session.sessionId,
       {
         type: "QUIZ_SUBMITTED",
-        aiQuestionId: payload.aiQuestionId,
-        answer: payload.answer,
+        lectureId,
+        payload: {
+          aiQuestionId: payload.aiQuestionId,
+          answer: payload.answer,
+        },
       },
       lectureId
     );
@@ -1699,7 +2213,47 @@ export const streamingApi = {
     const session = learningSessionByLecture.get(lectureId);
     if (!session) return;
     try {
-      await postLearningEventAndCollect(session.sessionId, { type: "SAVE_AND_EXIT" }, lectureId);
+      await postLearningEventAndCollect(
+        session.sessionId,
+        { type: "SAVE_AND_EXIT", lectureId, payload: {} },
+        lectureId,
+      );
+    } finally {
+      learningSessionByLecture.delete(lectureId);
+    }
+  },
+};
+
+export const integratedLearningApi = {
+  openSession: async (
+    lectureId: number,
+    options?: { pdfPath?: string },
+  ): Promise<{ sessionId: string; lectureId: number }> => {
+    const s = await ensureLearningSession(lectureId, options?.pdfPath);
+    return { sessionId: s.sessionId, lectureId: s.lectureId };
+  },
+  sendEvent: async (
+    lectureId: number,
+    sessionId: string,
+    eventType: string,
+    payload?: Record<string, unknown>,
+  ): Promise<IntegratedLearningMessage[]> => {
+    const events = await postLearningEventAndCollect(
+      sessionId,
+      { type: eventType, lectureId, payload: payload ?? {} },
+      lectureId,
+    );
+    return mapLearningEventsToIntegratedMessages(events);
+  },
+  closeSession: async (lectureId: number): Promise<void> => {
+    const session = learningSessionByLecture.get(lectureId);
+    if (!session) return;
+    try {
+      await postLearningEventAndCollect(
+        session.sessionId,
+        { type: "SAVE_AND_EXIT", lectureId, payload: {} },
+        lectureId,
+      );
     } finally {
       learningSessionByLecture.delete(lectureId);
     }
@@ -2089,4 +2643,149 @@ export const examGenerationApi = {
         : obj;
     return normalizeExamShortAnswerGradeResponse(inner);
   },
+};
+
+/** 강의 보조 SSE — 레거시 BE에는 없을 수 있음. 프론트는 `lectureAiLegacyStreamApi` 사용 권장. */
+export type LectureAssistantStreamMode = "explain_page" | "answer_followup";
+
+export interface LectureAssistantStreamRequestBody {
+  materialId: number;
+  pageNumber: number;
+  mode: LectureAssistantStreamMode;
+  userMessage?: string | null;
+}
+
+export interface LectureAssistantStreamCallbacks {
+  onThoughtDelta?: (chunk: string) => void;
+  onThoughtComplete?: () => void;
+  onAnswerDelta?: (chunk: string) => void;
+  onDone?: () => void;
+  onError?: (err: Error) => void;
+}
+
+function dispatchAssistantSsePayload(
+  parsed: Record<string, unknown>,
+  cbs: LectureAssistantStreamCallbacks,
+): "done" | "error" | "continue" {
+  const type = String(parsed.type ?? parsed.event ?? "").toLowerCase();
+  const delta = pickFirstString(parsed, ["delta", "text", "content", "chunk"]) ?? "";
+
+  if (type === "error" || typeof parsed.error === "string") {
+    const msg = pickFirstString(parsed, ["message", "error"]) ?? "스트림 오류";
+    cbs.onError?.(new Error(msg));
+    return "error";
+  }
+  if (type === "done" || toBool(parsed.final) === true) {
+    cbs.onDone?.();
+    return "done";
+  }
+  if (
+    type === "thought_done" ||
+    type === "thinking_complete" ||
+    type === "thought_complete" ||
+    (type.includes("thought") && type.includes("complete"))
+  ) {
+    cbs.onThoughtComplete?.();
+    return "continue";
+  }
+  if (
+    (type === "thought" ||
+      type === "thinking" ||
+      type === "thought_delta" ||
+      type.includes("thought")) &&
+    delta
+  ) {
+    cbs.onThoughtDelta?.(delta);
+    return "continue";
+  }
+  if (
+    delta &&
+    (type === "answer" ||
+      type === "content" ||
+      type === "message" ||
+      type === "delta" ||
+      type === "")
+  ) {
+    cbs.onAnswerDelta?.(delta);
+    return "continue";
+  }
+  if (delta) {
+    cbs.onAnswerDelta?.(delta);
+  }
+  return "continue";
+}
+
+/**
+ * 강의 보조 SSE — `EventSource` 대신 `fetch`(Authorization 가능) +
+ * `iterateSseDataPayloadsFromResponse`(ReadableStream)로 수신한다.
+ * `data: {...json}` 줄 단위. type: thought|thought_done|answer|done|error, delta 권장.
+ */
+export const streamLectureAssistant = (
+  lectureId: number,
+  body: LectureAssistantStreamRequestBody,
+  callbacks: LectureAssistantStreamCallbacks,
+): (() => void) => {
+  const isDevHost =
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+  const path = `/api/lectures/${encodeURIComponent(lectureId)}/assistant/stream`;
+  const url =
+    isDevHost && path.startsWith("/api")
+      ? path
+      : `${String(API_BASE_URL).replace(/\/$/, "")}${path}`;
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const ac = new AbortController();
+  let cancelled = false;
+
+  void (async () => {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+        mode: "cors",
+        credentials: "omit",
+        signal: ac.signal,
+      });
+      if (!res.ok) {
+        const t = await res.text();
+        throw new Error(
+          `API Error (${res.status}): ${t || "강의 보조 스트림 요청 실패"}`,
+        );
+      }
+      for await (const payload of iterateSseDataPayloadsFromResponse(res, {
+        signal: ac.signal,
+      })) {
+        if (cancelled) return;
+        if (!payload) continue;
+        if (payload === "[DONE]") {
+          callbacks.onDone?.();
+          return;
+        }
+        let parsed: Record<string, unknown>;
+        try {
+          parsed = JSON.parse(payload) as Record<string, unknown>;
+        } catch {
+          callbacks.onAnswerDelta?.(payload);
+          continue;
+        }
+        const r = dispatchAssistantSsePayload(parsed, callbacks);
+        if (r === "done" || r === "error") return;
+      }
+      if (!cancelled) callbacks.onDone?.();
+    } catch (e) {
+      if (cancelled || (e instanceof Error && e.name === "AbortError")) return;
+      callbacks.onError?.(e instanceof Error ? e : new Error(String(e)));
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+    ac.abort();
+  };
 };

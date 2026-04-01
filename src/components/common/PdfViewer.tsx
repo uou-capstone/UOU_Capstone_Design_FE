@@ -1,4 +1,11 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, {
+  useState,
+  useCallback,
+  useRef,
+  useEffect,
+  forwardRef,
+  useImperativeHandle,
+} from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import { useTheme } from "../../contexts/ThemeContext";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -13,20 +20,36 @@ const ABSOLUTE_MAX_ZOOM = 3;
 const ZOOM_STEP = 0.1;
 const MAX_PAGE_WIDTH = 1200;
 
+export type PdfViewerPageChangeSource = "user" | "programmatic";
+
+export type PdfViewerHandle = {
+  /** 1-based. 프로그램적 이동(강의 보조·동기화)용 */
+  goToPage: (pageNumber: number) => void;
+};
+
 interface PdfViewerProps {
   fileUrl: string;
   title?: string;
   className?: string;
   /** 현재 보고 있는 페이지 변경 시 호출 (1-based 페이지 번호) */
-  onPageChange?: (pageNumber: number) => void;
+  onPageChange?: (
+    pageNumber: number,
+    meta?: { source: PdfViewerPageChangeSource },
+  ) => void;
+  /** 문서 로드 완료 시 총 페이지 수 전달 (다음 페이지 버튼 등 상위 로직용) */
+  onDocumentLoad?: (info: { numPages: number }) => void;
 }
 
-const PdfViewer: React.FC<PdfViewerProps> = ({
+const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer(
+  {
   fileUrl,
   title,
   className = "",
   onPageChange,
-}) => {
+  onDocumentLoad,
+},
+  ref,
+) {
   const { isDarkMode } = useTheme();
   const [numPages, setNumPages] = useState<number | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -87,9 +110,10 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       setNumPages(n);
       setCurrentPage(1);
       setPageInput("1");
-      onPageChange?.(1);
+      onDocumentLoad?.({ numPages: n });
+      onPageChange?.(1, { source: "programmatic" });
     },
-    [onPageChange]
+    [onPageChange, onDocumentLoad]
   );
 
   // PDF 로드 시 세로가 길어 잘리는 경우 배율 자동 조정 (세로 기준 fit) + 한 페이지만 보이도록
@@ -135,19 +159,29 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   }, [numPages, fileUrl, baseWidth]);
 
   const scrollToPage = useCallback(
-    (page: number) => {
+    (page: number, source: PdfViewerPageChangeSource = "programmatic") => {
       if (!numPages || page < 1 || page > numPages) return;
       scrollProgrammaticRef.current = true;
       const el = scrollRef.current?.querySelector(`[data-page="${page}"]`) as HTMLElement | null;
       el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
       setCurrentPage(page);
       setPageInput(String(page));
-      onPageChange?.(page);
+      onPageChange?.(page, { source });
       setTimeout(() => {
         scrollProgrammaticRef.current = false;
       }, 600);
     },
     [numPages, onPageChange]
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      goToPage: (pageNumber: number) => {
+        scrollToPage(pageNumber, "programmatic");
+      },
+    }),
+    [scrollToPage],
   );
 
   // 방향키(←/→)로 페이지 이동
@@ -164,10 +198,10 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       }
       if (e.key === "ArrowLeft") {
         e.preventDefault();
-        scrollToPage(currentPage - 1);
+        scrollToPage(currentPage - 1, "user");
       } else if (e.key === "ArrowRight") {
         e.preventDefault();
-        scrollToPage(currentPage + 1);
+        scrollToPage(currentPage + 1, "user");
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
         setZoom((z) => Math.min(z + ZOOM_STEP, ABSOLUTE_MAX_ZOOM));
@@ -247,7 +281,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
             observerDebounceRef.current = null;
             setCurrentPage(best.page);
             setPageInput(String(best.page));
-            onPageChange(best.page);
+            onPageChange(best.page, { source: "user" });
           }, 100);
         }
       },
@@ -270,7 +304,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   const handlePageInputSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const n = parseInt(pageInput, 10);
-    if (Number.isFinite(n)) scrollToPage(n);
+    if (Number.isFinite(n)) scrollToPage(n, "user");
   };
 
   const handleOpenInNewTab = () => {
@@ -335,7 +369,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
         >
           <button
             type="button"
-            onClick={() => scrollToPage(currentPage - 1)}
+            onClick={() => scrollToPage(currentPage - 1, "user")}
             disabled={currentPage <= 1}
             className="p-1.5 rounded hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40 transition-opacity"
             aria-label="이전 페이지"
@@ -362,7 +396,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
           </form>
           <button
             type="button"
-            onClick={() => scrollToPage(currentPage + 1)}
+            onClick={() => scrollToPage(currentPage + 1, "user")}
             disabled={currentPage >= numPages}
             className="p-1.5 rounded hover:opacity-80 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:opacity-40 transition-opacity"
             aria-label="다음 페이지"
@@ -516,6 +550,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       </div>
     </div>
   );
-};
+});
 
 export default PdfViewer;
