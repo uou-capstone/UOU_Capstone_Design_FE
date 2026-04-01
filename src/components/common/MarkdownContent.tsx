@@ -1,7 +1,9 @@
 import React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
 import rehypeHighlight from "rehype-highlight";
+import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
 import { common } from "lowlight";
@@ -11,6 +13,7 @@ import type { Schema } from "hast-util-sanitize";
 import { rehypeMarkEqualsHighlight } from "../../rehype/rehypeMarkEqualsHighlight";
 import { normalizeMarkdownInput } from "../../utils/normalizeMarkdown";
 import "highlight.js/styles/stackoverflow-dark.min.css";
+import "katex/dist/katex.min.css";
 
 function escapeHtml(s: string): string {
   return s
@@ -40,10 +43,16 @@ const markdownSanitizeSchema: Schema = {
   ...defaultSchema,
   /** 목차·스크롤 연동을 위해 헤딩 id 유지 (기본은 user-content- 접두사로 변조됨) */
   clobber: (defaultSchema.clobber ?? []).filter((p) => p !== "id"),
-  tagNames: [...(defaultSchema.tagNames ?? []), "mark"],
+  tagNames: [...(defaultSchema.tagNames ?? []), "mark", "span"],
   attributes: {
     ...defaultSchema.attributes,
     mark: [["className", "md-key"]],
+    // remark-math가 만든 code.math-inline / code.math-display가 sanitize에서 지워지지 않도록 유지
+    code: [
+      ["className", "language-math", "math-inline", "math-display"],
+    ],
+    // KaTeX 렌더 결과(span.katex, span.katex-display 등) 보존
+    span: [["className"]],
   },
 };
 
@@ -142,11 +151,12 @@ function MarkdownContentImpl({ children }: MarkdownContentProps) {
 
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkMath]}
       rehypePlugins={[
         rehypeRaw,
         rehypeMarkEqualsHighlight,
         [rehypeSanitize, markdownSanitizeSchema],
+        rehypeKatex,
         // sanitize 이후에 적용: hljs span 삽입 (IDE 스타일 토큰 색)
         [rehypeHighlight, { languages: common, detect: true, plainText: ["txt", "text", "plain"] }],
       ]}

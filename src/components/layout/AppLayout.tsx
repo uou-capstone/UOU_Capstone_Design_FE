@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate, useParams, useLocation, useSearchParams } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import MainContent from "./MainContent.tsx";
@@ -47,6 +47,10 @@ const AppLayout: React.FC = () => {
   const [currentCourseId, setCurrentCourseId] = useState<number | null>(null);
   const [currentLectureId, setCurrentLectureId] = useState<number | null>(null);
   const [previewFileName, setPreviewFileName] = useState<string | null>(null);
+  const viewerBackHandlerRef = useRef<(() => void) | null>(null);
+  const registerViewerBackHandler = useCallback((fn: (() => void) | null) => {
+    viewerBackHandlerRef.current = fn;
+  }, []);
 
   // 메뉴 상태 관리 (메인 페이지일 때만 사용) - 기본은 "강의"
   const [selectedMenu, setSelectedMenu] = useState<MenuItem>("lectures");
@@ -194,6 +198,11 @@ const AppLayout: React.FC = () => {
     setSelectedMenu("lectures");
     navigate("/");
   };
+
+  const handleBackFromPreview = useCallback(() => {
+    setSelectedMenu("lectures");
+    viewerBackHandlerRef.current?.();
+  }, []);
 
   const handleCourseCreated = (_course: CourseDetail) => {
     fetchCourses();
@@ -429,7 +438,7 @@ const AppLayout: React.FC = () => {
           navigate("/report");
         }}
         previewFileName={previewFileName}
-        onBackFromPreview={() => window.dispatchEvent(new Event("back-from-preview"))}
+        onBackFromPreview={handleBackFromPreview}
       />
       <div className="flex-1 min-h-0 min-w-0 flex overflow-hidden">
         <MainContent
@@ -457,6 +466,7 @@ const AppLayout: React.FC = () => {
           onLectureCreated={handleLectureCreated}
           selectedMenu={selectedMenu}
           onPreviewStateChange={setPreviewFileName}
+          registerViewerBackHandler={registerViewerBackHandler}
         />
       </div>
     </div>

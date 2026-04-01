@@ -30,6 +30,38 @@ function unescapeCommonLiteralEscapes(s: string): string {
     .replace(/\\t/g, "\t");
 }
 
+/**
+ * LLM이 자주 쓰는 평문 수식 표기를 KaTeX가 읽을 수 있는 형태로 자동 보정.
+ * - O(n^2), Θ(n log n), Ω(2^n) 같은 점근 표기
+ * - n^2, 2^n 같은 거듭제곱 토큰
+ * 주의: 인라인 코드(`...`) 내부는 제외.
+ */
+function autoWrapPlainMathNotation(s: string): string {
+  const parts = s.split(/(`[^`\n]*`)/g);
+  return parts
+    .map((chunk) => {
+      if (chunk.startsWith("`") && chunk.endsWith("`")) return chunk;
+      let out = chunk;
+
+      // 이미 $...$ 안에 있는 경우 중복 래핑을 피하기 위한 간단한 가드
+      // (대부분의 일반 텍스트 상황에서 충분)
+      out = out.replace(
+        /(^|[^\w$\\])([OΘΩ])\(([^)\n]+)\)(?!\$)/g,
+        (_m, prefix: string, sym: string, inner: string) =>
+          `${prefix}$${sym}(${inner})$`,
+      );
+
+      out = out.replace(
+        /(^|[^\w$\\])([A-Za-z]\w*|\d+)\^(\{[^}\n]+\}|[A-Za-z0-9+\-])(?!\$)/g,
+        (_m, prefix: string, base: string, exp: string) =>
+          `${prefix}$${base}^${exp}$`,
+      );
+
+      return out;
+    })
+    .join("");
+}
+
 export function normalizeMarkdownInput(md: string): string {
   const parts = md.split(/(```[\s\S]*?```)/g);
   return parts
@@ -38,6 +70,7 @@ export function normalizeMarkdownInput(md: string): string {
       let s = unescapeCommonLiteralEscapes(chunk);
       s = normalizeUnicodePunctuation(s);
       s = splitGluedBoldAfterLabel(s);
+      s = autoWrapPlainMathNotation(s);
       return s;
     })
     .join("");

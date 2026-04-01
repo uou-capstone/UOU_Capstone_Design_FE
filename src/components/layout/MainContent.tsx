@@ -27,7 +27,7 @@ import {
 import RightSidebar from "./RightSidebar";
 import SettingsPage from "../pages/SettingsPage";
 import ReportPage from "../pages/ReportPage";
-import PdfViewer from "../common/PdfViewer";
+import PdfViewer, { type PdfViewerHandle } from "../common/PdfViewer";
 import { CloseIcon, EditIcon, TrashIcon } from "../common/Icons";
 
 type ViewMode = "course-list" | "course-detail";
@@ -71,6 +71,26 @@ type ResourcePreviewSnapshot = {
 type ExamResourceFilter =
   | { kind: "material"; materialId: number }
   | { kind: "generation"; sessionId: number };
+
+/** 강의 리소스 그리드: PDF·마크다운(인라인) 및 동일 취급 API 경로만 노출 */
+function isPdfOrMarkdownResourceItem(item: CenterItem): boolean {
+  if (item.type !== "material") return false;
+  if (
+    typeof item.finalDocument === "string" &&
+    item.finalDocument.trim().length > 0
+  ) {
+    return true;
+  }
+  const url = (item.fileUrl ?? "").trim();
+  if (!url) return false;
+  const lower = url.toLowerCase();
+  const path = lower.split("?")[0].split("#")[0];
+  if (path.endsWith(".pdf") || path.endsWith(".md")) return true;
+  if (/\/api\/materials\/\d+\/file\b/i.test(url)) return true;
+  if (/\/materials\/\d+\/file\b/i.test(url)) return true;
+  if (/\/materials\/generation\/\d+\/document\b/i.test(url)) return true;
+  return false;
+}
 
 function parseGenerationSessionIdFromMaterialItem(item: CenterItem): number | null {
   if (item.generationSessionId != null) return item.generationSessionId;
@@ -127,7 +147,14 @@ function resolveMaterialIdFromSidebarSync(
   for (const mat of mats) {
     if (mat.materialId == null) continue;
     if (fileUrl && mat.fileUrl && mat.fileUrl === fileUrl) return mat.materialId;
-    if (nameTrim && mat.title === nameTrim) return mat.materialId;
+  }
+  // 제목만으로는 동일 제목 자료가 여러 개일 때 첫 항목이 잘못 선택될 수 있어, 유일할 때만 매칭
+  if (nameTrim) {
+    const byTitle = mats.filter(
+      (mat) =>
+        mat.materialId != null && (mat.title || "").trim() === nameTrim,
+    );
+    if (byTitle.length === 1) return byTitle[0].materialId!;
   }
   return null;
 }
@@ -683,6 +710,8 @@ interface MainContentProps {
   onCourseCreated?: (course: CourseDetail) => void;
   onLectureCreated?: (lecture: LectureResponseDto) => void;
   onPreviewStateChange?: (fileName: string | null) => void;
+  /** TopNav 미리보기 뒤로가기 → MainContent가 동기적으로 미리보기/시험만 닫도록 연결 */
+  registerViewerBackHandler?: (fn: (() => void) | null) => void;
 }
 
 const MainContent: React.FC<MainContentProps> = ({
@@ -706,6 +735,7 @@ const MainContent: React.FC<MainContentProps> = ({
   onLectureCreated,
   selectedMenu = "lectures",
   onPreviewStateChange,
+  registerViewerBackHandler,
 }) => {
   const { isDarkMode } = useTheme();
   const { user } = useAuth();
@@ -846,13 +876,29 @@ const MainContent: React.FC<MainContentProps> = ({
     null,
   );
 
+  /** 시험 출처: materialId 상태 우선, 없으면 미리보기 URL(/api/materials/{id}/file)에서 복구 */
+  const examSourceMaterialId = React.useMemo(() => {
+    if (
+      previewMaterialId != null &&
+      Number.isFinite(previewMaterialId) &&
+      previewMaterialId > 0
+    ) {
+      return previewMaterialId;
+    }
+    if (typeof previewFileUrl === "string" && previewFileUrl.length > 0) {
+      const fromUrl = parseMaterialIdFromMaterialFileUrl(previewFileUrl);
+      if (fromUrl != null) return fromUrl;
+    }
+    return null;
+  }, [previewMaterialId, previewFileUrl]);
+
   const activeExamResourceFilter = React.useMemo(
     () =>
       buildActiveExamResourceFilter(
-        previewMaterialId,
+        examSourceMaterialId,
         previewLinkedGenerationSessionId,
       ),
-    [previewMaterialId, previewLinkedGenerationSessionId],
+    [examSourceMaterialId, previewLinkedGenerationSessionId],
   );
 
   const examsForActiveResource = React.useMemo(() => {
@@ -866,6 +912,9 @@ const MainContent: React.FC<MainContentProps> = ({
   React.useEffect(() => {
     if (!previewBlobUrl) setPreviewCurrentPdfPage(null);
   }, [previewBlobUrl]);
+  React.useEffect(() => {
+    if (!previewBlobUrl) setUserPdfNav(null);
+  }, [previewBlobUrl]);
   /** AI 강의자료 생성 문서는 MD로 불러와 마크다운 뷰로 표시 */
   const [previewMarkdownContent, setPreviewMarkdownContent] = React.useState<
     string | null
@@ -877,12 +926,22 @@ const MainContent: React.FC<MainContentProps> = ({
   >(null);
   const [previewRetryKey, setPreviewRetryKey] = React.useState(0);
   const previewMarkdownScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const pdfViewerRef = React.useRef<PdfViewerHandle | null>(null);
+  const [userPdfNav, setUserPdfNav] = React.useState<{
+    page: number;
+    at: number;
+  } | null>(null);
   const [rightSidebarWidth, setRightSidebarWidth] = React.useState(400);
 
   // 시험 세션 상세 보기 모달 상태
   const [examDetailSessionId, setExamDetailSessionId] = React.useState<
     string | null
   >(null);
+  /** TopNav 뒤로가기 등에서 최신 세션 ID를 읽기 위해 (effect 의존성에 넣으면 시험 열 때마다 재실행되는 버그 방지) */
+  const examDetailSessionIdRef = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    examDetailSessionIdRef.current = examDetailSessionId;
+  }, [examDetailSessionId]);
   /** X로 닫은 직후 URL 쿼리가 한박자 남았을 때 딥링크 복구가 시험을 다시 열지 않도록 */
   const suppressedExamSessionForUrlRestoreRef = React.useRef<string | null>(
     null,
@@ -1032,9 +1091,11 @@ const MainContent: React.FC<MainContentProps> = ({
     let objectUrl: string | null = null;
     const id = previewMaterialId;
     const fileName = previewFileName;
+    let ignore = false;
     materialApi
       .getMaterialFile(id)
       .then(async (blob) => {
+        if (ignore) return;
         const type = (blob.type || "").toLowerCase();
         const isHtml =
           type.includes("text/html") || type.includes("application/xhtml");
@@ -1049,23 +1110,33 @@ const MainContent: React.FC<MainContentProps> = ({
           (typeof fileName === "string" && /\.md$/i.test(fileName));
         if (isMarkdown) {
           const text = await blob.text();
+          if (ignore) return;
           setPreviewMarkdownContent(text);
           setPreviewLoadError(false);
           setPreviewErrorMessage(null);
           return;
         }
         objectUrl = URL.createObjectURL(blob);
+        if (ignore) {
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+          return;
+        }
         setPreviewBlobUrl((prev) => {
           if (prev) URL.revokeObjectURL(prev);
           return objectUrl;
         });
       })
       .catch((e) => {
+        if (ignore) return;
         setPreviewLoadError(true);
         setPreviewErrorMessage(e instanceof Error ? e.message : null);
       })
-      .finally(() => setPreviewLoading(false));
+      .finally(() => {
+        if (!ignore) setPreviewLoading(false);
+      });
     return () => {
+      ignore = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [previewMaterialId, previewRetryKey, previewFileName]);
@@ -1350,9 +1421,9 @@ const MainContent: React.FC<MainContentProps> = ({
   }, [courseDetail?.courseId]);
 
   const sortedItems = React.useMemo(() => {
-    const lectureId = selectedLectureId ?? 0;
-    const materials: CenterItem[] =
+    const rawMaterials: CenterItem[] =
       (selectedLectureId ? localMaterials[selectedLectureId] : []) ?? [];
+    const materials = rawMaterials.filter(isPdfOrMarkdownResourceItem);
     const fromAssessments: CenterItem[] = assessments.map((a) => ({
       id: `assessment-${a.assessmentId}`,
       type: "assessment" as const,
@@ -2430,7 +2501,7 @@ const MainContent: React.FC<MainContentProps> = ({
       return;
     }
     const resourceFilter = buildActiveExamResourceFilter(
-      previewMaterialId,
+      examSourceMaterialId,
       previewLinkedGenerationSessionId,
     );
     if (resourceFilter == null) {
@@ -2574,7 +2645,7 @@ const MainContent: React.FC<MainContentProps> = ({
     examType,
     examCount,
     examsForActiveResource,
-    previewMaterialId,
+    examSourceMaterialId,
     previewLinkedGenerationSessionId,
     previewBlobUrl,
     previewCurrentPdfPage,
@@ -2598,6 +2669,7 @@ const MainContent: React.FC<MainContentProps> = ({
 
   const openExamSessionDetail = React.useCallback(
     async (sessionId: string, navTitle?: string | null) => {
+      suppressedExamSessionForUrlRestoreRef.current = null;
       const hadResourcePreview =
         previewFileUrl != null || previewMaterialId != null;
       if (hadResourcePreview) {
@@ -2615,8 +2687,7 @@ const MainContent: React.FC<MainContentProps> = ({
         (prev) => {
           const next = new URLSearchParams(prev);
           next.set("exam", String(sessionId));
-          next.delete("material");
-          next.delete("gen");
+          /* PDF/자료 맥락 유지: material·gen 제거 시 URL 복원이 깨져 리소스 목록으로 보이는 문제 방지 */
           return next;
         },
         { replace: true },
@@ -2625,6 +2696,7 @@ const MainContent: React.FC<MainContentProps> = ({
       setPreviewFileName(t.length > 0 ? t : "시험");
       setPreviewIsAiGenerationDoc(false);
       setExamDetailSessionId(sessionId);
+      examDetailSessionIdRef.current = sessionId;
       setExamDetail(null);
       setExamDetailError(null);
       setExamDetailLoading(true);
@@ -2684,6 +2756,7 @@ const MainContent: React.FC<MainContentProps> = ({
       { replace: true },
     );
     setExamDetailSessionId(null);
+    examDetailSessionIdRef.current = null;
     setExamDetail(null);
     setExamDetailError(null);
     setExamDetailLoading(false);
@@ -2744,17 +2817,40 @@ const MainContent: React.FC<MainContentProps> = ({
     clearResourceParamsInUrl();
   }, [closeExamSessionDetail, clearResourceParamsInUrl]);
 
+  const closeExamSessionDetailRef = React.useRef(closeExamSessionDetail);
   React.useEffect(() => {
-    const handleBack = () => exitPreviewAndExamViewer();
-    window.addEventListener("back-from-preview", handleBack);
-    return () => window.removeEventListener("back-from-preview", handleBack);
+    closeExamSessionDetailRef.current = closeExamSessionDetail;
+  }, [closeExamSessionDetail]);
+
+  const exitPreviewAndExamViewerRef = React.useRef(exitPreviewAndExamViewer);
+  React.useEffect(() => {
+    exitPreviewAndExamViewerRef.current = exitPreviewAndExamViewer;
   }, [exitPreviewAndExamViewer]);
 
-  /** 강의실 목록/홈으로 나가면 시험·뷰어 state가 남지 않도록 초기화 */
+  React.useEffect(() => {
+    const handleBack = () => exitPreviewAndExamViewerRef.current();
+    window.addEventListener("back-from-preview", handleBack);
+    return () => window.removeEventListener("back-from-preview", handleBack);
+  }, []);
+
+  React.useEffect(() => {
+    if (!registerViewerBackHandler) return;
+    const run = () => {
+      if (examDetailSessionIdRef.current != null) {
+        closeExamSessionDetailRef.current();
+      } else {
+        exitPreviewAndExamViewerRef.current();
+      }
+    };
+    registerViewerBackHandler(run);
+    return () => registerViewerBackHandler(null);
+  }, [registerViewerBackHandler]);
+
+  /** 강의실 목록(/ 홈)으로만 나갈 때 뷰어 정리 — exitPreview identity 변경 때마다 호출되면 안 됨 */
   React.useEffect(() => {
     if (viewMode !== "course-list") return;
-    exitPreviewAndExamViewer();
-  }, [viewMode, exitPreviewAndExamViewer]);
+    exitPreviewAndExamViewerRef.current();
+  }, [viewMode]);
 
   const handleExamSessionRecoverOpen = React.useCallback(() => {
     if (!selectedLectureId) {
@@ -3101,7 +3197,7 @@ const MainContent: React.FC<MainContentProps> = ({
       (e) => String(e.examSessionId) === String(examDetailSessionId),
     );
     const materialId =
-      previewMaterialId ??
+      examSourceMaterialId ??
       thisExam?.sourceMaterialId ??
       mats.find((m) => m.materialId != null)?.materialId ??
       null;
@@ -3169,7 +3265,7 @@ const MainContent: React.FC<MainContentProps> = ({
     selectedLectureId,
     localMaterials,
     localExams,
-    previewMaterialId,
+    examSourceMaterialId,
     examDetailSessionId,
   ]);
 
@@ -3220,6 +3316,10 @@ const MainContent: React.FC<MainContentProps> = ({
 
   const handleCardClick = React.useCallback(
     (item: CenterItem) => {
+      if (item.type === "exam" && item.examSessionId) {
+        void openExamSessionDetail(item.examSessionId, item.title ?? null);
+        return;
+      }
       if (item.materialId != null) {
         setPreviewMaterialId(item.materialId);
         setPreviewFileUrl(null);
@@ -3253,9 +3353,6 @@ const MainContent: React.FC<MainContentProps> = ({
         return;
       }
       if (item.fileUrl) {
-        setPreviewFileUrl(item.fileUrl);
-        setPreviewMaterialId(null);
-        setPreviewFileName(item.title || null);
         const genDoc =
           item.fileUrl.includes("materials/generation") &&
           item.fileUrl.includes("/document");
@@ -3263,6 +3360,17 @@ const MainContent: React.FC<MainContentProps> = ({
         setPreviewIsAiGenerationDoc(genDoc);
         setPreviewLinkedGenerationSessionId(sid);
         const mid = parseMaterialIdFromMaterialFileUrl(item.fileUrl);
+        // URL에 material id가 있으면 상태를 materialId 기준으로 통일(시험 source와 미리보기 blob이 동일 출처)
+        if (mid != null && !genDoc) {
+          setPreviewMaterialId(mid);
+          setPreviewFileUrl(null);
+          setPreviewFileName(item.title || null);
+          patchResourceInUrl({ material: mid });
+          return;
+        }
+        setPreviewFileUrl(item.fileUrl);
+        setPreviewMaterialId(null);
+        setPreviewFileName(item.title || null);
         if (mid != null) patchResourceInUrl({ material: mid });
         else if (sid != null) patchResourceInUrl({ gen: sid });
         else patchResourceInUrl({});
@@ -3280,9 +3388,6 @@ const MainContent: React.FC<MainContentProps> = ({
       if (item.assessmentId) {
         window.alert(`평가 상세 (ID: ${item.assessmentId}) - 연동 예정`);
         return;
-      }
-      if (item.examSessionId) {
-        void openExamSessionDetail(item.examSessionId, item.title ?? null);
       }
     },
     [
@@ -3924,6 +4029,12 @@ const MainContent: React.FC<MainContentProps> = ({
                   >
                     <div className="min-w-0 flex items-center">
                       <h2 className="text-sm font-semibold leading-none truncate">
+                        {previewFileName?.trim() || "시험"}
+                      </h2>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 min-w-0">
+                      <p className="text-xs opacity-80 leading-none truncate max-w-[min(220px,40vw)]">
+                        유형:{" "}
                         {(() => {
                           const type = String(examDetail?.examType ?? "").toUpperCase();
                           if (type === "FLASH_CARD") return "플래시카드";
@@ -3931,14 +4042,8 @@ const MainContent: React.FC<MainContentProps> = ({
                           if (type === "FIVE_CHOICE") return "객관식";
                           if (type === "SHORT_ANSWER") return "주관식";
                           if (type === "DEBATE") return "토론형";
-                          return examDetail?.examType || "시험";
+                          return examDetail?.examType || "-";
                         })()}
-                      </h2>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0 min-w-0">
-                      <p className="text-xs opacity-80 leading-none truncate max-w-[min(220px,40vw)]">
-                        세션 ID: {examDetailSessionId}
-                        {examDetail?.examType && ` · 유형: ${examDetail.examType}`}
                       </p>
                       {(examDetail?.oxProblems?.length ?? 0) > 0 && (
                         <ExamSectionViewModeToggle
@@ -5078,10 +5183,16 @@ const MainContent: React.FC<MainContentProps> = ({
               ) : previewBlobUrl ? (
                 <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
                   <PdfViewer
+                    ref={pdfViewerRef}
                     fileUrl={previewBlobUrl}
                     title={previewFileName || "자료 미리보기"}
                     className="min-h-[calc(100vh-110px)]"
-                    onPageChange={(page) => setPreviewCurrentPdfPage(page)}
+                    onPageChange={(page, meta) => {
+                      setPreviewCurrentPdfPage(page);
+                      if (meta?.source === "user") {
+                        setUserPdfNav({ page, at: Date.now() });
+                      }
+                    }}
                   />
                 </div>
               ) : null}
@@ -5113,6 +5224,12 @@ const MainContent: React.FC<MainContentProps> = ({
               viewMode="course-detail"
               courseDetail={courseDetail}
               previewCurrentPdfPage={previewCurrentPdfPage}
+              assistantMaterialId={previewMaterialId}
+              assistantPdfActive={
+                Boolean(previewBlobUrl) && previewMarkdownContent == null
+              }
+              goToPdfPage={(page) => pdfViewerRef.current?.goToPage(page)}
+              userPdfNav={userPdfNav}
               onLectureDataChange={(_, fileUrl, fileName, materialIdOpt) => {
                 if (fileUrl) {
                   setPreviewFileUrl(fileUrl);
@@ -5398,7 +5515,7 @@ const MainContent: React.FC<MainContentProps> = ({
                 {sortedItems.map((item) => {
                   const selectable =
                     isTeacher &&
-                    (item.type === "material" || item.type === "exam");
+                    (item.type === "material" || item.type === "assessment");
                   const checked = !!bulkSelectedIds[item.id];
                   return (
                     <div

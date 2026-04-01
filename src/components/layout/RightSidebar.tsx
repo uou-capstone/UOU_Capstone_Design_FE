@@ -1,9 +1,11 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { CloseIcon, EditIcon, TrashIcon } from "../common/Icons";
 import { useParams } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { MarkdownContent } from "../common/MarkdownContent";
+import { useLectureAssistantChat } from "../../hooks/useLectureAssistantChat";
+import { useIntegratedLearningChat } from "../../hooks/useIntegratedLearningChat";
 import {
   lectureApi,
   getAuthToken,
@@ -16,14 +18,26 @@ import {
 
 interface ChatMessage {
   id: number;
-  text: string;
+  text?: string;
   isUser: boolean;
   file?: File;
   isLoading?: boolean;
   markdown?: string;
+  roleBadge?: string;
+  assistantVariant?: "educational" | "orchestrator" | "system";
+  thoughtSummary?: string;
+  thoughtExpanded?: boolean;
+  thoughtFinished?: boolean;
+  actionButtons?: {
+    id: string;
+    label: string;
+    variant?: "primary" | "muted";
+  }[];
 }
 
 type ViewMode = "course-list" | "course-detail";
+type LearningTab = "study" | "integrated";
+const INTEGRATED_BETA_NOTICE_SEEN_KEY = "integrated_learning_beta_notice_seen_v1";
 
 function examTypeMaxQuestionCount(examType: string): number {
   if (examType === "FLASH_CARD") return 30;
@@ -121,6 +135,12 @@ interface RightSidebarProps {
   courseDetail?: CourseDetail | null;
   /** PDF 미리보기 시 사용자가 현재 보고 있는 페이지 (1-based). BE API 호출 시 전달 가능 */
   previewCurrentPdfPage?: number | null;
+  /** PDF 기반 강의 보조(페이지 설명)용 materialId */
+  assistantMaterialId?: number | null;
+  /** PDF 미리보기 중이고 마크다운 뷰가 아닐 때만 true */
+  assistantPdfActive?: boolean;
+  goToPdfPage?: (page: number) => void;
+  userPdfNav?: { page: number; at: number } | null;
   /** 강의 상세에서 시험 만들기 시 오른쪽 패널에 프로필 설정 UI 표시 */
   examProps?: RightSidebarExamProps | null;
 }
@@ -133,6 +153,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   viewMode,
   courseDetail,
   previewCurrentPdfPage,
+  assistantMaterialId,
+  assistantPdfActive,
+  goToPdfPage,
+  userPdfNav,
   examProps,
 }) => {
   const { isDarkMode } = useTheme();
@@ -166,6 +190,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   /** 시험 이름·주제: 부모(MainContent)로 끌어올리지 않고 로컬에서만 관리 → 마크다운 미리보기 전체 리렌더 방지 */
   const [localExamTopic, setLocalExamTopic] = useState("");
   const [localExamDisplayName, setLocalExamDisplayName] = useState("");
+  const [learningTab, setLearningTab] = useState<LearningTab>("study");
+  const [showIntegratedBetaNotice, setShowIntegratedBetaNotice] =
+    useState(false);
   useEffect(() => {
     if (!examProps?.examMode) {
       examCountFieldFocusedRef.current = false;
@@ -173,26 +200,25 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     }
   }, [examProps?.examMode]);
 
-  const adjustExamQuestionCountByStep = useCallback(
-    (delta: number) => {
-      if (!examProps?.examMode) return;
-      const upper = examTypeMaxQuestionCount(examProps.examType);
-      let base = examProps.examCount;
-      if (examCountFieldFocusedRef.current) {
-        const t = examCountDraft.trim();
-        if (t !== "") {
-          const n = Number.parseInt(t, 10);
-          if (Number.isFinite(n)) base = n;
-        }
-      }
-      const next = Math.min(upper, Math.max(1, base + delta));
-      examProps.setExamCount(next);
-      if (examCountFieldFocusedRef.current) {
-        setExamCountDraft(String(next));
-      }
-    },
-    [examProps, examCountDraft],
-  );
+  useEffect(() => {
+    if (examProps?.examMode) {
+      setLearningTab("study");
+    }
+  }, [examProps?.examMode]);
+
+  useEffect(() => {
+    if (learningTab !== "integrated") {
+      setShowIntegratedBetaNotice(false);
+      return;
+    }
+    try {
+      const seen = localStorage.getItem(INTEGRATED_BETA_NOTICE_SEEN_KEY);
+      setShowIntegratedBetaNotice(seen !== "1");
+    } catch {
+      // 저장소 접근 실패 시 현재 세션에서만 안내 노출
+      setShowIntegratedBetaNotice(true);
+    }
+  }, [learningTab]);
 
   useEffect(() => {
     if (!examProps) return;
@@ -228,6 +254,49 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
   const resolvedCourseId = currentCourseId ?? courseId ?? courseDetail?.courseId ?? routeCourseId ?? null;
   const resolvedLectureId = currentLectureId ?? lectureId ?? courseDetail?.lectures?.[0]?.lectureId ?? null;
+
+  const assistantEnabled = useMemo(
+    () =>
+      !examProps?.examMode &&
+      viewMode === "course-detail" &&
+      (assistantMaterialId ?? 0) > 0 &&
+      resolvedLectureId != null &&
+      assistantPdfActive === true,
+    [
+      assistantMaterialId,
+      assistantPdfActive,
+      examProps?.examMode,
+      resolvedLectureId,
+      viewMode,
+    ],
+  );
+
+  const lectureAssistant = useLectureAssistantChat({
+    enabled: assistantEnabled,
+    lectureId: resolvedLectureId,
+    materialId: assistantMaterialId ?? null,
+    currentPdfPage: previewCurrentPdfPage ?? 1,
+    goToPdfPage: goToPdfPage ?? (() => {}),
+    userPdfNav: userPdfNav ?? null,
+  });
+
+  const integratedLearning = useIntegratedLearningChat({
+    enabled:
+      !examProps?.examMode &&
+      learningTab === "integrated" &&
+      viewMode === "course-detail" &&
+      resolvedLectureId != null,
+    lectureId: resolvedLectureId,
+  });
+  const integratedModeActive =
+    !examProps?.examMode &&
+    learningTab === "integrated" &&
+    viewMode === "course-detail";
+  const displayMessages = integratedModeActive
+    ? integratedLearning.messages
+    : assistantEnabled
+      ? lectureAssistant.messages
+      : messages;
 
   // 로컬 스토리지 키 생성
   const getUploadStorageKey = (lectureId: number) => `lecture_upload_${lectureId}`;
@@ -335,7 +404,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         chatContainer.scrollTop = chatContainer.scrollHeight;
       }, 0);
     }
-  }, [messages]);
+  }, [displayMessages]);
 
   // 스트리밍 취소 함수
   const cancelStreaming = useCallback(async () => {
@@ -378,6 +447,14 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
   // 스트리밍 중지 함수
   const handleCancelStream = async () => {
+    if (integratedModeActive) {
+      await integratedLearning.stop();
+      return;
+    }
+    if (assistantEnabled) {
+      lectureAssistant.stop();
+      return;
+    }
     if (!currentLectureId) return;
 
     try {
@@ -459,7 +536,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       file: file,
       isLoading: false,
     };
-    setMessages((prev) => [...prev, uploadMessage]);
+    if (assistantEnabled) {
+      lectureAssistant.appendUserFile(file);
+    } else {
+      setMessages((prev) => [...prev, uploadMessage]);
+    }
 
     try {
       const result = await lectureApi.uploadMaterial(targetLectureId!, file);
@@ -490,14 +571,20 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       }
 
       // 업로드 완료 메시지 추가
+      const successText = assistantEnabled
+        ? "파일이 업로드되었습니다.\n\nEnter를 눌러 현재 PDF 페이지 기준 설명을 시작할 수 있습니다.\n중단: `/cancel`"
+        : "파일이 업로드되었습니다.\n\n- 스트리밍 학습 시작: Enter (빈 입력)\n- 현재 세션 상태 조회: `/status`\n- 스트리밍 중단: `/cancel`";
       const successMessage: ChatMessage = {
         id: Date.now() + 1,
-        text:
-          "파일이 업로드되었습니다.\n\n- 스트리밍 학습 시작: Enter (빈 입력)\n- 현재 세션 상태 조회: `/status`\n- 스트리밍 중단: `/cancel`",
+        text: successText,
         isUser: false,
         isLoading: false,
       };
-      setMessages((prev) => [...prev, successMessage]);
+      if (assistantEnabled) {
+        lectureAssistant.appendAssistantNotice(successText);
+      } else {
+        setMessages((prev) => [...prev, successMessage]);
+      }
     } catch (error) {
       console.error('파일 업로드 실패:', error);
       const errorMessageText = error instanceof Error ? error.message : '알 수 없는 오류';
@@ -512,10 +599,12 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         isUser: false,
         isLoading: false,
       };
-      setMessages((prev) => [...prev, errorMessage]);
-
-      // 업로드 메시지 제거
-      setMessages((prev) => prev.filter((msg) => msg.id !== uploadMessage.id));
+      if (assistantEnabled) {
+        lectureAssistant.appendAssistantNotice(errorMessage.text);
+      } else {
+        setMessages((prev) => [...prev, errorMessage]);
+        setMessages((prev) => prev.filter((msg) => msg.id !== uploadMessage.id));
+      }
 
       setHasUploadedMaterial(false);
     } finally {
@@ -781,6 +870,43 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const handleSendMessage = () => {
     const trimmed = inputText.trim();
 
+    if (integratedModeActive) {
+      if (trimmed === "/cancel") {
+        void integratedLearning.stop();
+        resetInputText();
+        return;
+      }
+      if (trimmed) {
+        void integratedLearning.sendUserText(trimmed);
+      } else {
+        void integratedLearning.startOrContinue();
+      }
+      resetInputText();
+      return;
+    }
+
+    if (assistantEnabled) {
+      if (trimmed === "/cancel") {
+        lectureAssistant.stop();
+        resetInputText();
+        return;
+      }
+      if (trimmed === "/status") {
+        resetInputText();
+        lectureAssistant.appendAssistantNotice(
+          "강의 보조 모드에서는 /status를 사용할 수 없습니다.",
+        );
+        return;
+      }
+      if (trimmed) {
+        lectureAssistant.submitUserText(trimmed);
+      } else {
+        lectureAssistant.onEmptySubmit();
+      }
+      resetInputText();
+      return;
+    }
+
     // 공통 명령어: 스트리밍 취소
     if (trimmed === "/cancel") {
       if (isStreaming) {
@@ -969,6 +1095,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     }
   };
 
+  const handleConfirmIntegratedBetaNotice = useCallback(() => {
+    setShowIntegratedBetaNotice(false);
+    try {
+      localStorage.setItem(INTEGRATED_BETA_NOTICE_SEEN_KEY, "1");
+    } catch {
+      // ignore
+    }
+  }, []);
+
   return (
     <>
       <aside
@@ -1012,9 +1147,12 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             <li className="flex items-center">
               <button
                 type="button"
-                onClick={() => examProps.onExamModeChange(false)}
+                onClick={() => {
+                  setLearningTab("study");
+                  examProps.onExamModeChange(false);
+                }}
                 className={`w-auto flex items-center gap-2 rounded font-semibold text-[16px] transition-colors ${
-                  !examProps.examMode
+                  !examProps.examMode && learningTab === "study"
                     ? isDarkMode
                       ? "text-[#FFFFFF]"
                       : "text-[#141414]"
@@ -1037,6 +1175,24 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 }`}
               >
                 시험
+              </button>
+            </li>
+            <li className="flex items-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setLearningTab("integrated");
+                  examProps.onExamModeChange(false);
+                }}
+                className={`w-auto flex items-center gap-2 rounded font-semibold text-[16px] transition-colors ${
+                  !examProps.examMode && learningTab === "integrated"
+                    ? isDarkMode
+                      ? "text-[#FFFFFF]"
+                      : "text-[#141414]"
+                    : "text-[#adadad]"
+                }`}
+              >
+                통합학습(베타)
               </button>
             </li>
           </ul>
@@ -1084,7 +1240,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               </div>
               <div className="flex-1 min-w-0">
                 <label className="block text-[14px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>문항 수</label>
-                <div className="flex gap-1 items-stretch min-w-0">
+                <div className="min-w-0">
                   <input
                     type="text"
                     inputMode="numeric"
@@ -1117,38 +1273,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                       e.preventDefault();
                       (e.currentTarget as HTMLInputElement).blur();
                     }}
-                    className="min-w-0 flex-1 px-2 py-1.5 text-sm rounded-2xl border"
+                    className="w-full min-w-0 px-2 py-1.5 text-sm rounded-2xl border"
                     style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}
                   />
-                  <div className="flex flex-col shrink-0 w-8 rounded-2xl border overflow-hidden" style={{ borderColor: isDarkMode ? "#52525b" : "#d1d5db" }}>
-                    <button
-                      type="button"
-                      aria-label="문항 수 1 증가"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => adjustExamQuestionCountByStep(1)}
-                      className="flex-1 px-0 text-sm font-medium leading-none border-b cursor-pointer"
-                      style={{
-                        backgroundColor: isDarkMode ? "#3f3f46" : "#f4f4f5",
-                        borderBottomColor: isDarkMode ? "#52525b" : "#d1d5db",
-                        color: isDarkMode ? "#FFFFFF" : "#141414",
-                      }}
-                    >
-                      +
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="문항 수 1 감소"
-                      onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => adjustExamQuestionCountByStep(-1)}
-                      className="flex-1 px-0 text-sm font-medium leading-none cursor-pointer"
-                      style={{
-                        backgroundColor: isDarkMode ? "#3f3f46" : "#f4f4f5",
-                        color: isDarkMode ? "#FFFFFF" : "#141414",
-                      }}
-                    >
-                      −
-                    </button>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1160,10 +1287,31 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 type="text"
                 value={localExamDisplayName}
                 onChange={(e) => setLocalExamDisplayName(e.target.value)}
-                placeholder="예: 개념 정리를 위한 플래시카드 · 중간고사 대비 암기용 문제 · 빠른 복습용 테스트"
+                placeholder="비워 두면 자동 이름 · 직접 입력 시 아래 예시 참고"
+                aria-describedby="exam-display-name-hint"
                 className="block w-full px-2 py-1.5 text-sm rounded-2xl border m-0"
                 style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}
               />
+              <p
+                id="exam-display-name-hint"
+                className="mt-1.5 pl-2 text-[11px] leading-snug space-y-1"
+                style={{ color: isDarkMode ? "#a1a1aa" : "#6b7280" }}
+              >
+                <span className="block">
+                  비워 두면{" "}
+                  <span className="font-medium opacity-90" style={{ color: isDarkMode ? "#e4e4e7" : "#374151" }}>
+                    유형 · 문항 수
+                  </span>
+                  형식으로 붙습니다. 같은 유형·문항 수 조합이 이미 있으면{" "}
+                  <span className="font-medium opacity-90" style={{ color: isDarkMode ? "#e4e4e7" : "#374151" }}>
+                    (2), (3)…
+                  </span>
+                  이 자동으로 붙습니다.
+                </span>
+                <span className="block pt-0.5">
+                  이름 예시 — 개념 정리를 위한 플래시카드, 중간고사 대비 암기용 문제, 빠른 복습용 테스트
+                </span>
+              </p>
             </div>
             <div>
               <label className="block text-[14px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>주제</label>
@@ -1371,48 +1519,148 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       {/* 채팅 메시지 영역 */}
       <div
         id="chat-messages"
-        className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-3 py-4 space-y-2"
+        className={`relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-3 py-4 space-y-2 ${
+          integratedModeActive ? "scrollbar-hide" : ""
+        }`}
         style={{
           backgroundColor: isDarkMode ? "#141414" : "#FFFFFF",
-          scrollbarWidth: 'thin',
-          scrollbarColor: isDarkMode ? '#4a5568 #141414' : '#cbd5e0 #ffffff',
+          ...(!integratedModeActive
+            ? {
+                scrollbarWidth: "thin" as const,
+                scrollbarColor: isDarkMode
+                  ? "#4a5568 #141414"
+                  : "#cbd5e0 #ffffff",
+              }
+            : {}),
         }}
       >
-        {messages.length === 0 ? (
+        {learningTab === "integrated" && showIntegratedBetaNotice ? (
+          <div className="sticky top-0 z-20 flex justify-center pb-2 pointer-events-none">
+            <div
+              className={`pointer-events-auto w-[min(100%,440px)] rounded-2xl border px-4 py-4 shadow-xl ${
+                isDarkMode
+                  ? "border-slate-500/60 bg-slate-700/95 text-white"
+                  : "border-slate-300 bg-white text-[#141414]"
+              }`}
+            >
+              <p className="text-center text-[16px] leading-relaxed font-semibold whitespace-pre-line">
+                맞춤형 학습과 시험 등을{"\n"}통합적으로 관리해주는 AI 에이전트입니다
+              </p>
+              <div className="mt-4 flex justify-center">
+                <button
+                  type="button"
+                  onClick={handleConfirmIntegratedBetaNotice}
+                  className={`px-6 py-2 rounded-full text-base font-semibold cursor-pointer ${
+                    isDarkMode
+                      ? "bg-blue-600 hover:bg-blue-500 text-white"
+                      : "bg-blue-600 hover:bg-blue-500 text-white"
+                  }`}
+                >
+                  확인
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        {displayMessages.length === 0 ? (
           <div
             className="flex h-full flex-col items-center justify-center text-center space-y-3"
             style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}
           >
             <p className="font-medium text-sm">메시지가 없습니다.</p>
             <span className="text-xs">
-              Enter를 눌러 학습을 시작하세요
+              {integratedModeActive
+                ? "Enter를 눌러 통합학습을 시작하세요"
+                : assistantEnabled
+                ? "Enter를 눌러 현재 PDF 페이지 설명을 시작하세요"
+                : "Enter를 눌러 학습을 시작하세요"}
             </span>
           </div>
         ) : (
-          messages.map((message, index) => {
+          displayMessages.map((message, index) => {
             const isConsecutiveAgent =
-              !message.isUser && index > 0 && !messages[index - 1].isUser;
+              !message.isUser &&
+              index > 0 &&
+              !displayMessages[index - 1].isUser;
             const bubbleWidth = message.markdown ? "max-w-[90%]" : "max-w-[80%]";
+
+            const assistantBubble =
+              !message.isUser && message.assistantVariant === "orchestrator"
+                ? isDarkMode
+                  ? "bg-[#1e3a5f] border-blue-900/60 text-white"
+                  : "bg-[#1e3a8a] border-blue-800 text-white"
+                : !message.isUser && message.assistantVariant === "educational"
+                  ? isDarkMode
+                    ? "bg-emerald-900/75 border-emerald-700/50 text-white"
+                    : "bg-emerald-50 border-emerald-200 text-gray-900"
+                  : !message.isUser && message.assistantVariant === "system"
+                    ? isDarkMode
+                      ? "bg-zinc-800 border-zinc-600 text-gray-100"
+                      : "bg-gray-100 border-gray-300 text-gray-900"
+                    : null;
 
             return (
               <div
                 key={message.id}
-                className={`flex min-w-0 ${message.isUser ? "justify-end" : "justify-start"} ${
+                className={`flex min-w-0 flex-col ${message.isUser ? "items-end" : "items-start"} ${
                   isConsecutiveAgent ? "-mt-1" : ""
                 }`}
               >
+                {message.roleBadge && (
+                  <span
+                    className={`mb-0.5 block text-[10px] font-semibold tracking-wide opacity-80 ${
+                      message.isUser ? "text-right pr-1" : "pl-1"
+                    }`}
+                    style={{ color: isDarkMode ? "#a1a1aa" : "#6b7280" }}
+                  >
+                    {message.roleBadge}
+                  </span>
+                )}
                 <div
                   className={`${bubbleWidth} min-w-0 overflow-hidden break-words px-3 py-2 ${commonStyles?.rounded ?? "rounded-lg"} text-sm border ${
                     message.isUser
                       ? isDarkMode
                         ? "bg-emerald-500/85 text-white border-emerald-400/40"
                         : "bg-emerald-600 text-white border-emerald-500"
-                      : isDarkMode
-                      ? "bg-white/10 border-white/20"
-                      : "bg-white border-gray-200"
+                      : assistantBubble ??
+                        (isDarkMode
+                          ? "bg-white/10 border-white/20"
+                          : "bg-white border-gray-200")
                   } shadow-sm`}
-                  style={!message.isUser ? { color: isDarkMode ? "#FFFFFF" : "#141414" } : undefined}
+                  style={
+                    !message.isUser && !assistantBubble
+                      ? { color: isDarkMode ? "#FFFFFF" : "#141414" }
+                      : undefined
+                  }
                 >
+                {message.thoughtSummary != null && assistantEnabled && (
+                  <div className="mb-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        lectureAssistant.toggleThoughtExpanded(message.id)
+                      }
+                      className="text-xs font-medium underline-offset-2 hover:underline opacity-90"
+                    >
+                      {message.thoughtExpanded
+                        ? "▼ 사고 요약 접기"
+                        : "▶ 사고 요약 보기"}
+                    </button>
+                    {message.thoughtExpanded ? (
+                      <pre
+                        className={`mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md border px-2 py-1.5 text-xs leading-relaxed ${
+                          message.assistantVariant === "orchestrator"
+                            ? "border-white/25 bg-black/25"
+                            : isDarkMode
+                              ? "border-white/15 bg-black/20"
+                              : "border-gray-200 bg-white/80"
+                        }`}
+                      >
+                        {message.thoughtSummary || "…"}
+                      </pre>
+                    ) : null}
+                  </div>
+                )}
                 {message.isLoading && (
                   <div className="flex items-center gap-3 py-2">
                     <div className="relative">
@@ -1449,18 +1697,51 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   </div>
                 ) : message.markdown ? (
                   <div className="min-w-0 overflow-hidden break-words">
-                    <div className="mb-2 font-semibold break-words">{message.text}</div>
+                    {message.text?.trim() ? (
+                      <div className="mb-2 font-semibold break-words">
+                        {message.text}
+                      </div>
+                    ) : null}
                     <div
                       className={`prose prose-sm prose-neutral max-w-none overflow-hidden break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words prose-headings:font-semibold ${
-                        isDarkMode ? "prose-invert" : ""
+                        message.assistantVariant === "educational"
+                          ? isDarkMode
+                            ? "prose-invert"
+                            : ""
+                          : isDarkMode
+                            ? "prose-invert"
+                            : ""
                       }`}
                     >
                       <MarkdownContent>{message.markdown}</MarkdownContent>
                     </div>
                   </div>
                 ) : (
-                  <span className="block min-w-0 overflow-hidden break-words">{message.text}</span>
+                  <span className="block min-w-0 overflow-hidden break-words">
+                    {message.text}
+                  </span>
                 )}
+                {message.actionButtons &&
+                  message.actionButtons.length > 0 &&
+                  !message.isLoading &&
+                  assistantEnabled && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {message.actionButtons.map((btn) => (
+                        <button
+                          key={btn.id}
+                          type="button"
+                          onClick={() => lectureAssistant.handleAction(btn.id)}
+                          className={`cursor-pointer rounded-xl px-4 py-2 text-sm font-medium transition-opacity ${
+                            btn.variant === "primary"
+                              ? "bg-sky-400 text-black hover:opacity-90"
+                              : "bg-zinc-200 text-black hover:opacity-90 dark:bg-zinc-600 dark:text-white"
+                          }`}
+                        >
+                          {btn.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
               </div>
             </div>
           );
@@ -1496,13 +1777,28 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             }}
             onKeyPress={handleKeyPress}
             placeholder={
-              isAnswerSubmitting
-                ? "답변 처리 중..."
-                : isStreaming
-                  ? (waitingForAnswer ? "AI 질문에 대한 답변을 입력하고 Enter" : "Enter로 다음 세그먼트 진행")
-                  : "Enter를 눌러 학습을 시작하세요"
+              integratedModeActive
+                ? integratedLearning.busy
+                  ? "통합학습 응답 생성 중…"
+                  : "질문 또는 요청을 입력하세요 (빈 입력: 시작)"
+                : assistantEnabled
+                ? lectureAssistant.busy
+                  ? "답변 생성 중…"
+                  : lectureAssistant.phase === "followup_after_no"
+                    ? "추가 질문을 입력하세요"
+                    : lectureAssistant.phase === "await_next_page" ||
+                        lectureAssistant.phase === "await_explain_confirm"
+                      ? "예/아니오 버튼을 사용하거나 질문을 입력하세요"
+                      : "질문 또는 요청을 입력하세요 (빈 입력: 현재 페이지 설명)"
+                : isAnswerSubmitting
+                  ? "답변 처리 중..."
+                  : isStreaming
+                    ? (waitingForAnswer ? "AI 질문에 대한 답변을 입력하고 Enter" : "Enter로 다음 세그먼트 진행")
+                    : "Enter를 눌러 학습을 시작하세요"
             }
-            className={`flex-1 min-h-[44px] py-2.5 px-3 text-sm resize-none bg-transparent border-0 focus:outline-none overflow-y-auto leading-6 ${isDarkMode ? "placeholder-gray-500" : "placeholder-gray-400"}`}
+            className={`flex-1 min-h-[44px] py-2.5 px-3 text-sm resize-none bg-transparent border-0 focus:outline-none overflow-y-auto leading-6 ${
+              integratedModeActive ? "scrollbar-hide" : ""
+            } ${isDarkMode ? "placeholder-gray-500" : "placeholder-gray-400"}`}
             style={{
               color: isDarkMode ? "#FFFFFF" : "#141414",
               maxHeight: "120px",
@@ -1511,7 +1807,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           />
 
           {/* 중지 버튼 (스트리밍 또는 업로드 중일 때 표시) */}
-          {(isStreaming || isUploading || isFetchingNext) && (
+          {(integratedModeActive
+            ? integratedLearning.busy
+            : assistantEnabled
+            ? lectureAssistant.busy || isUploading
+            : isStreaming || isUploading || isFetchingNext) && (
             <button
               onClick={handleCancelStream}
               type="button"

@@ -104,6 +104,15 @@ const TopNav: React.FC<TopNavProps> = ({
     navigate("/");
   };
 
+  const handlePreviewBack = React.useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      onBackFromPreview?.();
+    },
+    [onBackFromPreview],
+  );
+
   const toggleUserMenu = () => {
     setIsUserMenuOpen((prev) => !prev);
   };
@@ -182,7 +191,7 @@ const TopNav: React.FC<TopNavProps> = ({
         {isPreviewMode && (
           <button
             type="button"
-            onClick={onBackFromPreview}
+            onClick={handlePreviewBack}
             className={`p-1 shrink-0 rounded cursor-pointer transition-all duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:-translate-x-2 hover:scale-125 active:translate-x-0 active:scale-95 ${isDarkMode ? "text-white" : "text-[#141414]"}`}
             aria-label="목록으로"
           >
