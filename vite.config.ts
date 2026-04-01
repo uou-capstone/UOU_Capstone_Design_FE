@@ -55,6 +55,11 @@ export default defineConfig({
           });
           proxy.on('proxyReq', (proxyReq, req, res) => {
             try {
+              // 일부 환경에서 Authorization이 업스트림까지 안 실릴 수 있어 명시 전달
+              const auth = req.headers.authorization;
+              if (auth) {
+                proxyReq.setHeader('Authorization', auth);
+              }
               // FormData인 경우 Content-Type 헤더를 그대로 유지 (boundary 포함)
               const contentType = req.headers['content-type'];
               if (contentType && contentType.includes('multipart/form-data')) {

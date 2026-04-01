@@ -475,10 +475,18 @@ const apiRequest = async <T>(
         errorText = '응답 본문을 읽을 수 없습니다';
       }
       
-      // 401 Unauthorized 처리 (로그인 실패)
+      // 401 Unauthorized — TOKEN_EXPIRED | INVALID_TOKEN | UNAUTHORIZED 등 code 확인
       if (response.status === 401) {
-        const backendMessage = errorJson?.message || errorJson?.title || errorText || '이메일 또는 비밀번호가 올바르지 않습니다.';
-        throw new Error(backendMessage);
+        const fallback =
+          errorJson?.message ||
+          errorJson?.title ||
+          errorText ||
+          "인증이 필요합니다. (응답 본문의 code를 백엔드에 전달해 주세요.)";
+        const obj =
+          errorJson != null && typeof errorJson === "object" && !Array.isArray(errorJson)
+            ? (errorJson as Record<string, unknown>)
+            : null;
+        throw new Error(formatSpring401ForDisplay(obj, String(fallback)));
       }
       
       // 409 Conflict 처리 (이미 존재하는 이메일)
@@ -1683,27 +1691,187 @@ const pickFirstString = (obj: Record<string, unknown>, keys: string[]): string |
   return undefined;
 };
 
-const ensureLearningSession = async (lectureId: number, pdfPath?: string): Promise<LearningSessionState> => {
-  const cached = learningSessionByLecture.get(lectureId);
-  if (cached) return cached;
-
-  const query = pdfPath ? `?pdf_path=${encodeURIComponent(pdfPath)}` : "";
-  const raw = await apiRequest<Record<string, unknown>>(
-    `/api/v3/session/by-lecture/${encodeURIComponent(lectureId)}${query}`,
-    {
-      method: "GET",
-    },
-  );
-
-  const rawSessionId = raw.session_id ?? raw.sessionId;
-  if (rawSessionId == null) {
-    throw new Error("학습 세션 생성 응답에 session_id가 없습니다.");
-  }
-  const session = { sessionId: String(rawSessionId), lectureId };
-  learningSessionByLecture.set(lectureId, session);
-  return session;
+/** 브라우저에서 /api 프록시(로컬) vs 절대 백엔드 URL */
+const resolveBrowserApiUrl = (endpoint: string): string => {
+  const isDevHost =
+    typeof window !== "undefined" &&
+    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+  const shouldUseViteProxy = isDevHost && endpoint.startsWith("/api");
+  if (shouldUseViteProxy) return endpoint;
+  return API_BASE_URL ? `${String(API_BASE_URL).replace(/\/$/, "")}${endpoint}` : endpoint;
 };
 
+/** Spring 401 JSON (`RestAuthenticationEntryPoint` 등): code·message 파싱 */
+const parseSpringErrorJsonFromText = (text: string): Record<string, unknown> | null => {
+  const t = text.trim();
+  if (!t) return null;
+  try {
+    const o = JSON.parse(t) as unknown;
+    if (o != null && typeof o === "object" && !Array.isArray(o)) {
+      return o as Record<string, unknown>;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+};
+
+const formatSpring401ForDisplay = (
+  parsed: Record<string, unknown> | null | undefined,
+  fallback: string,
+): string => {
+  if (!parsed) return fallback;
+  const code = parsed.code != null ? String(parsed.code).trim() : "";
+  const msg =
+    (typeof parsed.message === "string" && parsed.message.trim()) ||
+    (typeof parsed.detail === "string" && parsed.detail.trim()) ||
+    fallback;
+  return code ? `[${code}] ${msg}` : msg;
+};
+
+/** Spring 공통 래핑 `{ data: { ... } }` / 중첩 data 병합 */
+const unwrapSpringSessionJson = (raw: Record<string, unknown>): Record<string, unknown> => {
+  let cur: Record<string, unknown> = { ...raw };
+  const d1 = cur.data;
+  if (d1 != null && typeof d1 === "object" && !Array.isArray(d1)) {
+    cur = { ...cur, ...(d1 as Record<string, unknown>) };
+  }
+  return cur;
+};
+
+/**
+ * 통합 학습 v3 — POST /api/learning/sessions/{lectureId}
+ * 쿼리: pdfPath, sessionId(선택, 기존 세션 재사용)
+ * 401 시 refreshToken이 있으면 1회 갱신 후 재시도.
+ */
+const ensureLearningSession = async (
+  lectureId: number,
+  pdfPath?: string,
+  opts?: { sessionId?: string },
+): Promise<LearningSessionState> => {
+  if (!opts?.sessionId) {
+    const cached = learningSessionByLecture.get(lectureId);
+    if (cached) return cached;
+  }
+
+  const sp = new URLSearchParams();
+  if (pdfPath) sp.set("pdfPath", pdfPath);
+  if (opts?.sessionId) sp.set("sessionId", opts.sessionId);
+  const qs = sp.toString();
+  const path = `/api/learning/sessions/${encodeURIComponent(lectureId)}${qs ? `?${qs}` : ""}`;
+
+  const postOnce = (bearer: string) =>
+    fetch(resolveBrowserApiUrl(path), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${bearer.trim()}`,
+      },
+      body: JSON.stringify({}),
+      mode: "cors",
+      credentials: "omit",
+    });
+
+  let bearer = getAuthToken();
+  if (!bearer?.trim()) {
+    throw new Error("로그인이 필요합니다. 통합학습을 쓰려면 먼저 로그인해 주세요.");
+  }
+
+  const throwIfFailed = (
+    res: Response,
+    parsed: Record<string, unknown>,
+    text: string,
+  ): never => {
+    const flat = unwrapSpringSessionJson(parsed);
+    const rawMsg =
+      (typeof flat.message === "string" && flat.message) ||
+      (typeof flat.detail === "string" && flat.detail) ||
+      (typeof parsed.message === "string" && parsed.message) ||
+      text ||
+      `학습 세션 요청 실패 (${res.status})`;
+    const msg = formatSpring401ForDisplay(flat, rawMsg);
+    if (res.status === 401) {
+      const code = String(flat.code ?? parsed.code ?? "").trim();
+      const hint =
+        code === "TOKEN_EXPIRED"
+          ? "토큰이 만료된 경우입니다. 다시 로그인한 뒤 시도해 주세요."
+          : code === "INVALID_TOKEN"
+            ? "JWT 검증 실패입니다. 재로그인 후에도 동일하면 백엔드(키·인스턴스)를 확인해 주세요."
+            : code === "UNAUTHORIZED"
+              ? "서버가 인증 헤더를 받지 못한 경우입니다. Network 탭에서 Authorization 전송 여부를 확인해 주세요."
+              : code === "4010"
+                ? "백엔드 애플리케이션 전용 code로 보입니다. (RestAuthenticationEntryPoint의 TOKEN_EXPIRED 등과 다를 수 있음.) " +
+                  "동일 Bearer로 GET /api/users/me가 200인지 Network에서 확인한 뒤, 4010을 내는 컨트롤러/필터/글로벌 핸들러 위치를 백엔드에 문의해 주세요."
+                : "Bearer를 보냈는데도 401이면, 같은 토큰으로 GET /api/users/me 성공 여부와 응답 code 전체 JSON을 백엔드에 전달해 주세요.";
+      throw new Error(`${msg}\n\n${hint}`);
+    }
+    throw new Error(msg);
+  };
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    bearer = getAuthToken();
+    if (!bearer?.trim()) {
+      throw new Error("로그인이 필요합니다. 통합학습을 쓰려면 먼저 로그인해 주세요.");
+    }
+
+    const res = await postOnce(bearer);
+    const text = await res.text();
+    let parsed: Record<string, unknown> = {};
+    if (text.trim()) {
+      try {
+        parsed = JSON.parse(text) as Record<string, unknown>;
+      } catch {
+        parsed = {};
+      }
+    }
+
+    if (!res.ok) {
+      if (
+        res.status === 401 &&
+        attempt === 0 &&
+        getRefreshToken()
+      ) {
+        try {
+          await authApi.refresh();
+          continue;
+        } catch {
+          /* 첫 응답 기준으로 실패 처리 */
+        }
+      }
+      throwIfFailed(res, parsed, text);
+    }
+
+    const merged = unwrapSpringSessionJson(parsed);
+    const rawSessionId = merged.session_id ?? merged.sessionId;
+    if (rawSessionId == null) {
+      throw new Error("학습 세션 생성 응답에 session_id가 없습니다.");
+    }
+    const session = { sessionId: String(rawSessionId), lectureId };
+    learningSessionByLecture.set(lectureId, session);
+    return session;
+  }
+
+  throw new Error("학습 세션을 열 수 없습니다.");
+};
+
+/** 요청 바디: { type, …필드 } 평탄화 (payload 중첩 제거). lectureId는 쿼리로만 전달 */
+const flattenLearningEventBody = (eventBody: {
+  type: string;
+  payload?: Record<string, unknown>;
+}): Record<string, unknown> => {
+  const flat: Record<string, unknown> = { type: eventBody.type };
+  const p = eventBody.payload;
+  if (p != null && typeof p === "object" && !Array.isArray(p)) {
+    Object.assign(flat, p);
+  }
+  return flat;
+};
+
+/**
+ * 통합 학습 v3 — POST /api/learning/sessions/{sessionId}/event (+ SSE)
+ * Accept: text/event-stream. data: JSON — heartbeat 무시, agent_delta 누적 렌더는 매퍼에서 처리.
+ */
 const postLearningEventAndCollect = async (
   sessionId: string,
   eventBody: {
@@ -1711,37 +1879,63 @@ const postLearningEventAndCollect = async (
     lectureId?: number;
     payload?: Record<string, unknown>;
   },
-  lectureId?: number
+  lectureId?: number,
 ): Promise<Record<string, unknown>[]> => {
-  const endpoint = `/api/v3/session/${encodeURIComponent(sessionId)}/event/stream`;
+  const lectureIdForQuery = eventBody.lectureId ?? lectureId;
+  const query =
+    lectureIdForQuery != null
+      ? `?lectureId=${encodeURIComponent(String(lectureIdForQuery))}`
+      : "";
+  const endpoint = `/api/learning/sessions/${encodeURIComponent(sessionId)}/event${query}`;
   const token = getAuthToken();
+  if (!token?.trim()) {
+    throw new Error("로그인이 필요합니다. 학습 이벤트(SSE) 요청에는 Bearer 토큰이 필요합니다.");
+  }
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    Accept: "application/x-ndjson, text/event-stream",
+    Accept: "text/event-stream",
+    Authorization: `Bearer ${token.trim()}`,
   };
-  if (token) headers.Authorization = `Bearer ${token}`;
 
-  const requestBody: Record<string, unknown> = {
+  const requestBody = flattenLearningEventBody({
     type: eventBody.type,
     payload: eventBody.payload ?? {},
-  };
-  if (eventBody.lectureId != null) {
-    requestBody.lecture_id = eventBody.lectureId;
-  } else if (lectureId != null) {
-    requestBody.lecture_id = lectureId;
+  });
+
+  const fetchEvent = () =>
+    fetch(resolveBrowserApiUrl(endpoint), {
+      method: "POST",
+      headers,
+      body: JSON.stringify(requestBody),
+      mode: "cors",
+      credentials: "omit",
+    });
+
+  let res = await fetchEvent();
+
+  if (!res.ok && res.status === 401 && getRefreshToken()) {
+    try {
+      await authApi.refresh();
+      const t2 = getAuthToken();
+      if (t2?.trim()) {
+        headers.Authorization = `Bearer ${t2.trim()}`;
+        res = await fetchEvent();
+      }
+    } catch {
+      /* 아래 동일 에러 처리 */
+    }
   }
 
-  // EventSource는 Authorization 헤더를 붙일 수 없으므로 fetch + ReadableStream.
-  const res = await fetch(`${API_BASE_URL}${endpoint}`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(requestBody),
-    mode: "cors",
-    credentials: "omit",
-  });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`API Error (${res.status}): ${text || "학습 이벤트 요청 실패"}`);
+    const ep = parseSpringErrorJsonFromText(text);
+    const merged401 = ep ? unwrapSpringSessionJson(ep) : null;
+    const base = text || "학습 이벤트 요청 실패";
+    const line =
+      res.status === 401
+        ? formatSpring401ForDisplay(merged401 ?? ep, base)
+        : base;
+    throw new Error(`API Error (${res.status}): ${line}`);
   }
 
   const reader = res.body?.getReader();
@@ -1787,10 +1981,44 @@ const postLearningEventAndCollect = async (
   return events;
 };
 
+/** 연속 agent_delta 청크를 하나로 합쳐 스트림 표시와 매핑을 단순화 */
+const coalesceLearningStreamEvents = (
+  events: Record<string, unknown>[],
+): Record<string, unknown>[] => {
+  const out: Record<string, unknown>[] = [];
+  let acc = "";
+  const flushDelta = () => {
+    if (acc.length === 0) return;
+    out.push({ type: "agent_delta", delta: acc });
+    acc = "";
+  };
+  const deltaPiece = (ev: Record<string, unknown>): string => {
+    const payload = (ev.payload as Record<string, unknown> | undefined) ?? {};
+    return (
+      pickFirstString(ev, ["delta", "content", "message", "text"]) ??
+      pickFirstString(payload, ["delta", "content", "message", "text"]) ??
+      ""
+    );
+  };
+  for (const ev of events) {
+    const t = String(ev.type ?? "").toLowerCase();
+    if (t === "heartbeat") continue;
+    if (t === "agent_delta") {
+      acc += deltaPiece(ev);
+      continue;
+    }
+    flushDelta();
+    out.push(ev);
+  }
+  flushDelta();
+  return out;
+};
+
 const mapLearningEventsToNextResponse = (
   lectureId: number,
   events: Record<string, unknown>[]
 ): StreamNextResponse => {
+  const merged = coalesceLearningStreamEvents(events);
   let waitingForAnswer = false;
   let aiQuestionId: string | undefined;
   let hasMore = true;
@@ -1798,7 +2026,7 @@ const mapLearningEventsToNextResponse = (
   let contentType: ContentType | string = "CONCEPT";
   const chunks: string[] = [];
 
-  for (const event of events) {
+  for (const event of merged) {
     const type = String(event.type ?? "").toLowerCase();
     const message =
       pickFirstString(event, ["delta", "content", "message", "text", "main", "thought"]) ??
@@ -1810,7 +2038,9 @@ const mapLearningEventsToNextResponse = (
     const qid = pickFirstString(event, ["ai_question_id", "aiQuestionId", "question_id", "questionId"]);
     if (qid) aiQuestionId = qid;
 
-    if (type.includes("question") || boolWaiting === true || qid) {
+    if (type === "agent_delta") {
+      contentType = "SCRIPT";
+    } else if (type.includes("question") || boolWaiting === true || qid) {
       contentType = "QUESTION";
     } else if (type.includes("supplement")) {
       contentType = "SUPPLEMENTARY";
@@ -1842,8 +2072,9 @@ const mapLearningEventsToNextResponse = (
 const mapLearningEventsToIntegratedMessages = (
   events: Record<string, unknown>[],
 ): IntegratedLearningMessage[] => {
+  const merged = coalesceLearningStreamEvents(events);
   const out: IntegratedLearningMessage[] = [];
-  for (const event of events) {
+  for (const event of merged) {
     const type = String(event.type ?? event.event ?? "message").toLowerCase();
     if (type === "heartbeat") continue;
     const payload =
@@ -2141,14 +2372,14 @@ export const lectureAiLegacyStreamApi = {
   },
 };
 
-// 스트리밍 학습 세션 API (v3 통합 세션 기반)
+/** 강의 학습 탭 — Spring `POST /api/learning/sessions` + `.../event` SSE */
 export const streamingApi = {
   getSession: async (lectureId: number): Promise<StreamSessionState> => {
     const session = await ensureLearningSession(lectureId);
     return {
       status: "ACTIVE",
       lectureId,
-      serviceStatus: "V3_INTEGRATED",
+      serviceStatus: "LEARNING_SESSION_V3",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       chapters: { sessionId: session.sessionId },
@@ -2227,9 +2458,11 @@ export const streamingApi = {
 export const integratedLearningApi = {
   openSession: async (
     lectureId: number,
-    options?: { pdfPath?: string },
+    options?: { pdfPath?: string; sessionId?: string },
   ): Promise<{ sessionId: string; lectureId: number }> => {
-    const s = await ensureLearningSession(lectureId, options?.pdfPath);
+    const s = await ensureLearningSession(lectureId, options?.pdfPath, {
+      sessionId: options?.sessionId,
+    });
     return { sessionId: s.sessionId, lectureId: s.lectureId };
   },
   sendEvent: async (
