@@ -1198,6 +1198,9 @@ export interface StreamSessionState {
   serviceStatus?: string;
   chapters?: Record<string, unknown>;
   questions?: Record<string, unknown>;
+  /** 스웨거 session 응답 확장 필드 */
+  job?: Record<string, unknown>;
+  logs?: Record<string, unknown>;
   createdAt?: string;
   updatedAt?: string;
   error?: Record<string, unknown> | null;
@@ -1542,9 +1545,19 @@ async function* iterateSseDataPayloadsFromResponse(
 
 /** Spring `Flux<ServerSentEvent>` / 표준 SSE: `event:` + `data:` 블록이 빈 줄(`\\n\\n`)로 구분됨 */
 type LegacyLectureNextSseYield =
+  | { kind: "thought_delta"; text: string; raw: Record<string, unknown> }
   | { kind: "delta"; text: string; raw: Record<string, unknown> }
   | { kind: "done"; payload: Record<string, unknown> }
   | { kind: "error"; message: string; raw?: Record<string, unknown> };
+
+const LEGACY_SSE_THOUGHT_NAMES = new Set([
+  "thought",
+  "thinking",
+  "reasoning",
+  "thought_summary",
+  "internal",
+  "think",
+]);
 
 function consumeDoubleNewlineBlock(buffer: string): { block: string; rest: string } | null {
   const rn = buffer.indexOf("\r\n\r\n");
@@ -1589,13 +1602,36 @@ function mapLegacyNextSseBlock(eventName: string, dataJoined: string): LegacyLec
     return [{ kind: "done", payload: parsed ?? {} }];
   }
 
+  const phaseRaw = String(
+    pickFirstString(parsed ?? {}, ["phase", "streamPhase", "stream_phase"]) ?? "",
+  ).toLowerCase();
+  const roleRaw = String(pickFirstString(parsed ?? {}, ["role"]) ?? "").toLowerCase();
+  const contentTypeRaw = String(
+    parsed?.contentType ?? parsed?.content_type ?? "",
+  ).toUpperCase();
+  const isThoughtChunk =
+    LEGACY_SSE_THOUGHT_NAMES.has(ev) ||
+    LEGACY_SSE_THOUGHT_NAMES.has(t) ||
+    phaseRaw === "thought" ||
+    phaseRaw === "thinking" ||
+    roleRaw === "thinking" ||
+    contentTypeRaw === "THOUGHT";
+
   const delta =
     pickFirstString(parsed ?? {}, ["delta", "text", "content", "chunk"]) ?? "";
   if (delta) {
-    return [{ kind: "delta", text: delta, raw: parsed ?? {} }];
+    return [
+      isThoughtChunk
+        ? { kind: "thought_delta", text: delta, raw: parsed ?? {} }
+        : { kind: "delta", text: delta, raw: parsed ?? {} },
+    ];
   }
   if (t === "delta") {
-    return [{ kind: "delta", text: "", raw: parsed ?? {} }];
+    return [
+      isThoughtChunk
+        ? { kind: "thought_delta", text: "", raw: parsed ?? {} }
+        : { kind: "delta", text: "", raw: parsed ?? {} },
+    ];
   }
   return [];
 }
@@ -2156,7 +2192,7 @@ const normalizeLegacyStreamNext = (raw: unknown, lectureId: number): StreamNextR
   };
 };
 
-/** GET /stream/next SSE 마지막 `done` 이벤트 + 누적 delta → StreamNextResponse */
+/** POST /stream/next SSE 마지막 `done` 이벤트 + 누적 delta → StreamNextResponse */
 const legacySseDoneToStreamNext = (
   done: Record<string, unknown>,
   lectureId: number,
@@ -2185,7 +2221,12 @@ const legacySseDoneToStreamNext = (
 
 function buildLectureLegacyStreamNextUrl(
   lectureId: number,
-  query: { pageNumber?: string; page?: string; userMessage?: string },
+  query: {
+    pageNumber?: string;
+    page?: string;
+    userMessage?: string;
+    materialId?: string;
+  },
 ): string {
   const path = `/api/lectures/${encodeURIComponent(lectureId)}/stream/next`;
   const sp = new URLSearchParams();
@@ -2198,6 +2239,9 @@ function buildLectureLegacyStreamNextUrl(
   if (query.userMessage != null && query.userMessage !== "") {
     sp.set("userMessage", query.userMessage);
   }
+  if (query.materialId != null && query.materialId !== "") {
+    sp.set("materialId", query.materialId);
+  }
   const qs = sp.toString();
   const withQuery = qs ? `${path}?${qs}` : path;
   const isDevHost =
@@ -2209,8 +2253,8 @@ function buildLectureLegacyStreamNextUrl(
 
 /**
  * 강의 AI Legacy (`/api/lectures/{lectureId}/stream/*`).
- * - `stream/next`: GET + `text/event-stream` (Spring SSE `message` / `done` / `error`), fetch+ReadableStream
- * - 그 외: 기존 initialize/answer/cancel 등 POST/GET
+ * - `stream/next`: POST + `text/event-stream` (SSE `message`·`done`·`error`, FastAPI NDJSON 릴레이), fetch+ReadableStream
+ * - 그 외: initialize/answer/cancel 등
  */
 export const lectureAiLegacyStreamApi = {
   getSession: async (lectureId: number): Promise<StreamSessionState> => {
@@ -2219,11 +2263,34 @@ export const lectureAiLegacyStreamApi = {
       { method: "GET" },
     );
     const r = unwrapLegacyLecturePayload(raw);
+    const chaptersRaw = r.chapters;
+    const chapters =
+      chaptersRaw != null && typeof chaptersRaw === "object" && !Array.isArray(chaptersRaw)
+        ? (chaptersRaw as Record<string, unknown>)
+        : undefined;
+    const questionsRaw = r.questions;
+    const questions =
+      questionsRaw != null && typeof questionsRaw === "object" && !Array.isArray(questionsRaw)
+        ? (questionsRaw as Record<string, unknown>)
+        : undefined;
+    const jobRaw = r.job;
+    const job =
+      jobRaw != null && typeof jobRaw === "object" && !Array.isArray(jobRaw)
+        ? (jobRaw as Record<string, unknown>)
+        : undefined;
+    const logsRaw = r.logs;
+    const logs =
+      logsRaw != null && typeof logsRaw === "object" && !Array.isArray(logsRaw)
+        ? (logsRaw as Record<string, unknown>)
+        : undefined;
     return {
       status: String(r.status ?? "ACTIVE"),
       lectureId: Number(r.lectureId ?? r.lecture_id ?? lectureId),
-      serviceStatus: "LEGACY_STREAM",
-      chapters: r.chapters as Record<string, unknown> | undefined,
+      serviceStatus: String(r.serviceStatus ?? r.service_status ?? "LEGACY_STREAM"),
+      chapters,
+      questions,
+      job,
+      logs,
       createdAt:
         typeof r.createdAt === "string"
           ? r.createdAt
@@ -2275,33 +2342,40 @@ export const lectureAiLegacyStreamApi = {
     };
   },
   /**
-   * GET `text/event-stream` — Spring SSE(`message`/`done`/`error`).
-   * EventSource 대신 fetch + ReadableStream + Authorization.
+   * POST `text/event-stream` — SSE(`message`/`done`/`error`).
+   * 쿼리: pageNumber, page, userMessage, materialId (스웨거와 동일). GET 엔은 미사용.
    */
   next: async (
     lectureId: number,
     options?: {
       pageNumber?: number;
+      materialId?: number | null;
       userMessage?: string | null;
       signal?: AbortSignal;
-      /** NDJSON 청크마다 호출 → 타이핑 UX */
+      /** 사고 요약(Thinking) SSE — 본문 `onDelta`와 분리 */
+      onThoughtDelta?: (chunk: string) => void;
+      /** 본문 답변 청크마다 호출 → 스트리밍 UX */
       onDelta?: (chunk: string) => void;
     },
   ): Promise<StreamNextResponse> => {
     const page = options?.pageNumber;
+    const mid = options?.materialId;
     const um = options?.userMessage?.trim();
     const url = buildLectureLegacyStreamNextUrl(lectureId, {
       ...(page != null ? { page: String(page), pageNumber: String(page) } : {}),
       ...(um ? { userMessage: um } : {}),
+      ...(mid != null && mid > 0 ? { materialId: String(mid) } : {}),
     });
     const token = getAuthToken();
     const headers: Record<string, string> = {
       Accept: "text/event-stream",
+      "Content-Type": "application/json",
     };
     if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(url, {
-      method: "GET",
+      method: "POST",
       headers,
+      body: JSON.stringify({}),
       mode: "cors",
       credentials: "omit",
       signal: options?.signal,
@@ -2313,7 +2387,11 @@ export const lectureAiLegacyStreamApi = {
     let accumulated = "";
     let lastDone: Record<string, unknown> | null = null;
     for await (const ev of iterateLegacyLectureNextSse(res, { signal: options?.signal })) {
-      if (ev.kind === "delta") {
+      if (ev.kind === "thought_delta") {
+        if (ev.text) {
+          options?.onThoughtDelta?.(ev.text);
+        }
+      } else if (ev.kind === "delta") {
         if (ev.text) {
           accumulated += ev.text;
           options?.onDelta?.(ev.text);

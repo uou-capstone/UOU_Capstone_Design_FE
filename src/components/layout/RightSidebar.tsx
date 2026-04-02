@@ -1,4 +1,11 @@
-import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import React, {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+} from "react";
 import { CloseIcon, EditIcon, TrashIcon } from "../common/Icons";
 import { useParams } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -28,6 +35,7 @@ interface ChatMessage {
   thoughtSummary?: string;
   thoughtExpanded?: boolean;
   thoughtFinished?: boolean;
+  streamingMarkdown?: boolean;
   actionButtons?: {
     id: string;
     label: string;
@@ -292,11 +300,13 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     !examProps?.examMode &&
     learningTab === "integrated" &&
     viewMode === "course-detail";
-  const displayMessages = integratedModeActive
-    ? integratedLearning.messages
-    : assistantEnabled
-      ? lectureAssistant.messages
-      : messages;
+  const displayMessages = (
+    integratedModeActive
+      ? integratedLearning.messages
+      : assistantEnabled
+        ? lectureAssistant.messages
+        : messages
+  ) as ChatMessage[];
 
   // 로컬 스토리지 키 생성
   const getUploadStorageKey = (lectureId: number) => `lecture_upload_${lectureId}`;
@@ -395,16 +405,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     []
   );
 
-  // 메시지가 추가될 때마다 자동으로 스크롤 내리기
-  useEffect(() => {
+  /** 강의 에이전트 스트리밍·사고 요약 중에도 말풍선 끝이 보이도록 (문서 7.2 자동 스크롤) */
+  useLayoutEffect(() => {
     const chatContainer = document.getElementById("chat-messages");
-    if (chatContainer) {
-      // 약간의 딜레이를 두어 DOM 업데이트 후 스크롤
-      setTimeout(() => {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-      }, 0);
-    }
-  }, [displayMessages]);
+    if (!chatContainer) return;
+    const id = requestAnimationFrame(() => {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [displayMessages, integratedModeActive, assistantEnabled, lectureAssistant.busy]);
 
   // 스트리밍 취소 함수
   const cancelStreaming = useCallback(async () => {
@@ -1695,6 +1704,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     <span className="text-lg">📎</span>
                     <span>{message.file.name}</span>
                   </div>
+                ) : message.isUser ? (
+                  <span className="block min-w-0 overflow-hidden break-words">
+                    {message.text}
+                  </span>
                 ) : message.markdown ? (
                   <div className="min-w-0 overflow-hidden break-words">
                     {message.text?.trim() ? (
@@ -1702,19 +1715,30 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                         {message.text}
                       </div>
                     ) : null}
-                    <div
-                      className={`prose prose-sm prose-neutral max-w-none overflow-hidden break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words prose-headings:font-semibold ${
-                        message.assistantVariant === "educational"
-                          ? isDarkMode
-                            ? "prose-invert"
-                            : ""
-                          : isDarkMode
-                            ? "prose-invert"
-                            : ""
-                      }`}
-                    >
-                      <MarkdownContent>{message.markdown}</MarkdownContent>
-                    </div>
+                    {message.streamingMarkdown &&
+                    message.assistantVariant === "educational" ? (
+                      <div
+                        className={`max-w-none text-sm leading-relaxed whitespace-pre-wrap break-words ${
+                          isDarkMode ? "text-white/95" : "text-gray-900"
+                        }`}
+                      >
+                        {message.markdown}
+                      </div>
+                    ) : (
+                      <div
+                        className={`prose prose-sm prose-neutral max-w-none overflow-hidden break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words prose-headings:font-semibold ${
+                          message.assistantVariant === "educational"
+                            ? isDarkMode
+                              ? "prose-invert"
+                              : ""
+                            : isDarkMode
+                              ? "prose-invert"
+                              : ""
+                        }`}
+                      >
+                        <MarkdownContent>{message.markdown}</MarkdownContent>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <span className="block min-w-0 overflow-hidden break-words">
@@ -1725,16 +1749,16 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   message.actionButtons.length > 0 &&
                   !message.isLoading &&
                   assistantEnabled && (
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="mt-3 flex w-full max-w-[min(100%,20rem)] flex-col gap-2">
                       {message.actionButtons.map((btn) => (
                         <button
                           key={btn.id}
                           type="button"
                           onClick={() => lectureAssistant.handleAction(btn.id)}
-                          className={`cursor-pointer rounded-xl px-4 py-2 text-sm font-medium transition-opacity ${
+                          className={`w-full cursor-pointer rounded-2xl border px-4 py-3 text-center text-sm font-medium shadow-sm transition-[opacity,transform] active:scale-[0.99] ${
                             btn.variant === "primary"
-                              ? "bg-sky-400 text-black hover:opacity-90"
-                              : "bg-zinc-200 text-black hover:opacity-90 dark:bg-zinc-600 dark:text-white"
+                              ? "border-sky-300/80 bg-sky-400 text-black hover:opacity-95 dark:border-sky-500/50 dark:bg-sky-500 dark:text-white"
+                              : "border-black/10 bg-white/90 text-gray-900 hover:bg-white dark:border-white/15 dark:bg-zinc-700 dark:text-white dark:hover:bg-zinc-600"
                           }`}
                         >
                           {btn.label}
