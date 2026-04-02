@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { lectureAiLegacyStreamApi } from "../services/api";
 
 export type AssistantPhase =
@@ -20,6 +21,8 @@ export interface LectureAssistantChatMessage {
   thoughtSummary?: string;
   thoughtExpanded?: boolean;
   thoughtFinished?: boolean;
+  /** 스트리밍 중 평문 표시 — 서버가 큰 델타로 줄 때는 FE가 글자 단위로 드레인. 끝나면 마크다운 정리 */
+  streamingMarkdown?: boolean;
   actionButtons?: {
     id: string;
     label: string;
@@ -27,8 +30,10 @@ export interface LectureAssistantChatMessage {
   }[];
 }
 
+/** PDF 툴바로 빠르게 넘김 판별 (문서 6-3) */
 const SKIM_DEBOUNCE_MS = 1000;
-const IDLE_AFTER_NO_MS = 12000;
+/** 「아니오」 후 무반응 시 「다음 페이지로 넘어갈까요?」 재진입 (문서 4) */
+const IDLE_AFTER_NO_MS = 10000;
 
 export function useLectureAssistantChat(options: {
   enabled: boolean;
@@ -61,10 +66,24 @@ export function useLectureAssistantChat(options: {
   const nudgedAfterNoRef = useRef(false);
   const idleAfterNoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const phaseRef = useRef<AssistantPhase>("idle");
+  /** Legacy `stream/initialize`는 세션당 1회만 — 이후 페이지·설명은 `next`만 사용 */
+  const lectureLegacySessionInitializedRef = useRef(false);
+  /** SSE `next`가 `waitingForAnswer`일 때만 — 그때는 `answer(aiQuestionId)` 후 `next` */
+  const pendingAiQuestionIdRef = useRef<string | null>(null);
+  const messageIdRef = useRef(0);
+  const nextMessageId = useCallback(() => {
+    messageIdRef.current += 1;
+    return messageIdRef.current;
+  }, []);
 
   useEffect(() => {
     phaseRef.current = phase;
   }, [phase]);
+
+  useEffect(() => {
+    lectureLegacySessionInitializedRef.current = false;
+    pendingAiQuestionIdRef.current = null;
+  }, [lectureId, materialId]);
 
   const clearIdleAfterNoTimer = useCallback(() => {
     if (idleAfterNoTimerRef.current) {
@@ -81,7 +100,7 @@ export function useLectureAssistantChat(options: {
       setMessages((prev) => [
         ...prev,
         {
-          id: Date.now(),
+          id: nextMessageId(),
           isUser: false,
           roleBadge: "ORCHESTRATOR",
           assistantVariant: "orchestrator",
@@ -90,44 +109,53 @@ export function useLectureAssistantChat(options: {
         },
       ]);
     },
-    [],
+    [nextMessageId],
   );
 
-  const appendSystem = useCallback((text: string) => {
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        isUser: false,
-        roleBadge: "SYSTEM",
-        assistantVariant: "system",
-        text,
-      },
-    ]);
-  }, []);
+  const appendSystem = useCallback(
+    (text: string) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: nextMessageId(),
+          isUser: false,
+          roleBadge: "SYSTEM",
+          assistantVariant: "system",
+          text,
+        },
+      ]);
+    },
+    [nextMessageId],
+  );
 
-  const appendUserFile = useCallback((file: File) => {
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        isUser: true,
-        file,
-        text: file.name,
-      },
-    ]);
-  }, []);
+  const appendUserFile = useCallback(
+    (file: File) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: nextMessageId(),
+          isUser: true,
+          file,
+          text: file.name,
+        },
+      ]);
+    },
+    [nextMessageId],
+  );
 
-  const appendAssistantNotice = useCallback((text: string) => {
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        isUser: false,
-        text,
-      },
-    ]);
-  }, []);
+  const appendAssistantNotice = useCallback(
+    (text: string) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: nextMessageId(),
+          isUser: false,
+          text,
+        },
+      ]);
+    },
+    [nextMessageId],
+  );
 
   const toggleThoughtExpanded = useCallback((messageId: number) => {
     setMessages((prev) =>
@@ -176,11 +204,64 @@ export function useLectureAssistantChat(options: {
       setBusy(true);
       setPhase("streaming");
 
-      const thoughtId = Date.now();
-      const answerId = thoughtId + 1;
+      const thoughtId = nextMessageId();
+      const answerId = nextMessageId();
       let cancelled = false;
       let answerStarted = false;
       let answerBuf = "";
+      /** 전체 누적 텍스트 대비 화면에 그린 길이 — 큰 델타 1회여도 글자 단위로 채움 */
+      let answerShownLen = 0;
+      let answerRevealRaf: number | null = null;
+
+      const stopAnswerReveal = () => {
+        if (answerRevealRaf != null) {
+          cancelAnimationFrame(answerRevealRaf);
+          answerRevealRaf = null;
+        }
+      };
+
+      const tickAnswerReveal = () => {
+        if (cancelled) {
+          answerRevealRaf = null;
+          return;
+        }
+        const full = answerBuf;
+        const n = full.length;
+        if (answerShownLen >= n) {
+          answerRevealRaf = null;
+          return;
+        }
+        const behind = n - answerShownLen;
+        let step: number;
+        if (behind <= 6) {
+          step = 1;
+        } else if (behind <= 120) {
+          step = Math.min(4, Math.max(2, Math.ceil(behind / 35)));
+        } else {
+          step = Math.min(72, Math.max(6, Math.ceil(behind / 22)));
+        }
+        answerShownLen = Math.min(n, answerShownLen + step);
+        flushSync(() => {
+          setMessages((p) =>
+            p.map((m) =>
+              m.id === answerId
+                ? {
+                    ...m,
+                    markdown: full.slice(0, answerShownLen),
+                    streamingMarkdown: true,
+                  }
+                : m,
+            ),
+          );
+        });
+        answerRevealRaf = requestAnimationFrame(tickAnswerReveal);
+      };
+
+      const scheduleAnswerReveal = () => {
+        if (answerRevealRaf == null) {
+          answerRevealRaf = requestAnimationFrame(tickAnswerReveal);
+        }
+      };
 
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -203,7 +284,9 @@ export function useLectureAssistantChat(options: {
       const streamAbort = new AbortController();
       abortRef.current = () => {
         cancelled = true;
+        stopAnswerReveal();
         streamAbort.abort();
+        lectureLegacySessionInitializedRef.current = false;
         void lectureAiLegacyStreamApi.cancel(lectureId).catch(() => {});
       };
 
@@ -223,30 +306,53 @@ export function useLectureAssistantChat(options: {
         );
       };
 
-      /** GET /stream/next SSE `message` 이벤트(delta)마다 호출 */
+      /** Gemini thinking / SSE `thought` 구간 — 토글 안에서 스트리밍 (문서 7.1) */
+      const appendThoughtDelta = (chunk: string) => {
+        if (cancelled || !chunk) return;
+        flushSync(() => {
+          setMessages((p) =>
+            p.map((m) =>
+              m.id === thoughtId
+                ? {
+                    ...m,
+                    isLoading: false,
+                    thoughtExpanded: true,
+                    thoughtFinished: false,
+                    thoughtSummary: (m.thoughtSummary ?? "") + chunk,
+                  }
+                : m,
+            ),
+          );
+        });
+      };
+
+      /** 본문: SSE 델타는 전부 answerBuf에 쌓고, 화면은 tickAnswerReveal로 점진 표시 */
       const appendDeltaLive = (chunk: string) => {
         if (cancelled || !chunk) return;
         if (!answerStarted) {
           answerStarted = true;
-          finalizeThoughtRow();
+          flushSync(() => {
+            finalizeThoughtRow();
+          });
           answerBuf = chunk;
-          setMessages((p) => [
-            ...p,
-            {
-              id: answerId,
-              isUser: false,
-              assistantVariant: "educational",
-              markdown: answerBuf,
-            },
-          ]);
+          answerShownLen = 0;
+          flushSync(() => {
+            setMessages((p) => [
+              ...p,
+              {
+                id: answerId,
+                isUser: false,
+                assistantVariant: "educational",
+                markdown: "",
+                streamingMarkdown: true,
+              },
+            ]);
+          });
+          scheduleAnswerReveal();
           return;
         }
         answerBuf += chunk;
-        setMessages((p) =>
-          p.map((m) =>
-            m.id === answerId ? { ...m, markdown: answerBuf } : m,
-          ),
-        );
+        scheduleAnswerReveal();
       };
 
       void (async () => {
@@ -258,23 +364,33 @@ export function useLectureAssistantChat(options: {
 
         try {
           if (!isFollowup) {
-            await lectureAiLegacyStreamApi.initialize(lectureId, {
-              pageNumber: page,
-              materialId,
-            });
-          } else {
-            try {
-              await lectureAiLegacyStreamApi.answer(lectureId, {
-                aiQuestionId: "user-followup",
-                answer: userMsg,
-              });
-              attachUserToNext = false;
-            } catch {
+            pendingAiQuestionIdRef.current = null;
+            if (!lectureLegacySessionInitializedRef.current) {
               await lectureAiLegacyStreamApi.initialize(lectureId, {
                 pageNumber: page,
                 materialId,
               });
+              lectureLegacySessionInitializedRef.current = true;
             }
+          } else {
+            const structuredQ = pendingAiQuestionIdRef.current;
+            if (structuredQ) {
+              try {
+                await lectureAiLegacyStreamApi.answer(lectureId, {
+                  aiQuestionId: structuredQ,
+                  answer: userMsg,
+                });
+                pendingAiQuestionIdRef.current = null;
+                attachUserToNext = false;
+              } catch {
+                await lectureAiLegacyStreamApi.initialize(lectureId, {
+                  pageNumber: page,
+                  materialId,
+                });
+                lectureLegacySessionInitializedRef.current = true;
+              }
+            }
+            /** else: orchestrator/자유 질문 — `answer(user-followup)` 없이 `next(userMessage)` 한 번만 */
           }
 
           const maxRounds = 96;
@@ -286,8 +402,10 @@ export function useLectureAssistantChat(options: {
 
             const res = await lectureAiLegacyStreamApi.next(lectureId, {
               pageNumber: page,
+              materialId,
               ...(useUser ? { userMessage: userMsg } : {}),
               signal: streamAbort.signal,
+              onThoughtDelta: appendThoughtDelta,
               onDelta: appendDeltaLive,
             });
 
@@ -300,15 +418,46 @@ export function useLectureAssistantChat(options: {
               appendDeltaLive(res.contentData);
             }
             if (!res.hasMore || st === "COMPLETED" || st === "DONE") {
+              if (!res.waitingForAnswer) pendingAiQuestionIdRef.current = null;
               break;
             }
             if (res.waitingForAnswer) {
+              if (res.aiQuestionId)
+                pendingAiQuestionIdRef.current = res.aiQuestionId;
               break;
             }
           }
 
+          const waitAnswerRevealDrain = async () => {
+            while (
+              !cancelled &&
+              answerStarted &&
+              answerShownLen < answerBuf.length
+            ) {
+              await new Promise<void>((r) =>
+                requestAnimationFrame(() => r()),
+              );
+            }
+          };
+
           if (!cancelled) {
+            await waitAnswerRevealDrain();
+            stopAnswerReveal();
+            answerShownLen = answerBuf.length;
             finalizeThoughtRow();
+            if (answerStarted) {
+              setMessages((p) =>
+                p.map((m) =>
+                  m.id === answerId
+                    ? {
+                        ...m,
+                        markdown: answerBuf,
+                        streamingMarkdown: false,
+                      }
+                    : m,
+                ),
+              );
+            }
             finishStreamAndContinue();
           } else {
             streamingRef.current = false;
@@ -316,6 +465,7 @@ export function useLectureAssistantChat(options: {
             abortRef.current = null;
           }
         } catch (err) {
+          stopAnswerReveal();
           streamingRef.current = false;
           abortRef.current = null;
           setBusy(false);
@@ -325,7 +475,11 @@ export function useLectureAssistantChat(options: {
           ) {
             setMessages((p) =>
               p.map((m) =>
-                m.id === thoughtId ? { ...m, isLoading: false } : m,
+                m.id === thoughtId
+                  ? { ...m, isLoading: false }
+                  : m.id === answerId
+                    ? { ...m, streamingMarkdown: false }
+                    : m,
               ),
             );
             setPhase("idle");
@@ -334,15 +488,19 @@ export function useLectureAssistantChat(options: {
           const msg =
             err instanceof Error ? err.message : "강의 보조 요청 실패";
           setMessages((p) => [
-            ...p.filter((m) => !(m.id === thoughtId && m.isLoading)),
+            ...p
+              .filter((m) => !(m.id === thoughtId && m.isLoading))
+              .map((m) =>
+                m.id === answerId ? { ...m, streamingMarkdown: false } : m,
+              ),
             {
-              id: Date.now(),
+              id: nextMessageId(),
               isUser: false,
               assistantVariant: "system",
               text:
                 `오류: ${msg}\n\n` +
                 "강의 AI Legacy API를 확인해 주세요: " +
-                "POST .../stream/initialize, GET .../stream/next (SSE), .../stream/answer " +
+                "POST .../stream/initialize, POST .../stream/next (SSE), .../stream/answer " +
                 "(필요 시 GET .../stream/session)",
             },
           ]);
@@ -354,6 +512,7 @@ export function useLectureAssistantChat(options: {
       enabled,
       lectureId,
       materialId,
+      nextMessageId,
       clearIdleAfterNoTimer,
       finishStreamAndContinue,
     ],
@@ -370,6 +529,9 @@ export function useLectureAssistantChat(options: {
       setPhase("idle");
       setBusy(false);
       streamingRef.current = false;
+      lectureLegacySessionInitializedRef.current = false;
+      pendingAiQuestionIdRef.current = null;
+      messageIdRef.current = 0;
       abortRef.current?.();
       abortRef.current = null;
       pendingPageAfterStreamRef.current = null;
@@ -398,7 +560,8 @@ export function useLectureAssistantChat(options: {
       }
 
       const ph = phaseRef.current;
-      if (ph === "await_next_page" || ph === "followup_after_no") {
+      /** 오케스트레이터가 「다음 페이지」 버튼을 기다리는 중에는 PDF 스킴으로 끼어들지 않음 */
+      if (ph === "await_next_page") {
         return;
       }
       if (ph === "await_explain_confirm") {
@@ -488,13 +651,13 @@ export function useLectureAssistantChat(options: {
       nudgedAfterNoRef.current = true;
       setMessages((p) => [
         ...p,
-        { id: Date.now(), isUser: true, text: trimmed },
+        { id: nextMessageId(), isUser: true, text: trimmed },
       ]);
       const page = currentPdfPage ?? 1;
       setPhase("streaming");
       runStream({ page, userMessage: trimmed });
     },
-    [clearIdleAfterNoTimer, currentPdfPage, runStream],
+    [clearIdleAfterNoTimer, currentPdfPage, nextMessageId, runStream],
   );
 
   const onEmptySubmit = useCallback(() => {

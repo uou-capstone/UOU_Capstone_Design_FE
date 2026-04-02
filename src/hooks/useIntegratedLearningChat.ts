@@ -12,6 +12,16 @@ export interface IntegratedChatMessage {
   isLoading?: boolean;
   roleBadge?: string;
   assistantVariant?: "educational" | "orchestrator" | "system";
+  streamingMarkdown?: boolean;
+  thoughtSummary?: string;
+  thoughtExpanded?: boolean;
+  thoughtFinished?: boolean;
+  file?: File;
+  actionButtons?: {
+    id: string;
+    label: string;
+    variant?: "primary" | "muted";
+  }[];
 }
 
 export function useIntegratedLearningChat(options: {
