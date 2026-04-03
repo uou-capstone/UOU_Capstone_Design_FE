@@ -1259,6 +1259,65 @@ export interface IntegratedLearningMessage {
   raw?: Record<string, unknown>;
 }
 
+/** 통합 학습 v3 `.../event` SSE — 청크 단위 UI (사고 요약 / 본문) */
+export type LearningSseStreamCallbacks = {
+  onThoughtDelta?: (text: string, raw: Record<string, unknown>) => void;
+  onAgentDelta?: (text: string, raw: Record<string, unknown>) => void;
+  onDone?: (payload: Record<string, unknown>) => void;
+  onError?: (message: string, raw?: Record<string, unknown>) => void;
+  signal?: AbortSignal;
+};
+
+const LEARNING_THOUGHT_TYPE_NAMES = new Set([
+  "thought",
+  "thinking",
+  "reasoning",
+  "thought_summary",
+  "internal",
+  "think",
+]);
+
+function isLearningThoughtSseEvent(ev: Record<string, unknown>): boolean {
+  const t = String(ev.type ?? ev.event ?? "").toLowerCase();
+  const phase = String(
+    pickFirstString(ev, ["phase", "streamPhase", "stream_phase"]) ?? "",
+  ).toLowerCase();
+  const role = String(pickFirstString(ev, ["role"]) ?? "").toLowerCase();
+  const ct = String(ev.contentType ?? ev.content_type ?? "").toUpperCase();
+  return (
+    LEARNING_THOUGHT_TYPE_NAMES.has(t) ||
+    phase === "thought" ||
+    phase === "thinking" ||
+    role === "thinking" ||
+    ct === "THOUGHT"
+  );
+}
+
+function learningSseEventDeltaText(ev: Record<string, unknown>): string {
+  const payload = (ev.payload as Record<string, unknown> | undefined) ?? {};
+  return (
+    pickFirstString(ev, [
+      "delta",
+      "content",
+      "message",
+      "text",
+      "answer",
+      "main",
+      "thought",
+    ]) ??
+    pickFirstString(payload, [
+      "delta",
+      "content",
+      "message",
+      "text",
+      "answer",
+      "main",
+      "thought",
+    ]) ??
+    ""
+  );
+}
+
 export const lectureMaterialApi = {
   // 파일 업로드 및 강의 자료 생성
   uploadAndGenerate: async (file: File): Promise<LectureMaterialResponse> => {
@@ -1907,6 +1966,7 @@ const flattenLearningEventBody = (eventBody: {
 /**
  * 통합 학습 v3 — POST /api/learning/sessions/{sessionId}/event (+ SSE)
  * Accept: text/event-stream. data: JSON — heartbeat 무시, agent_delta 누적 렌더는 매퍼에서 처리.
+ * `streamCallbacks`가 있으면 각 JSON 이벤트마다 사고/본문 델타를 즉시 전달 (실시간 스트리밍).
  */
 const postLearningEventAndCollect = async (
   sessionId: string,
@@ -1916,6 +1976,7 @@ const postLearningEventAndCollect = async (
     payload?: Record<string, unknown>;
   },
   lectureId?: number,
+  streamCallbacks?: LearningSseStreamCallbacks,
 ): Promise<Record<string, unknown>[]> => {
   const lectureIdForQuery = eventBody.lectureId ?? lectureId;
   const query =
@@ -1945,6 +2006,7 @@ const postLearningEventAndCollect = async (
       body: JSON.stringify(requestBody),
       mode: "cors",
       credentials: "omit",
+      signal: streamCallbacks?.signal,
     });
 
   let res = await fetchEvent();
@@ -1981,6 +2043,14 @@ const postLearningEventAndCollect = async (
   let buffer = "";
 
   while (true) {
+    if (streamCallbacks?.signal?.aborted) {
+      try {
+        await reader.cancel();
+      } catch {
+        /* ignore */
+      }
+      return events;
+    }
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
@@ -1998,11 +2068,24 @@ const postLearningEventAndCollect = async (
       const eventType = String(parsed.type ?? "");
       if (eventType === "heartbeat") continue;
       events.push(parsed);
-      if (eventType === "done" || toBool(parsed.final) === true) {
+      if (eventType === "error") {
+        const errMsg =
+          pickFirstString(parsed, ["message", "error", "detail"]) ??
+          "스트림 오류";
+        streamCallbacks?.onError?.(errMsg, parsed);
         return events;
       }
-      if (eventType === "error") {
+      if (eventType === "done" || toBool(parsed.final) === true) {
+        streamCallbacks?.onDone?.(parsed);
         return events;
+      }
+      const deltaText = learningSseEventDeltaText(parsed);
+      if (deltaText && streamCallbacks) {
+        if (isLearningThoughtSseEvent(parsed)) {
+          streamCallbacks.onThoughtDelta?.(deltaText, parsed);
+        } else {
+          streamCallbacks.onAgentDelta?.(deltaText, parsed);
+        }
       }
     }
   }
@@ -2011,7 +2094,27 @@ const postLearningEventAndCollect = async (
   if (tail.length > 0) {
     const payload = tail.startsWith("data:") ? tail.slice(5).trim() : tail;
     const parsed = normalizeSseData(payload);
-    if (parsed) events.push(parsed);
+    if (parsed) {
+      events.push(parsed);
+      const t = String(parsed.type ?? "");
+      if (t === "error") {
+        const errMsg =
+          pickFirstString(parsed, ["message", "error", "detail"]) ??
+          "스트림 오류";
+        streamCallbacks?.onError?.(errMsg, parsed);
+      } else if (t === "done" || toBool(parsed.final) === true) {
+        streamCallbacks?.onDone?.(parsed);
+      } else if (t !== "heartbeat") {
+        const deltaText = learningSseEventDeltaText(parsed);
+        if (deltaText && streamCallbacks) {
+          if (isLearningThoughtSseEvent(parsed)) {
+            streamCallbacks.onThoughtDelta?.(deltaText, parsed);
+          } else {
+            streamCallbacks.onAgentDelta?.(deltaText, parsed);
+          }
+        }
+      }
+    }
   }
 
   return events;
@@ -2548,11 +2651,13 @@ export const integratedLearningApi = {
     sessionId: string,
     eventType: string,
     payload?: Record<string, unknown>,
+    streamCallbacks?: LearningSseStreamCallbacks,
   ): Promise<IntegratedLearningMessage[]> => {
     const events = await postLearningEventAndCollect(
       sessionId,
       { type: eventType, lectureId, payload: payload ?? {} },
       lectureId,
+      streamCallbacks,
     );
     return mapLearningEventsToIntegratedMessages(events);
   },

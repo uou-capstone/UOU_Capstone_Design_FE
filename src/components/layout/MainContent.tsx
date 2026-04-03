@@ -27,12 +27,13 @@ import {
 import RightSidebar from "./RightSidebar";
 import SettingsPage from "../pages/SettingsPage";
 import ReportPage from "../pages/ReportPage";
+import UpdatesPage from "../pages/UpdatesPage";
 import PdfViewer, { type PdfViewerHandle } from "../common/PdfViewer";
 import { CloseIcon, EditIcon, TrashIcon } from "../common/Icons";
 
 type ViewMode = "course-list" | "course-detail";
-// 메인 메뉴는 강의/설정/신고 사용
-type MenuItem = "lectures" | "settings" | "report";
+// 메인 메뉴는 강의/설정/신고/업데이트 사용
+type MenuItem = "lectures" | "settings" | "report" | "updates";
 
 type ItemType = "material" | "exam" | "assessment";
 type CenterItem = {
@@ -939,6 +940,7 @@ const MainContent: React.FC<MainContentProps> = ({
   const resourcePreviewViewerPanelRef = React.useRef<HTMLDivElement | null>(
     null,
   );
+  const resourcePreviewChatPanelRef = React.useRef<HTMLDivElement | null>(null);
 
   // 시험 세션 상세 보기 모달 상태
   const [examDetailSessionId, setExamDetailSessionId] = React.useState<
@@ -2723,6 +2725,18 @@ const MainContent: React.FC<MainContentProps> = ({
       suppressedExamSessionForUrlRestoreRef.current = null;
       const hadResourcePreview =
         previewFileUrl != null || previewMaterialId != null;
+      if (hadResourcePreview) {
+        const currentChatPanelWidth =
+          resourcePreviewChatPanelRef.current?.getBoundingClientRect().width;
+        if (
+          currentChatPanelWidth != null &&
+          Number.isFinite(currentChatPanelWidth) &&
+          currentChatPanelWidth > 0
+        ) {
+          // 리소스 미리보기에서 사용자가 보고 있던 실제 우측 패널 폭을 그대로 유지
+          setRightSidebarWidth(Math.round(currentChatPanelWidth));
+        }
+      }
       if (hadResourcePreview) {
         previewBeforeExamRef.current = {
           previewFileUrl,
@@ -5309,6 +5323,7 @@ const MainContent: React.FC<MainContentProps> = ({
             </div>
             {/* 우: 채팅(강의 학습) — PDF/MD는 분할 너비, 시험 뷰는 고정 픽셀 */}
             <div
+              ref={resourcePreviewChatPanelRef}
               className={`min-h-0 overflow-hidden flex flex-col ${
                 isResourceDocPreview ? "flex-1 basis-0 min-w-0" : "shrink-0"
               }`}
@@ -5754,7 +5769,11 @@ const MainContent: React.FC<MainContentProps> = ({
     <>
       <div
         className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden transition-colors pl-5 sm:pl-6 lg:pl-8 ${
-          selectedMenu === "settings" || selectedMenu === "report" ? "pr-0" : "pr-5 sm:pr-6 lg:pr-8"
+          selectedMenu === "settings" ||
+          selectedMenu === "report" ||
+          selectedMenu === "updates"
+            ? "pr-0"
+            : "pr-5 sm:pr-6 lg:pr-8"
         } ${isDarkMode ? "bg-[#141414]" : "bg-white"}`}
       >
         {renderCourseListHeader()}
@@ -5762,12 +5781,20 @@ const MainContent: React.FC<MainContentProps> = ({
         {renderSettingsHeader()}
         <div className="flex-1 min-h-0 min-w-0 overflow-hidden flex flex-col">
           <div
-            className={`flex-1 min-h-0 min-w-0 ${(previewFileUrl || previewMaterialId != null || examDetailSessionId) ? "overflow-hidden" : "overflow-y-auto"} ${selectedMenu === "settings" || selectedMenu === "report" ? "pr-5 sm:pr-6 lg:pr-8" : ""}`}
+            className={`flex-1 min-h-0 min-w-0 ${(previewFileUrl || previewMaterialId != null || examDetailSessionId) ? "overflow-hidden" : "overflow-y-auto"} ${
+              selectedMenu === "settings" ||
+              selectedMenu === "report" ||
+              selectedMenu === "updates"
+                ? "pr-5 sm:pr-6 lg:pr-8"
+                : ""
+            }`}
           >
             {selectedMenu === "settings" ? (
               <SettingsPage />
             ) : selectedMenu === "report" ? (
               <ReportPage />
+            ) : selectedMenu === "updates" ? (
+              <UpdatesPage />
             ) : viewMode === "course-list" ? (
               renderCourseList()
             ) : (

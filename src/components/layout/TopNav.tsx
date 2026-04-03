@@ -65,9 +65,11 @@ interface TopNavProps {
   isCourseDetail?: boolean;
   isSettingsPage?: boolean;
   isReportPage?: boolean;
+  isUpdatesPage?: boolean;
   onNavigateHome?: () => void;
   onOpenSettings?: () => void;
   onOpenReport?: () => void;
+  onOpenUpdates?: () => void;
   previewFileName?: string | null;
   onBackFromPreview?: () => void;
 }
@@ -76,9 +78,11 @@ const TopNav: React.FC<TopNavProps> = ({
   isCourseDetail,
   isSettingsPage,
   isReportPage,
+  isUpdatesPage,
   onNavigateHome,
   onOpenSettings,
   onOpenReport,
+  onOpenUpdates,
   previewFileName,
   onBackFromPreview,
 }) => {
@@ -205,7 +209,10 @@ const TopNav: React.FC<TopNavProps> = ({
             </svg>
           </button>
         )}
-        {user?.role === "TEACHER" && !isSettingsPage && !isReportPage && (
+        {user?.role === "TEACHER" &&
+          !isSettingsPage &&
+          !isReportPage &&
+          !isUpdatesPage && (
           <div className="hidden items-center justify-center lg:flex">
             {isCourseDetail ? (
               <div className="relative" ref={lectureMenuRef}>
@@ -361,7 +368,11 @@ const TopNav: React.FC<TopNavProps> = ({
                     type="button"
                     onClick={() => {
                       setIsUserMenuOpen(false);
-                      window.location.reload();
+                      if (onOpenUpdates) {
+                        onOpenUpdates();
+                      } else {
+                        navigate("/updates");
+                      }
                     }}
                     className="flex h-9 items-center rounded-xl p-2 gap-2 cursor-pointer text-base font-semibold text-white hover:bg-white/10 transition-colors"
                   >

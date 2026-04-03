@@ -7,7 +7,7 @@ import { useCourses } from "../../hooks/useCourses";
 import type { Course, CourseDetail, LectureResponseDto } from "../../services/api";
 
 type ViewMode = "course-list" | "course-detail";
-type MenuItem = "lectures" | "settings" | "report";
+type MenuItem = "lectures" | "settings" | "report" | "updates";
 
 type CourseLecture = NonNullable<NonNullable<CourseDetail["lectures"]>[number]>;
 
@@ -47,6 +47,7 @@ const AppLayout: React.FC = () => {
   const [currentCourseId, setCurrentCourseId] = useState<number | null>(null);
   const [currentLectureId, setCurrentLectureId] = useState<number | null>(null);
   const [previewFileName, setPreviewFileName] = useState<string | null>(null);
+  const [mainContentResetKey, setMainContentResetKey] = useState(0);
   const viewerBackHandlerRef = useRef<(() => void) | null>(null);
   const registerViewerBackHandler = useCallback((fn: (() => void) | null) => {
     viewerBackHandlerRef.current = fn;
@@ -105,7 +106,11 @@ const AppLayout: React.FC = () => {
       setCurrentLectureId(null);
       resetLectureOutputs();
       // 설정/신고 페이지로 이동한 경우 메뉴는 pathname effect에서 처리, 그 외에만 "강의"로
-      if (pathname !== "/settings" && pathname !== "/report") {
+      if (
+        pathname !== "/settings" &&
+        pathname !== "/report" &&
+        pathname !== "/updates"
+      ) {
         setSelectedMenu("lectures");
       }
       return;
@@ -118,11 +123,16 @@ const AppLayout: React.FC = () => {
   useEffect(() => {
     if (pathname === "/settings") setSelectedMenu("settings");
     else if (pathname === "/report") setSelectedMenu("report");
+    else if (pathname === "/updates") setSelectedMenu("updates");
   }, [pathname]);
 
   // 설정/신고 페이지로 전환 시 미리보기 상태(뒤로가기 버튼, 파일 제목) 초기화
   useEffect(() => {
-    if (selectedMenu === "settings" || selectedMenu === "report") {
+    if (
+      selectedMenu === "settings" ||
+      selectedMenu === "report" ||
+      selectedMenu === "updates"
+    ) {
       setPreviewFileName(null);
     }
   }, [selectedMenu]);
@@ -202,7 +212,21 @@ const AppLayout: React.FC = () => {
   const handleBackFromPreview = useCallback(() => {
     setSelectedMenu("lectures");
     viewerBackHandlerRef.current?.();
-  }, []);
+    if (selectedCourseId != null) {
+      const targetPath = `/courses/${selectedCourseId}`;
+      if (pathname === targetPath) {
+        setMainContentResetKey((k) => k + 1);
+        return;
+      }
+      navigate(targetPath);
+      return;
+    }
+    if (pathname === "/") {
+      setMainContentResetKey((k) => k + 1);
+      return;
+    }
+    navigate("/");
+  }, [navigate, pathname, selectedCourseId]);
 
   const handleCourseCreated = (_course: CourseDetail) => {
     fetchCourses();
@@ -428,6 +452,7 @@ const AppLayout: React.FC = () => {
         isCourseDetail={viewMode === "course-detail"}
         isSettingsPage={selectedMenu === "settings"}
         isReportPage={selectedMenu === "report"}
+        isUpdatesPage={selectedMenu === "updates"}
         onNavigateHome={handleBackToCourses}
         onOpenSettings={() => {
           setSelectedMenu("settings");
@@ -437,11 +462,16 @@ const AppLayout: React.FC = () => {
           setSelectedMenu("report");
           navigate("/report");
         }}
+        onOpenUpdates={() => {
+          setSelectedMenu("updates");
+          navigate("/updates");
+        }}
         previewFileName={previewFileName}
         onBackFromPreview={handleBackFromPreview}
       />
       <div className="flex-1 min-h-0 min-w-0 flex overflow-hidden">
         <MainContent
+          key={`main-content-${selectedCourseId ?? "home"}-${mainContentResetKey}`}
           viewMode={viewMode}
           courses={courses}
           isCoursesLoading={isCoursesLoading}
