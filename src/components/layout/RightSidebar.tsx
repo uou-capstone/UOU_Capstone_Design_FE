@@ -194,6 +194,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragCounterRef = useRef<number>(0);
   const previewObjectUrlRef = useRef<string | null>(null);
+  const shouldPinIntegratedUserMessageTopRef = useRef<boolean>(false);
   /** 시험 문항 수: 키보드 입력 중에는 초안만 두고 blur/Enter에서 확정 */
   const examCountFieldFocusedRef = useRef(false);
   const [examCountFieldFocused, setExamCountFieldFocused] = useState(false);
@@ -241,6 +242,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const shouldAbortPollingRef = useRef<boolean>(false);
   const answeredQuestionIdsRef = useRef<Set<string>>(new Set());
   const [isAnswerSubmitting, setIsAnswerSubmitting] = useState(false);
+  const [integratedTopPinBottomPad, setIntegratedTopPinBottomPad] = useState(0);
 
   useEffect(() => {
     answeredQuestionIdsRef.current = new Set();
@@ -310,6 +312,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         ? lectureAssistant.messages
         : messages
   ) as ChatMessage[];
+
+  /** 강의학습·통합학습: 카드형 말풍선 없이 본문만 전체 너비 */
+  const borderlessLearningChat = assistantEnabled || integratedModeActive;
+
+  const copyLearningChatToClipboard = useCallback((raw: string) => {
+    const t = raw.trim();
+    if (!t) return;
+    void navigator.clipboard?.writeText(t).catch(() => {});
+  }, []);
 
   // 로컬 스토리지 키 생성
   const getUploadStorageKey = (lectureId: number) => `lecture_upload_${lectureId}`;
@@ -413,10 +424,43 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     const chatContainer = document.getElementById("chat-messages");
     if (!chatContainer) return;
     const id = requestAnimationFrame(() => {
+      if (integratedModeActive && shouldPinIntegratedUserMessageTopRef.current) {
+        const latestUserMessage = [...displayMessages]
+          .reverse()
+          .find((m) => m.isUser);
+        if (latestUserMessage) {
+          const target = chatContainer.querySelector<HTMLElement>(
+            `[data-message-id="${latestUserMessage.id}"]`,
+          );
+          if (target) {
+            const requiredPad = Math.max(
+              0,
+              target.offsetTop - (chatContainer.scrollHeight - chatContainer.clientHeight),
+            );
+            if (requiredPad > integratedTopPinBottomPad) {
+              setIntegratedTopPinBottomPad(requiredPad + 8);
+              return;
+            }
+            chatContainer.scrollTop = target.offsetTop;
+            shouldPinIntegratedUserMessageTopRef.current = false;
+            return;
+          }
+        }
+        shouldPinIntegratedUserMessageTopRef.current = false;
+      }
+      if (integratedTopPinBottomPad !== 0) {
+        setIntegratedTopPinBottomPad(0);
+      }
       chatContainer.scrollTop = chatContainer.scrollHeight;
     });
     return () => cancelAnimationFrame(id);
-  }, [displayMessages, integratedModeActive, assistantEnabled, lectureAssistant.busy]);
+  }, [
+    displayMessages,
+    integratedModeActive,
+    assistantEnabled,
+    lectureAssistant.busy,
+    integratedTopPinBottomPad,
+  ]);
 
   // 스트리밍 취소 함수
   const cancelStreaming = useCallback(async () => {
@@ -605,14 +649,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       const isAuthError = errorMessageText.includes('백엔드 인증 오류') || 
                          errorMessageText.includes('인증 토큰이 유효하지 않거나 만료');
       
+      const errorNoticeText = `파일 업로드 실패: ${errorMessageText}${isAuthError ? '\n\n잠시 후 다시 시도하거나, 페이지를 새로고침해주세요.' : ''}`;
       const errorMessage: ChatMessage = {
         id: Date.now() + 1,
-        text: `파일 업로드 실패: ${errorMessageText}${isAuthError ? '\n\n잠시 후 다시 시도하거나, 페이지를 새로고침해주세요.' : ''}`,
+        text: errorNoticeText,
         isUser: false,
         isLoading: false,
       };
       if (assistantEnabled) {
-        lectureAssistant.appendAssistantNotice(errorMessage.text);
+        lectureAssistant.appendAssistantNotice(errorNoticeText);
       } else {
         setMessages((prev) => [...prev, errorMessage]);
         setMessages((prev) => prev.filter((msg) => msg.id !== uploadMessage.id));
@@ -889,6 +934,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         return;
       }
       if (trimmed) {
+        shouldPinIntegratedUserMessageTopRef.current = true;
         void integratedLearning.sendUserText(trimmed);
       } else {
         void integratedLearning.startOrContinue();
@@ -1534,19 +1580,18 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       {/* 채팅 메시지 영역 */}
       <div
         id="chat-messages"
-        className={`relative flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-3 py-4 space-y-2 ${
-          integratedModeActive ? "scrollbar-hide" : ""
+        className={`relative flex-1 min-w-0 w-full overflow-y-auto overflow-x-hidden py-4 ${
+          borderlessLearningChat ? "space-y-5 px-4" : "space-y-2 px-3"
         }`}
         style={{
           backgroundColor: isDarkMode ? "#141414" : "#FFFFFF",
-          ...(!integratedModeActive
-            ? {
-                scrollbarWidth: "thin" as const,
-                scrollbarColor: isDarkMode
-                  ? "#4a5568 #141414"
-                  : "#cbd5e0 #ffffff",
-              }
-            : {}),
+          paddingBottom: integratedTopPinBottomPad
+            ? `${integratedTopPinBottomPad + 16}px`
+            : undefined,
+          scrollbarWidth: "thin" as const,
+          scrollbarColor: isDarkMode
+            ? "#4a5568 #141414"
+            : "#cbd5e0 #ffffff",
         }}
       >
         {learningTab === "integrated" && showIntegratedBetaNotice ? (
@@ -1597,7 +1642,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               !message.isUser &&
               index > 0 &&
               !displayMessages[index - 1].isUser;
-            const bubbleWidth = message.markdown ? "max-w-[90%]" : "max-w-[80%]";
+            const bubbleWidth = message.markdown ? "max-w-[78%]" : "max-w-[72%]";
 
             const assistantBubble =
               !message.isUser && message.assistantVariant === "orchestrator"
@@ -1606,54 +1651,84 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   : "bg-[#1e3a8a] border-blue-800 text-white"
                 : !message.isUser && message.assistantVariant === "educational"
                   ? isDarkMode
-                    ? "bg-emerald-900/75 border-emerald-700/50 text-white"
-                    : "bg-emerald-50 border-emerald-200 text-gray-900"
+                  ? "bg-emerald-900/80 border-emerald-700/60 text-white"
+                  : "bg-emerald-100 border-emerald-300 text-gray-900"
                   : !message.isUser && message.assistantVariant === "system"
                     ? isDarkMode
                       ? "bg-zinc-800 border-zinc-600 text-gray-100"
                       : "bg-gray-100 border-gray-300 text-gray-900"
                     : null;
 
+            const bubbleShellClass = borderlessLearningChat
+              ? `w-full max-w-none min-w-0 overflow-hidden break-words px-0 py-2 text-[15px] leading-[1.65] border-0 shadow-none rounded-none bg-transparent ${
+                  message.isUser
+                    ? isDarkMode
+                      ? "text-right text-zinc-300"
+                      : "text-right text-gray-800"
+                    : message.assistantVariant === "system"
+                      ? isDarkMode
+                        ? "text-amber-200/90"
+                        : "text-amber-900"
+                      : isDarkMode
+                        ? "text-zinc-100"
+                        : "text-gray-900"
+                }`
+              : `${bubbleWidth} min-w-0 overflow-hidden break-words px-3.5 py-2.5 ${commonStyles?.rounded ?? "rounded-lg"} text-[14px] leading-[1.65] border ${
+                  message.isUser
+                    ? isDarkMode
+                      ? "bg-emerald-500/90 text-white border-emerald-300/50"
+                      : "bg-emerald-600 text-white border-emerald-600"
+                    : assistantBubble ??
+                      (isDarkMode
+                        ? "bg-zinc-800/70 border-zinc-600/70"
+                        : "bg-white border-gray-200")
+                } shadow-sm`;
+
+            const bubbleShellStyle: React.CSSProperties | undefined =
+              borderlessLearningChat
+                ? undefined
+                : !message.isUser && !assistantBubble
+                  ? { color: isDarkMode ? "#FFFFFF" : "#141414" }
+                  : undefined;
+
+            const iconBtnClass = `inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors cursor-pointer ${
+              isDarkMode
+                ? "text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
+                : "text-gray-500 hover:bg-black/[0.06] hover:text-gray-800"
+            }`;
+
+            const messageCopyText = `${message.text ?? ""}\n${message.markdown ?? ""}${
+              message.file ? `\n${message.file.name}` : ""
+            }`.trim();
+
             return (
               <div
                 key={message.id}
-                className={`flex min-w-0 flex-col ${message.isUser ? "items-end" : "items-start"} ${
-                  isConsecutiveAgent ? "-mt-1" : ""
-                }`}
+                data-message-id={message.id}
+                className={`group flex min-w-0 w-full flex-col ${
+                  message.isUser ? "items-end" : "items-stretch"
+                } ${isConsecutiveAgent && !borderlessLearningChat ? "-mt-1" : ""}`}
               >
                 {message.roleBadge && (
                   <span
-                    className={`mb-0.5 block text-[10px] font-semibold tracking-wide opacity-80 ${
-                      message.isUser ? "text-right pr-1" : "pl-1"
+                    className={`mb-1 block w-full text-[10px] font-semibold tracking-wide opacity-70 ${
+                      message.isUser ? "text-right" : "text-left"
                     }`}
                     style={{ color: isDarkMode ? "#a1a1aa" : "#6b7280" }}
                   >
                     {message.roleBadge}
                   </span>
                 )}
-                <div
-                  className={`${bubbleWidth} min-w-0 overflow-hidden break-words px-3 py-2 ${commonStyles?.rounded ?? "rounded-lg"} text-sm border ${
-                    message.isUser
-                      ? isDarkMode
-                        ? "bg-emerald-500/85 text-white border-emerald-400/40"
-                        : "bg-emerald-600 text-white border-emerald-500"
-                      : assistantBubble ??
-                        (isDarkMode
-                          ? "bg-white/10 border-white/20"
-                          : "bg-white border-gray-200")
-                  } shadow-sm`}
-                  style={
-                    !message.isUser && !assistantBubble
-                      ? { color: isDarkMode ? "#FFFFFF" : "#141414" }
-                      : undefined
-                  }
-                >
-                {message.thoughtSummary != null && assistantEnabled && (
+                <div className={bubbleShellClass} style={bubbleShellStyle}>
+                {message.thoughtSummary != null &&
+                  (assistantEnabled || integratedModeActive) && (
                   <div className="mb-2">
                     <button
                       type="button"
                       onClick={() =>
-                        lectureAssistant.toggleThoughtExpanded(message.id)
+                        assistantEnabled
+                          ? lectureAssistant.toggleThoughtExpanded(message.id)
+                          : integratedLearning.toggleThoughtExpanded(message.id)
                       }
                       className="text-xs font-medium underline-offset-2 hover:underline opacity-90"
                     >
@@ -1663,12 +1738,16 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     </button>
                     {message.thoughtExpanded ? (
                       <pre
-                        className={`mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md border px-2 py-1.5 text-xs leading-relaxed ${
-                          message.assistantVariant === "orchestrator"
-                            ? "border-white/25 bg-black/25"
-                            : isDarkMode
-                              ? "border-white/15 bg-black/20"
-                              : "border-gray-200 bg-white/80"
+                        className={`mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md px-2 py-1.5 text-xs leading-relaxed ${
+                          borderlessLearningChat
+                            ? isDarkMode
+                              ? "border border-white/10 bg-transparent"
+                              : "border border-gray-200 bg-transparent"
+                            : message.assistantVariant === "orchestrator"
+                              ? "border border-white/25 bg-black/25"
+                              : isDarkMode
+                                ? "border border-white/15 bg-black/20"
+                                : "border border-gray-200 bg-white/80"
                         }`}
                       >
                         {message.thoughtSummary || "…"}
@@ -1711,7 +1790,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     <span>{message.file.name}</span>
                   </div>
                 ) : message.isUser ? (
-                  <span className="block min-w-0 overflow-hidden break-words">
+                  <span className="block min-w-0 overflow-hidden break-words whitespace-pre-wrap">
                     {message.text}
                   </span>
                 ) : message.markdown ? (
@@ -1724,15 +1803,21 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     {message.streamingMarkdown &&
                     message.assistantVariant === "educational" ? (
                       <div
-                        className={`max-w-none text-sm leading-relaxed whitespace-pre-wrap break-words ${
-                          isDarkMode ? "text-white/95" : "text-gray-900"
+                        className={`max-w-none whitespace-pre-wrap break-words ${
+                          borderlessLearningChat
+                            ? `text-[15px] leading-[1.65] ${isDarkMode ? "text-zinc-100" : "text-gray-900"}`
+                            : `text-[14px] leading-[1.7] ${isDarkMode ? "text-white/95" : "text-gray-900"}`
                         }`}
                       >
                         {message.markdown}
                       </div>
                     ) : (
                       <div
-                        className={`prose prose-sm prose-neutral max-w-none overflow-hidden break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words prose-headings:font-semibold ${
+                        className={`prose max-w-none overflow-hidden break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words prose-headings:font-semibold ${
+                          borderlessLearningChat
+                            ? "prose-base prose-neutral leading-[1.65]"
+                            : "prose-sm prose-neutral leading-[1.7]"
+                        } ${
                           message.assistantVariant === "orchestrator"
                             ? "[&_span:has(>img)]:!my-1.5 [&_img]:!my-0 [&_img]:!max-h-36 [&_img]:!w-auto [&_img]:!max-w-full [&_img]:!rounded-lg [&_img]:object-contain"
                             : ""
@@ -1751,39 +1836,46 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     )}
                   </div>
                 ) : (
-                  <span className="block min-w-0 overflow-hidden break-words">
+                  <span className="block min-w-0 overflow-hidden break-words whitespace-pre-wrap">
                     {message.text}
                   </span>
                 )}
-                {message.actionButtons &&
-                  message.actionButtons.length > 0 &&
-                  !message.isLoading &&
-                  assistantEnabled && (
+                {!message.isLoading &&
+                  messageCopyText &&
+                  (message.markdown?.trim() ||
+                    message.text?.trim() ||
+                    message.file?.name?.trim()) && (
                     <div
-                      className={`mt-3 flex w-full gap-2 ${
-                        message.assistantVariant === "orchestrator"
-                          ? "flex-row min-w-0"
-                          : "max-w-[min(100%,20rem)] flex-col"
-                      }`}
+                      className={`mt-1 flex w-full items-center ${
+                        message.isUser ? "justify-end" : "justify-start"
+                      } opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100`}
+                      aria-label="메시지 도구"
                     >
-                      {message.actionButtons.map((btn) => (
-                        <button
-                          key={btn.id}
-                          type="button"
-                          onClick={() => lectureAssistant.handleAction(btn.id)}
-                          className={`cursor-pointer rounded-2xl border text-center text-sm font-medium shadow-sm transition-[opacity,transform] active:scale-[0.99] ${
-                            message.assistantVariant === "orchestrator"
-                              ? "min-w-0 flex-1 px-3 py-2"
-                              : "w-full px-4 py-3"
-                          } ${
-                            btn.variant === "primary"
-                              ? "border-sky-300/80 bg-sky-400 text-black hover:opacity-95 dark:border-sky-500/50 dark:bg-sky-500 dark:text-white"
-                              : "border-black/10 bg-white/90 text-gray-900 hover:bg-white dark:border-white/15 dark:bg-zinc-700 dark:text-white dark:hover:bg-zinc-600"
-                          }`}
+                      <button
+                        type="button"
+                        className={iconBtnClass}
+                        title="복사"
+                        aria-label="메시지 복사"
+                        onClick={() =>
+                          copyLearningChatToClipboard(messageCopyText)
+                        }
+                      >
+                        <svg
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.75"
+                          aria-hidden
                         >
-                          {btn.label}
-                        </button>
-                      ))}
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2M8 16h10a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                          />
+                        </svg>
+                      </button>
                     </div>
                   )}
               </div>
@@ -1795,7 +1887,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
       {/* 채팅 입력창 */}
       <div
-        className="shrink-0 w-full px-3 py-2 h-[55px] flex items-center"
+        className={`shrink-0 w-full py-2 h-[55px] flex items-center ${
+          borderlessLearningChat ? "px-4" : "px-3"
+        }`}
         style={{ backgroundColor: isDarkMode ? "#141414" : "#FFFFFF" }}
       >
         {/* 통합된 입력 컨테이너 */}
@@ -1841,8 +1935,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     : "Enter를 눌러 학습을 시작하세요"
             }
             className={`flex-1 min-h-[44px] py-2.5 px-3 text-sm resize-none bg-transparent border-0 focus:outline-none overflow-y-auto leading-6 ${
-              integratedModeActive ? "scrollbar-hide" : ""
-            } ${isDarkMode ? "placeholder-gray-500" : "placeholder-gray-400"}`}
+              isDarkMode ? "placeholder-gray-500" : "placeholder-gray-400"
+            }`}
             style={{
               color: isDarkMode ? "#FFFFFF" : "#141414",
               maxHeight: "120px",
