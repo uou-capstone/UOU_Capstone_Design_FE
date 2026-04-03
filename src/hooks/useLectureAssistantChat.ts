@@ -21,7 +21,7 @@ export interface LectureAssistantChatMessage {
   thoughtSummary?: string;
   thoughtExpanded?: boolean;
   thoughtFinished?: boolean;
-  /** 스트리밍 중 평문 표시 — 서버가 큰 델타로 줄 때는 FE가 글자 단위로 드레인. 끝나면 마크다운 정리 */
+  /** 스트리밍 중 — SSE/모델 청크를 받는 즉시 마크다운에 반영 */
   streamingMarkdown?: boolean;
   actionButtons?: {
     id: string;
@@ -209,59 +209,6 @@ export function useLectureAssistantChat(options: {
       let cancelled = false;
       let answerStarted = false;
       let answerBuf = "";
-      /** 전체 누적 텍스트 대비 화면에 그린 길이 — 큰 델타 1회여도 글자 단위로 채움 */
-      let answerShownLen = 0;
-      let answerRevealRaf: number | null = null;
-
-      const stopAnswerReveal = () => {
-        if (answerRevealRaf != null) {
-          cancelAnimationFrame(answerRevealRaf);
-          answerRevealRaf = null;
-        }
-      };
-
-      const tickAnswerReveal = () => {
-        if (cancelled) {
-          answerRevealRaf = null;
-          return;
-        }
-        const full = answerBuf;
-        const n = full.length;
-        if (answerShownLen >= n) {
-          answerRevealRaf = null;
-          return;
-        }
-        const behind = n - answerShownLen;
-        let step: number;
-        if (behind <= 6) {
-          step = 1;
-        } else if (behind <= 120) {
-          step = Math.min(4, Math.max(2, Math.ceil(behind / 35)));
-        } else {
-          step = Math.min(72, Math.max(6, Math.ceil(behind / 22)));
-        }
-        answerShownLen = Math.min(n, answerShownLen + step);
-        flushSync(() => {
-          setMessages((p) =>
-            p.map((m) =>
-              m.id === answerId
-                ? {
-                    ...m,
-                    markdown: full.slice(0, answerShownLen),
-                    streamingMarkdown: true,
-                  }
-                : m,
-            ),
-          );
-        });
-        answerRevealRaf = requestAnimationFrame(tickAnswerReveal);
-      };
-
-      const scheduleAnswerReveal = () => {
-        if (answerRevealRaf == null) {
-          answerRevealRaf = requestAnimationFrame(tickAnswerReveal);
-        }
-      };
 
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -284,7 +231,6 @@ export function useLectureAssistantChat(options: {
       const streamAbort = new AbortController();
       abortRef.current = () => {
         cancelled = true;
-        stopAnswerReveal();
         streamAbort.abort();
         lectureLegacySessionInitializedRef.current = false;
         void lectureAiLegacyStreamApi.cancel(lectureId).catch(() => {});
@@ -326,7 +272,7 @@ export function useLectureAssistantChat(options: {
         });
       };
 
-      /** 본문: SSE 델타는 전부 answerBuf에 쌓고, 화면은 tickAnswerReveal로 점진 표시 */
+      /** 본문: SSE/모델 스트림 청크마다 즉시 UI 반영 (문서 7·Gemini 스트리밍과 동일한 UX) */
       const appendDeltaLive = (chunk: string) => {
         if (cancelled || !chunk) return;
         if (!answerStarted) {
@@ -335,7 +281,6 @@ export function useLectureAssistantChat(options: {
             finalizeThoughtRow();
           });
           answerBuf = chunk;
-          answerShownLen = 0;
           flushSync(() => {
             setMessages((p) => [
               ...p,
@@ -343,16 +288,21 @@ export function useLectureAssistantChat(options: {
                 id: answerId,
                 isUser: false,
                 assistantVariant: "educational",
-                markdown: "",
+                markdown: chunk,
                 streamingMarkdown: true,
               },
             ]);
           });
-          scheduleAnswerReveal();
           return;
         }
         answerBuf += chunk;
-        scheduleAnswerReveal();
+        setMessages((p) =>
+          p.map((m) =>
+            m.id === answerId
+              ? { ...m, markdown: answerBuf, streamingMarkdown: true }
+              : m,
+          ),
+        );
       };
 
       void (async () => {
@@ -428,22 +378,7 @@ export function useLectureAssistantChat(options: {
             }
           }
 
-          const waitAnswerRevealDrain = async () => {
-            while (
-              !cancelled &&
-              answerStarted &&
-              answerShownLen < answerBuf.length
-            ) {
-              await new Promise<void>((r) =>
-                requestAnimationFrame(() => r()),
-              );
-            }
-          };
-
           if (!cancelled) {
-            await waitAnswerRevealDrain();
-            stopAnswerReveal();
-            answerShownLen = answerBuf.length;
             finalizeThoughtRow();
             if (answerStarted) {
               setMessages((p) =>
@@ -465,7 +400,6 @@ export function useLectureAssistantChat(options: {
             abortRef.current = null;
           }
         } catch (err) {
-          stopAnswerReveal();
           streamingRef.current = false;
           abortRef.current = null;
           setBusy(false);

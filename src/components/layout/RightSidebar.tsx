@@ -136,6 +136,8 @@ interface RightSidebarProps {
     fileName: string,
     materialId?: number | null,
   ) => void;
+  /** true이면 width(px) 대신 부모 너비를 가득 채움(분할 레이아웃용) */
+  fillContainer?: boolean;
   width?: number;
   lectureId?: number;
   courseId?: number;
@@ -155,6 +157,7 @@ interface RightSidebarProps {
 
 const RightSidebar: React.FC<RightSidebarProps> = ({
   onLectureDataChange,
+  fillContainer = false,
   width = 360,
   lectureId,
   courseId,
@@ -1116,9 +1119,12 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   return (
     <>
       <aside
-      className="h-full flex flex-col border-l transition-colors relative flex-shrink-0"
+      className={`h-full flex flex-col border-l transition-colors relative ${
+        fillContainer ? "w-full min-w-0" : "flex-shrink-0"
+      }`}
       style={{
-        width: `${width}px`,
+        width: fillContainer ? "100%" : `${width}px`,
+        minWidth: fillContainer ? 0 : undefined,
         backgroundColor: isDarkMode ? "#141414" : "#FFFFFF",
         color: isDarkMode ? "#FFFFFF" : "#141414",
         borderColor: isDarkMode ? "#404040" : "#e5e7eb",
@@ -1727,6 +1733,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     ) : (
                       <div
                         className={`prose prose-sm prose-neutral max-w-none overflow-hidden break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words prose-headings:font-semibold ${
+                          message.assistantVariant === "orchestrator"
+                            ? "[&_span:has(>img)]:!my-1.5 [&_img]:!my-0 [&_img]:!max-h-36 [&_img]:!w-auto [&_img]:!max-w-full [&_img]:!rounded-lg [&_img]:object-contain"
+                            : ""
+                        } ${
                           message.assistantVariant === "educational"
                             ? isDarkMode
                               ? "prose-invert"
@@ -1749,13 +1759,23 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   message.actionButtons.length > 0 &&
                   !message.isLoading &&
                   assistantEnabled && (
-                    <div className="mt-3 flex w-full max-w-[min(100%,20rem)] flex-col gap-2">
+                    <div
+                      className={`mt-3 flex w-full gap-2 ${
+                        message.assistantVariant === "orchestrator"
+                          ? "flex-row min-w-0"
+                          : "max-w-[min(100%,20rem)] flex-col"
+                      }`}
+                    >
                       {message.actionButtons.map((btn) => (
                         <button
                           key={btn.id}
                           type="button"
                           onClick={() => lectureAssistant.handleAction(btn.id)}
-                          className={`w-full cursor-pointer rounded-2xl border px-4 py-3 text-center text-sm font-medium shadow-sm transition-[opacity,transform] active:scale-[0.99] ${
+                          className={`cursor-pointer rounded-2xl border text-center text-sm font-medium shadow-sm transition-[opacity,transform] active:scale-[0.99] ${
+                            message.assistantVariant === "orchestrator"
+                              ? "min-w-0 flex-1 px-3 py-2"
+                              : "w-full px-4 py-3"
+                          } ${
                             btn.variant === "primary"
                               ? "border-sky-300/80 bg-sky-400 text-black hover:opacity-95 dark:border-sky-500/50 dark:bg-sky-500 dark:text-white"
                               : "border-black/10 bg-white/90 text-gray-900 hover:bg-white dark:border-white/15 dark:bg-zinc-700 dark:text-white dark:hover:bg-zinc-600"

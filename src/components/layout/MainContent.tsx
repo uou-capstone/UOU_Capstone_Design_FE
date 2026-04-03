@@ -932,6 +932,13 @@ const MainContent: React.FC<MainContentProps> = ({
     at: number;
   } | null>(null);
   const [rightSidebarWidth, setRightSidebarWidth] = React.useState(400);
+  /** PDF/MD 자료 뷰: 좌측 뷰어 너비(px). null이면 flex로 50:50 */
+  const [resourcePreviewViewerWidthPx, setResourcePreviewViewerWidthPx] =
+    React.useState<number | null>(null);
+  const resourcePreviewSplitRowRef = React.useRef<HTMLDivElement | null>(null);
+  const resourcePreviewViewerPanelRef = React.useRef<HTMLDivElement | null>(
+    null,
+  );
 
   // 시험 세션 상세 보기 모달 상태
   const [examDetailSessionId, setExamDetailSessionId] = React.useState<
@@ -1951,6 +1958,7 @@ const MainContent: React.FC<MainContentProps> = ({
     setPreviewFileName(null);
     setPreviewIsAiGenerationDoc(false);
     setPreviewLinkedGenerationSessionId(null);
+    setResourcePreviewViewerWidthPx(null);
     clearResourceParamsInUrl();
   }, [selectedLectureId, clearResourceParamsInUrl]);
 
@@ -1975,6 +1983,49 @@ const MainContent: React.FC<MainContentProps> = ({
       document.body.style.userSelect = "none";
     },
     [rightSidebarWidth],
+  );
+
+  const RESOURCE_PREVIEW_SPLIT_MIN_VIEWER = 280;
+  const RESOURCE_PREVIEW_SPLIT_MIN_SIDEBAR = 280;
+
+  const handleResourcePreviewSplitResizeStart = React.useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const row = resourcePreviewSplitRowRef.current;
+      if (!row) return;
+      const startX = e.clientX;
+      const rowWidth = row.getBoundingClientRect().width;
+      const measuredLeft =
+        resourcePreviewViewerPanelRef.current?.getBoundingClientRect().width;
+      const startLeft =
+        resourcePreviewViewerWidthPx ??
+        measuredLeft ??
+        Math.max(RESOURCE_PREVIEW_SPLIT_MIN_VIEWER, rowWidth / 2);
+      const onMove = (ev: MouseEvent) => {
+        const w = resourcePreviewSplitRowRef.current?.getBoundingClientRect()
+          .width ?? rowWidth;
+        const delta = ev.clientX - startX;
+        const next = startLeft + delta;
+        const maxLeft = Math.max(
+          RESOURCE_PREVIEW_SPLIT_MIN_VIEWER,
+          w - RESOURCE_PREVIEW_SPLIT_MIN_SIDEBAR,
+        );
+        setResourcePreviewViewerWidthPx(
+          Math.min(maxLeft, Math.max(RESOURCE_PREVIEW_SPLIT_MIN_VIEWER, next)),
+        );
+      };
+      const onUp = () => {
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [resourcePreviewViewerWidthPx],
   );
 
   // 강의자료 생성 시 PDF는 선택 사항이므로, 더 이상 자동 입력/강제 사용하지 않는다.
@@ -2814,6 +2865,7 @@ const MainContent: React.FC<MainContentProps> = ({
     setPreviewLoadError(false);
     setPreviewErrorMessage(null);
     setPreviewLoading(false);
+    setResourcePreviewViewerWidthPx(null);
     clearResourceParamsInUrl();
   }, [closeExamSessionDetail, clearResourceParamsInUrl]);
 
@@ -4012,11 +4064,34 @@ const MainContent: React.FC<MainContentProps> = ({
 
     // 업로드한 자료 미리보기 (좌: 미리보기 | 우: 채팅) — fileUrl 또는 materialId로 표시
     if (previewFileUrl || previewMaterialId != null || examDetailSessionId) {
+      const isResourceDocPreview =
+        !examDetailSessionId &&
+        (previewFileUrl != null || previewMaterialId != null);
       return (
         <div className="flex flex-col h-full min-w-0 overflow-hidden">
-          <div className="flex-1 flex min-h-0 min-w-0 overflow-hidden">
-            {/* 좌: 미리보기 */}
-            <div className="flex-1 min-h-0 min-w-0 bg-gray-100 dark:bg-[#141414] flex flex-col overflow-hidden">
+          <div
+            ref={resourcePreviewSplitRowRef}
+            className="flex-1 flex min-h-0 min-w-0 overflow-hidden"
+          >
+            {/* 좌: 미리보기 (PDF·MD: 기본 50:50, 구분선 드래그로 너비 조절) */}
+            <div
+              ref={resourcePreviewViewerPanelRef}
+              className={`min-h-0 min-w-0 bg-gray-100 dark:bg-[#141414] flex flex-col overflow-hidden ${
+                isResourceDocPreview
+                  ? resourcePreviewViewerWidthPx != null
+                    ? "shrink-0"
+                    : "flex-1 basis-0"
+                  : "flex-1"
+              }`}
+              style={
+                isResourceDocPreview && resourcePreviewViewerWidthPx != null
+                  ? {
+                      width: resourcePreviewViewerWidthPx,
+                      minWidth: RESOURCE_PREVIEW_SPLIT_MIN_VIEWER,
+                    }
+                  : undefined
+              }
+            >
               {examDetailSessionId ? (
                 <div className={`flex-1 min-h-0 min-w-0 flex flex-col ${isDarkMode ? "bg-[#141414] text-gray-100" : "bg-white text-gray-900"}`}>
                   <div
@@ -5200,11 +5275,28 @@ const MainContent: React.FC<MainContentProps> = ({
                 </div>
               )}
             </div>
-            {/* 채팅창 리사이즈 핸들 */}
             <div
               role="separator"
-              aria-label="채팅창 너비 조절"
-              onMouseDown={handleRightSidebarResizeStart}
+              aria-label={
+                isResourceDocPreview
+                  ? "뷰어와 채팅 패널 너비 조절"
+                  : "채팅창 너비 조절"
+              }
+              title="드래그: 너비 조절 · 더블클릭: 기본 크기"
+              onMouseDown={
+                isResourceDocPreview
+                  ? handleResourcePreviewSplitResizeStart
+                  : handleRightSidebarResizeStart
+              }
+              onDoubleClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (isResourceDocPreview) {
+                  setResourcePreviewViewerWidthPx(null);
+                } else {
+                  setRightSidebarWidth(400);
+                }
+              }}
               className={`shrink-0 w-0.1 cursor-col-resize flex items-center justify-center group hover:bg-emerald-500/30 transition-colors ${
                 isDarkMode ? "bg-zinc-700" : "bg-gray-200"
               }`}
@@ -5215,9 +5307,14 @@ const MainContent: React.FC<MainContentProps> = ({
                 }`}
               />
             </div>
-            {/* 우: 채팅(강의 학습) 또는 시험 만들기(프로필 API) — 고정 */}
-            <div className="shrink-0 min-h-0 overflow-hidden">
+            {/* 우: 채팅(강의 학습) — PDF/MD는 분할 너비, 시험 뷰는 고정 픽셀 */}
+            <div
+              className={`min-h-0 overflow-hidden flex flex-col ${
+                isResourceDocPreview ? "flex-1 basis-0 min-w-0" : "shrink-0"
+              }`}
+            >
             <RightSidebar
+              fillContainer={isResourceDocPreview}
               width={rightSidebarWidth}
               lectureId={selectedLectureId ?? undefined}
               courseId={courseDetail.courseId}
