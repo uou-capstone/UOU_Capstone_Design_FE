@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 
-type UpdatePart = "AI" | "BE" | "FE";
+type UpdatePart = "ALL" | "AI" | "BE" | "FE";
 type UpdateRecord = {
   id: string;
   date: string; // YYYY-MM-DD
@@ -90,6 +90,28 @@ const records: UpdateRecord[] = [
   { id: "fd5f1fe", date: "2026-04-01", part: "FE", hash: "fd5f1fe", title: "통합학습 API learning/sessions 연동·401 처리·프록시" },
   { id: "4d99553", date: "2026-04-02", part: "FE", hash: "4d99553", title: "강의 에이전트 스트림·스웨거 정합" },
   { id: "37fd954", date: "2026-04-03", part: "FE", hash: "37fd954", title: "자료 뷰 50/50 분할/리사이즈, SSE 즉시 스트리밍 반영" },
+  { id: "ai-2025-11-09-01", date: "2025-11-09", part: "AI", hash: "AI", title: "메인 브랜치 병합(초기 통합)" },
+  { id: "ai-2025-11-10-01", date: "2025-11-10", part: "AI", hash: "AI", title: "await 처리 관련 업데이트" },
+  { id: "ai-2025-11-10-02", date: "2025-11-10", part: "AI", hash: "AI", title: "last 커밋(초기 실험 정리)" },
+  { id: "ai-2025-12-23-01", date: "2025-12-23", part: "AI", hash: "AI", title: "파일 업로드 기반 구조 보강" },
+  { id: "ai-2026-01-19-01", date: "2026-01-19", part: "AI", hash: "AI", title: "파일 업로드 기반 모듈 추가" },
+  { id: "ai-2026-01-20-01", date: "2026-01-20", part: "AI", hash: "AI", title: "README 생성 및 문서 기본틀 구성" },
+  { id: "ai-2026-01-20-02", date: "2026-01-20", part: "AI", hash: "AI", title: "README/문서 placeholder 및 설명 보강" },
+  { id: "ai-2026-01-22-01", date: "2026-01-22", part: "AI", hash: "AI", title: "LectureTestGenerator 디렉터리 구조 재정비" },
+  { id: "ai-2026-01-24-01", date: "2026-01-24", part: "AI", hash: "AI", title: "Debate/LectureTestGenerator 정리 및 업로드 반영" },
+  { id: "ai-2026-01-24-02", date: "2026-01-24", part: "AI", hash: "AI", title: "README 업데이트 및 가이드 파일 재배치" },
+  { id: "ai-2026-03-29-01", date: "2026-03-29", part: "AI", hash: "AI", title: "MergeEduAgentFull 프로젝트 추가" },
+  { id: "be-2025-11-09-01", date: "2025-11-09", part: "BE", hash: "BE", title: "ai-service 연동 초기 구현" },
+  { id: "be-2025-11-09-02", date: "2025-11-09", part: "BE", hash: "BE", title: "main/aiservice/hanmogo 브랜치 병합 정리" },
+  { id: "be-2025-11-10-01", date: "2025-11-10", part: "BE", hash: "BE", title: "AI 퀴즈 생성 API 구현" },
+  { id: "be-2025-11-10-02", date: "2025-11-10", part: "BE", hash: "BE", title: "AI 생성 컨텐츠 콜백 기능 추가" },
+  { id: "be-2025-11-10-03", date: "2025-11-10", part: "BE", hash: "BE", title: "권한 설정 및 user/teacher/student 연동 수정" },
+  { id: "be-2025-11-11-01", date: "2025-11-11", part: "BE", hash: "BE", title: "학생 질의(손들기) API 구현" },
+  { id: "be-2025-11-11-02", date: "2025-11-11", part: "BE", hash: "BE", title: "강의 스크립트 도중 질의 처리 API 구현" },
+  { id: "be-2025-11-11-03", date: "2025-11-11", part: "BE", hash: "BE", title: "questionId/QA 문제 수정 및 run_all stage 반영" },
+  { id: "be-2025-11-16-01", date: "2025-11-16", part: "BE", hash: "BE", title: "QnA 프로세스 수정(fix/qnaprocess)" },
+  { id: "be-2025-11-18-01", date: "2025-11-18", part: "BE", hash: "BE", title: "main-service 정리 및 최신 버전 반영" },
+  { id: "be-2025-11-19-01", date: "2025-11-19", part: "BE", hash: "BE", title: "develop 병합 및 환경파일(.env) 정리" },
 ];
 
 function toDate(value: string): Date {
@@ -105,10 +127,13 @@ function toKey(date: Date): string {
 
 const UpdatesPage: React.FC = () => {
   const { isDarkMode } = useTheme();
-  const [partFilter, setPartFilter] = useState<UpdatePart>("FE");
+  const [partFilter, setPartFilter] = useState<UpdatePart>("ALL");
 
   const partRecords = useMemo(
-    () => records.filter((r) => r.part === partFilter),
+    () =>
+      partFilter === "ALL"
+        ? records
+        : records.filter((r) => r.part === partFilter),
     [partFilter],
   );
   const dateCounts = useMemo(() => {
@@ -164,14 +189,21 @@ const UpdatesPage: React.FC = () => {
       <div className="mx-auto grid h-full w-full max-w-7xl grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
         <aside className={`rounded-2xl border p-4 ${cardClass} min-h-0`}>
           <div className="mb-4 flex flex-wrap gap-2">
-            {(["AI", "BE", "FE"] as const).map((part) => {
-              const selected = partFilter === part;
+            {(
+              [
+                { value: "ALL", label: "전체" },
+                { value: "AI", label: "AI" },
+                { value: "BE", label: "BE" },
+                { value: "FE", label: "FE" },
+              ] as const
+            ).map((part) => {
+              const selected = partFilter === part.value;
               return (
                 <button
-                  key={part}
+                  key={part.value}
                   type="button"
-                  onClick={() => setPartFilter(part)}
-                  className={`rounded-full px-4 py-1.5 text-sm font-medium cursor-pointer ${
+                  onClick={() => setPartFilter(part.value)}
+                  className={`w-16 rounded-full px-4 py-1.5 text-sm font-medium cursor-pointer text-center ${
                     selected
                       ? "bg-emerald-600 text-white"
                       : isDarkMode
@@ -179,7 +211,7 @@ const UpdatesPage: React.FC = () => {
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                   }`}
                 >
-                  {part}
+                  {part.label}
                 </button>
               );
             })}
@@ -227,6 +259,7 @@ const UpdatesPage: React.FC = () => {
                 new Date(currentMonth.getFullYear(), currentMonth.getMonth(), d),
               );
               const count = dateCounts.get(key) ?? 0;
+              const hasLogs = count > 0;
               const selected = selectedDate === key;
               return (
                 <button
@@ -236,15 +269,21 @@ const UpdatesPage: React.FC = () => {
                   className={`h-12 rounded-md border text-xs cursor-pointer ${
                     selected
                       ? "border-emerald-500 bg-emerald-500/20 text-emerald-500"
+                      : hasLogs
+                      ? isDarkMode
+                        ? "border-emerald-700/70 bg-emerald-900/20 text-emerald-300 hover:bg-emerald-900/30"
+                        : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                       : isDarkMode
                       ? "border-zinc-700 hover:bg-zinc-800 text-gray-300"
                       : "border-gray-200 hover:bg-gray-50 text-gray-700"
                   }`}
                 >
-                  <div>{d}</div>
-                  {count > 0 ? (
-                    <div className="text-[10px] opacity-80">{count}건</div>
-                  ) : null}
+                  <div className="flex h-full flex-col items-center justify-center">
+                    <div>{d}</div>
+                    {hasLogs ? (
+                      <div className="mt-0.5 text-[10px] opacity-90">{count}건</div>
+                    ) : null}
+                  </div>
                 </button>
               );
             })}

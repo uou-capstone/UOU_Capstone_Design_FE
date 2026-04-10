@@ -1257,6 +1257,31 @@ export interface IntegratedLearningMessage {
   questionId?: string;
   final?: boolean;
   raw?: Record<string, unknown>;
+  /** 구조화 퀴즈(done+오버레이)가 있을 때 채팅에 오버레이 열기 버튼 표시 */
+  integratedQuizOpenButton?: boolean;
+}
+
+/** 통합학습 SSE 퀴즈 오버레이 UI용 정규화 문항 */
+export type IntegratedQuizDisplayKind = "flash" | "mcq" | "ox" | "short" | "unknown";
+
+export interface IntegratedQuizDisplayItem {
+  id: string;
+  kind: IntegratedQuizDisplayKind;
+  front?: string;
+  back?: string;
+  stem?: string;
+  options?: { key: string; content: string }[];
+  /** O/X·객관식 정답(원문). OX는 O/X, 객관식은 보기 key 또는 A·1 등 */
+  correctAnswer?: string;
+  explanation?: string;
+  /** 주관식 참고 답안(채점 후 표시) */
+  referenceAnswer?: string;
+}
+
+export interface IntegratedQuizOverlayModel {
+  title: string;
+  quizTypeRaw: string;
+  items: IntegratedQuizDisplayItem[];
 }
 
 /** 통합 학습 v3 `.../event` SSE — 청크 단위 UI (사고 요약 / 본문) */
@@ -1973,16 +1998,25 @@ const postLearningEventAndCollect = async (
   eventBody: {
     type: string;
     lectureId?: number;
+    page?: number;
     payload?: Record<string, unknown>;
   },
   lectureId?: number,
   streamCallbacks?: LearningSseStreamCallbacks,
 ): Promise<Record<string, unknown>[]> => {
   const lectureIdForQuery = eventBody.lectureId ?? lectureId;
-  const query =
-    lectureIdForQuery != null
-      ? `?lectureId=${encodeURIComponent(String(lectureIdForQuery))}`
-      : "";
+  const qs = new URLSearchParams();
+  /* BE: page 동기화 — page / pageNumber / currentPage 중 수용하는 컨트롤러 대비 동일 값 전달 */
+  if (eventBody.page != null && Number.isFinite(eventBody.page)) {
+    const p = String(eventBody.page);
+    qs.set("page", p);
+    qs.set("pageNumber", p);
+    qs.set("currentPage", p);
+  }
+  if (lectureIdForQuery != null) {
+    qs.set("lectureId", String(lectureIdForQuery));
+  }
+  const query = qs.toString().length > 0 ? `?${qs.toString()}` : "";
   const endpoint = `/api/learning/sessions/${encodeURIComponent(sessionId)}/event${query}`;
   const token = getAuthToken();
   if (!token?.trim()) {
@@ -2208,6 +2242,514 @@ const mapLearningEventsToNextResponse = (
   };
 };
 
+/**
+ * 통합학습(v3) 퀴즈는 별도 GET 없이 SSE `done`에만 온다.
+ * 한 줄 요약: POST /api/learning/sessions/{sessionId}/event 스트림에서 type=done 이고
+ * agent=quiz(또는 tool=GENERATE_QUIZ 계열)일 때 data.quiz / data.quiz_type 을 파싱하면 된다.
+ */
+function isIntegratedLearningQuizDoneSseEvent(event: Record<string, unknown>): boolean {
+  const type = String(event.type ?? "").toLowerCase();
+  if (type !== "done") return false;
+  const agent = String(event.agent ?? "").toLowerCase();
+  if (agent === "quiz") return true;
+  const tool = String(event.tool ?? "");
+  if (/generate_quiz/i.test(tool)) return true;
+  const data = event.data;
+  if (data != null && typeof data === "object" && !Array.isArray(data)) {
+    const d = data as Record<string, unknown>;
+    if (d.quiz != null) return true;
+  }
+  return false;
+}
+
+function mergeIntegratedQuizItemRecord(item: Record<string, unknown>): Record<string, unknown> {
+  const nested = item.card ?? item.flashCard ?? item.flashcard ?? item.payload;
+  if (nested != null && typeof nested === "object" && !Array.isArray(nested)) {
+    return { ...item, ...(nested as Record<string, unknown>) };
+  }
+  return item;
+}
+
+/** 단일 퀴즈/플래시카드 항목 → 마크다운 (BE 스키마 차이 흡수) */
+function formatIntegratedLearningQuizItem(
+  item: Record<string, unknown>,
+  idx: number,
+  quizTypeHint: string,
+): string {
+  const qid = item.questionId ?? item.question_id ?? item.id;
+  const idSuffix =
+    qid != null && String(qid).length > 0 ? ` (문항 ID: ${qid})` : "";
+
+  const o = mergeIntegratedQuizItemRecord(item);
+
+  const front =
+    pickFirstString(o, [
+      "front",
+      "term",
+      "cue",
+      "cardFront",
+      "face",
+      "keyword",
+    ]) ?? "";
+  const back =
+    pickFirstString(o, [
+      "back",
+      "definition",
+      "response",
+      "cardBack",
+      "answer",
+      "explanation",
+      "meaning",
+    ]) ?? "";
+
+  const typeHint = String(quizTypeHint ?? "");
+  const isFlashish =
+    /flash/i.test(typeHint) ||
+    front.length > 0 ||
+    back.length > 0;
+
+  if (isFlashish && (front.length > 0 || back.length > 0)) {
+    const lines = [`### ${idx + 1}${idSuffix}`];
+    if (front) lines.push(`- **앞면:** ${front}`);
+    if (back) lines.push(`- **뒷면:** ${back}`);
+    return lines.join("\n");
+  }
+
+  const stem =
+    pickFirstString(o, [
+      "question_content",
+      "question",
+      "stem",
+      "text",
+      "prompt",
+      "title",
+      "body",
+    ]) ?? "";
+  const opts = o.options ?? o.choices ?? o.option_list;
+  const hasOptions = Array.isArray(opts) && opts.length > 0;
+
+  if (stem.length > 0) {
+    const lines: string[] = [`### ${idx + 1}. ${stem}${idSuffix}`];
+    if (hasOptions) {
+      (opts as unknown[]).forEach((opt, j) => {
+        const label = j < 26 ? String.fromCharCode(65 + j) : String(j + 1);
+        if (typeof opt === "string") {
+          lines.push(`- **${label}.** ${opt}`);
+        } else if (opt && typeof opt === "object") {
+          const oo = opt as Record<string, unknown>;
+          const t =
+            pickFirstString(oo, ["label", "text", "content"]) ?? JSON.stringify(oo);
+          lines.push(`- **${label}.** ${t}`);
+        } else {
+          lines.push(`- **${label}.** ${String(opt)}`);
+        }
+      });
+    } else {
+      const onlyBack =
+        pickFirstString(o, [
+          "answer",
+          "correctAnswer",
+          "correct_answer",
+          "solution",
+        ]) ?? "";
+      if (onlyBack.length > 0) {
+        lines.push(`- **참고(뒷면):** ${onlyBack}`);
+      }
+    }
+    return lines.join("\n");
+  }
+
+  /* 알 수 있는 문자열 필드만 나열 (플래시/BE 커스텀 키 대비) */
+  const skip = new Set([
+    "questionId",
+    "question_id",
+    "id",
+    "type",
+    "quizType",
+    "options",
+    "choices",
+    "option_list",
+  ]);
+  const entries = Object.entries(o).filter(
+    ([k, v]) =>
+      !skip.has(k) &&
+      v != null &&
+      (typeof v === "string" || typeof v === "number" || typeof v === "boolean"),
+  );
+  if (entries.length > 0) {
+    const lines = [`### ${idx + 1}${idSuffix}`];
+    for (const [k, v] of entries) {
+      lines.push(`- **${k}:** ${String(v)}`);
+    }
+    return lines.join("\n");
+  }
+
+  const fallbackTitle =
+    qid != null ? `문항 ${qid}` : `문항 ${idx + 1}`;
+  return `### ${idx + 1}. ${fallbackTitle}${idSuffix}\n\n*이 문항은 알려진 필드 형식이 아닙니다. BE 스키마를 확인해 주세요.*\n\n\`\`\`json\n${JSON.stringify(o, null, 2)}\n\`\`\``;
+}
+
+function extractIntegratedLearningQuizItems(raw: unknown): Record<string, unknown>[] {
+  const visit = (value: unknown): Record<string, unknown>[] => {
+    if (value == null) return [];
+    if (Array.isArray(value)) {
+      const directObjects = value.filter(
+        (v): v is Record<string, unknown> =>
+          v != null && typeof v === "object" && !Array.isArray(v),
+      );
+      if (directObjects.length > 0) return directObjects;
+      return value.flatMap((v) => visit(v));
+    }
+    if (typeof value === "object") {
+      const obj = value as Record<string, unknown>;
+      const candidateArrayKeys = [
+        "questions",
+        "mcq_problems",
+        "ox_problems",
+        "short_answer_problems",
+        "flash_cards",
+        "question_list",
+        "quiz_items",
+        "items",
+        "cards",
+        "card_list",
+        "problems",
+        "list",
+        "data",
+      ];
+      for (const key of candidateArrayKeys) {
+        if (Array.isArray(obj[key])) {
+          return visit(obj[key]);
+        }
+      }
+      const candidateContainerKeys = [
+        "problems",
+        "question_bank",
+        "quiz_data",
+        "quiz",
+        "payload",
+        "result",
+        "content",
+        "body",
+      ];
+      for (const key of candidateContainerKeys) {
+        const nested = obj[key];
+        if (nested != null && typeof nested === "object") {
+          const nestedItems = visit(nested);
+          if (nestedItems.length > 0) return nestedItems;
+        }
+      }
+      for (const [k, v] of Object.entries(obj)) {
+        if (!Array.isArray(v) || v.length === 0) continue;
+        if (
+          /problem|question|card|item|list/i.test(k) &&
+          v.some((it) => it != null && typeof it === "object" && !Array.isArray(it))
+        ) {
+          return visit(v);
+        }
+      }
+      const nestedObjectKeys = ["quiz", "payload", "result", "content", "body"];
+      for (const key of nestedObjectKeys) {
+        const nested = obj[key];
+        if (nested != null && typeof nested === "object") {
+          const nestedItems = visit(nested);
+          if (nestedItems.length > 0) return nestedItems;
+        }
+      }
+      return [obj];
+    }
+    return [];
+  };
+
+  return visit(raw);
+}
+
+/** 통합학습 SSE `done.data.quiz`(JSON 문자열·배열·객체) → 채팅용 마크다운 */
+function formatIntegratedLearningQuizPayload(
+  quiz: unknown,
+  quizTypeHint = "",
+): string {
+  if (quiz == null) return "";
+  let parsed: unknown = quiz;
+  if (typeof quiz === "string") {
+    const t = quiz.trim();
+    if (!t) return "";
+    try {
+      parsed = JSON.parse(t) as unknown;
+    } catch {
+      return t;
+    }
+  }
+  const items = extractIntegratedLearningQuizItems(parsed);
+  if (items.length === 0) return "";
+
+  return items
+    .map((item, idx) => {
+      return formatIntegratedLearningQuizItem(item, idx, quizTypeHint);
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function integratedLearningQuizTypeLabel(data: Record<string, unknown>): string {
+  const raw = pickFirstString(data, ["quiz_type", "quizType"]) ?? "";
+  if (!raw) return "";
+  return raw.replace(/_/g, " ");
+}
+
+/** 통합학습 SSE 이벤트 객체에서 퀴즈 전용 `done`만 골라 마크다운으로 변환 (FE 병합용) */
+export function formatIntegratedLearningQuizFromSseEvent(
+  event: Record<string, unknown> | null | undefined,
+): string {
+  if (!event || !isIntegratedLearningQuizDoneSseEvent(event)) return "";
+  const data =
+    event.data != null && typeof event.data === "object" && !Array.isArray(event.data)
+      ? (event.data as Record<string, unknown>)
+      : {};
+  const quiz = data.quiz ?? data.quiz_json ?? data.quizPayload;
+  const typeRaw = pickFirstString(data, ["quiz_type", "quizType"]) ?? "";
+  const body = formatIntegratedLearningQuizPayload(quiz, typeRaw);
+  if (!body.trim()) return "";
+  const typeLine = integratedLearningQuizTypeLabel(data);
+  const header = typeLine ? `## 생성된 퀴즈 · ${typeLine}\n\n` : "## 생성된 퀴즈\n\n";
+  return `${header}${body}`;
+}
+
+function integratedQuizGradableMeta(
+  o: Record<string, unknown>,
+  kind: IntegratedQuizDisplayKind,
+): Pick<
+  IntegratedQuizDisplayItem,
+  "correctAnswer" | "explanation" | "referenceAnswer"
+> {
+  const explanation =
+    pickFirstString(o, ["explanation", "intentDiagnosis", "rationale"])?.trim() ||
+    undefined;
+
+  if (kind === "short") {
+    const referenceAnswer =
+      pickFirstString(o, [
+        "model_answer",
+        "reference_answer",
+        "expected_answer",
+        "sample_answer",
+        "correct_answer",
+        "answer",
+        "solution",
+        "back",
+      ])?.trim() || undefined;
+    return { explanation, referenceAnswer };
+  }
+
+  if (kind === "ox" || kind === "mcq" || kind === "unknown") {
+    const correctAnswer =
+      pickFirstString(o, [
+        "correct_answer",
+        "correctAnswer",
+        "correct_key",
+        "answer_key",
+        "correct_option",
+        "answer",
+      ])?.trim() || undefined;
+    return { explanation, correctAnswer };
+  }
+
+  return { explanation };
+}
+
+function looksLikeOxAnswer(raw: string): boolean {
+  const t = raw.trim().toUpperCase();
+  if (!t) return false;
+  if (t === "O" || t === "X" || t === "TRUE" || t === "FALSE") return true;
+  if (t === "1" || t === "0" || t === "YES" || t === "NO") return true;
+  return false;
+}
+
+function rawIntegratedQuizItemToDisplayItem(
+  item: Record<string, unknown>,
+  index: number,
+  quizTypeHint: string,
+): IntegratedQuizDisplayItem {
+  const o = mergeIntegratedQuizItemRecord(item);
+  const idVal = o.questionId ?? o.question_id ?? o.id ?? index + 1;
+  const id = String(idVal);
+
+  const front = (
+    pickFirstString(o, ["front", "term", "cue", "cardFront", "face", "keyword"]) ?? ""
+  ).trim();
+  const back = (
+    pickFirstString(o, [
+      "back",
+      "definition",
+      "response",
+      "cardBack",
+      "answer",
+      "explanation",
+      "meaning",
+    ]) ?? ""
+  ).trim();
+  const stem = (
+    pickFirstString(o, [
+      "question_content",
+      "question",
+      "stem",
+      "text",
+      "prompt",
+      "title",
+      "body",
+    ]) ?? ""
+  ).trim();
+
+  const optsRaw = o.options ?? o.choices ?? o.option_list;
+  const optionsArray = Array.isArray(optsRaw) ? (optsRaw as unknown[]) : [];
+
+  const hint = String(quizTypeHint ?? "").toLowerCase();
+  const correctAnswerRaw =
+    pickFirstString(o, [
+      "correct_answer",
+      "correctAnswer",
+      "correct_key",
+      "answer_key",
+      "correct_option",
+      "answer",
+    ])?.trim() ?? "";
+  const mappedOptions = optionsArray.map((opt, j) => {
+    if (typeof opt === "string") return { key: String(j + 1), content: opt };
+    if (opt && typeof opt === "object") {
+      const oo = opt as Record<string, unknown>;
+      const key = pickFirstString(oo, ["id", "key"]) ?? String(j + 1);
+      const content =
+        pickFirstString(oo, ["content", "text"]) ??
+        pickFirstString(oo, ["label", "value"]) ??
+        JSON.stringify(oo);
+      return { key: String(key), content };
+    }
+    return { key: String(j + 1), content: String(opt) };
+  });
+
+  if (/flash/i.test(hint)) {
+    return {
+      id,
+      kind: "flash",
+      front: front || undefined,
+      back: back || undefined,
+      ...integratedQuizGradableMeta(o, "flash"),
+    };
+  }
+
+  if (stem && mappedOptions.length >= 2) {
+    if (/ox/i.test(hint) && mappedOptions.length === 2) {
+      return {
+        id,
+        kind: "ox",
+        stem,
+        options: mappedOptions,
+        ...integratedQuizGradableMeta(o, "ox"),
+      };
+    }
+    return {
+      id,
+      kind: "mcq",
+      stem,
+      options: mappedOptions,
+      ...integratedQuizGradableMeta(o, "mcq"),
+    };
+  }
+
+  // OX 타입인데 옵션이 누락된 경우에도 OX로 강제 분류한다.
+  // (서버가 question+correct_answer만 주는 케이스 방어)
+  if (/ox/i.test(hint) && stem) {
+    const oxOptions =
+      mappedOptions.length >= 2
+        ? mappedOptions
+        : [
+            { key: "O", content: "O" },
+            { key: "X", content: "X" },
+          ];
+    const normalizedCorrectAnswer = looksLikeOxAnswer(correctAnswerRaw)
+      ? correctAnswerRaw
+      : undefined;
+    return {
+      id,
+      kind: "ox",
+      stem,
+      options: oxOptions,
+      ...integratedQuizGradableMeta(o, "ox"),
+      ...(normalizedCorrectAnswer ? { correctAnswer: normalizedCorrectAnswer } : {}),
+    };
+  }
+
+  if (stem) {
+    return {
+      id,
+      kind: "short",
+      stem,
+      ...integratedQuizGradableMeta(o, "short"),
+    };
+  }
+
+  if (front || back) {
+    return {
+      id,
+      kind: "flash",
+      front: front || undefined,
+      back: back || undefined,
+      ...integratedQuizGradableMeta(o, "flash"),
+    };
+  }
+
+  return {
+    id,
+    kind: "unknown",
+    stem: `문항 ${id}`,
+    ...integratedQuizGradableMeta(o, "unknown"),
+  };
+}
+
+/** SSE `done`에서 퀴즈를 구조화해 중앙 오버레이에 표시 */
+export function parseIntegratedLearningQuizOverlayFromSseEvent(
+  event: Record<string, unknown> | null | undefined,
+): IntegratedQuizOverlayModel | null {
+  if (!event || !isIntegratedLearningQuizDoneSseEvent(event)) return null;
+  const data =
+    event.data != null && typeof event.data === "object" && !Array.isArray(event.data)
+      ? (event.data as Record<string, unknown>)
+      : {};
+  const quiz = data.quiz ?? data.quiz_json ?? data.quizPayload;
+  let parsed: unknown = quiz;
+  if (typeof quiz === "string") {
+    const t = quiz.trim();
+    if (!t) return null;
+    try {
+      parsed = JSON.parse(t) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  const typeRaw = pickFirstString(data, ["quiz_type", "quizType"]) ?? "";
+  const rawItems = extractIntegratedLearningQuizItems(parsed);
+  if (rawItems.length === 0) return null;
+  const items = rawItems.map((it, i) =>
+    rawIntegratedQuizItemToDisplayItem(it, i, typeRaw),
+  );
+  const title = typeRaw
+    ? `생성된 퀴즈 · ${typeRaw.replace(/_/g, " ")}`
+    : "생성된 퀴즈";
+  return { title, quizTypeRaw: typeRaw, items };
+}
+
+export function parseIntegratedLearningQuizOverlayFromMessageTail(
+  tail: IntegratedLearningMessage[],
+): IntegratedQuizOverlayModel | null {
+  for (let i = tail.length - 1; i >= 0; i--) {
+    const ev = tail[i];
+    if (String(ev.type).toLowerCase() !== "done" || !ev.raw) continue;
+    const parsed = parseIntegratedLearningQuizOverlayFromSseEvent(ev.raw);
+    if (parsed && parsed.items.length > 0) return parsed;
+  }
+  return null;
+}
+
 const mapLearningEventsToIntegratedMessages = (
   events: Record<string, unknown>[],
 ): IntegratedLearningMessage[] => {
@@ -2248,15 +2790,38 @@ const mapLearningEventsToIntegratedMessages = (
         : {};
     const widget = pickFirstString(doneUi, ["widget"]);
     const modal = pickFirstString(doneUi, ["modal"]);
-    const doneUiText =
-      widget != null
-        ? `다음 단계: ${widget}`
+    const modalDisplayText =
+      modal === "QUIZ_TYPE_PICKER"
+        ? "퀴즈 유형을 선택해 주세요. (예: 객관식, OX, 단답형)"
         : modal != null
           ? `선택 필요: ${modal}`
           : "";
+    const doneUiText =
+      widget != null
+        ? `다음 단계: ${widget}`
+        : modalDisplayText;
+    const quizOverlayModel =
+      type === "done"
+        ? parseIntegratedLearningQuizOverlayFromSseEvent(event as Record<string, unknown>)
+        : null;
+    let displayText = text.trim();
+    if (!quizOverlayModel) {
+      const quizMd =
+        type === "done"
+          ? formatIntegratedLearningQuizFromSseEvent(event as Record<string, unknown>)
+          : "";
+      if (quizMd) {
+        displayText = displayText ? `${displayText}\n\n${quizMd}` : quizMd;
+      }
+    }
+    if (!displayText) {
+      displayText = doneUiText;
+    } else if (doneUiText) {
+      displayText = `${displayText}\n\n${doneUiText}`;
+    }
     out.push({
       type,
-      text: text || doneUiText,
+      text: displayText,
       waitingForAnswer:
         toBool(event.waiting_for_answer ?? event.waitingForAnswer) ?? false,
       questionId: pickFirstString(event, [
@@ -2267,6 +2832,7 @@ const mapLearningEventsToIntegratedMessages = (
       ]),
       final: toBool(event.final) ?? type === "done",
       raw: event,
+      ...(quizOverlayModel ? { integratedQuizOpenButton: true } : {}),
     });
   }
   return out;
@@ -2652,10 +3218,16 @@ export const integratedLearningApi = {
     eventType: string,
     payload?: Record<string, unknown>,
     streamCallbacks?: LearningSseStreamCallbacks,
+    options?: { page?: number },
   ): Promise<IntegratedLearningMessage[]> => {
     const events = await postLearningEventAndCollect(
       sessionId,
-      { type: eventType, lectureId, payload: payload ?? {} },
+      {
+        type: eventType,
+        lectureId,
+        page: options?.page,
+        payload: payload ?? {},
+      },
       lectureId,
       streamCallbacks,
     );

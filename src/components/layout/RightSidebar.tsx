@@ -11,6 +11,7 @@ import { useParams } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { MarkdownContent } from "../common/MarkdownContent";
+import { IntegratedLearningQuizOverlay } from "../common/IntegratedLearningQuizOverlay";
 import { useLectureAssistantChat } from "../../hooks/useLectureAssistantChat";
 import { useIntegratedLearningChat } from "../../hooks/useIntegratedLearningChat";
 import {
@@ -41,6 +42,7 @@ interface ChatMessage {
     label: string;
     variant?: "primary" | "muted";
   }[];
+  integratedQuizOpenButton?: boolean;
 }
 
 type ViewMode = "course-list" | "course-detail";
@@ -199,6 +201,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const examCountFieldFocusedRef = useRef(false);
   const [examCountFieldFocused, setExamCountFieldFocused] = useState(false);
   const [examCountDraft, setExamCountDraft] = useState("");
+  const [examNameInfoOpen, setExamNameInfoOpen] = useState(false);
+  const examNameInfoRef = useRef<HTMLDivElement>(null);
   /** 시험 이름·주제: 부모(MainContent)로 끌어올리지 않고 로컬에서만 관리 → 마크다운 미리보기 전체 리렌더 방지 */
   const [localExamTopic, setLocalExamTopic] = useState("");
   const [localExamDisplayName, setLocalExamDisplayName] = useState("");
@@ -300,6 +304,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       viewMode === "course-detail" &&
       resolvedLectureId != null,
     lectureId: resolvedLectureId,
+    currentPage: previewCurrentPdfPage ?? null,
   });
   const integratedModeActive =
     !examProps?.examMode &&
@@ -755,6 +760,20 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isActionMenuOpen]);
+
+  useEffect(() => {
+    if (!examNameInfoOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        examNameInfoRef.current &&
+        !examNameInfoRef.current.contains(event.target as Node)
+      ) {
+        setExamNameInfoOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [examNameInfoOpen]);
 
   // 스트리밍: 다음 세그먼트 가져오기
   const fetchNextSegment = async (loadingMessageId?: number) => {
@@ -1289,9 +1308,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             </div>
           )}
           <div className="flex-1 min-h-0 overflow-y-auto pl-3 py-3 flex flex-col gap-3">
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <div className="flex-1 min-w-0">
-                <label className="block text-[14px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>시험 유형</label>
+                <label className="block text-[13px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>시험 유형</label>
                 <select value={examProps.examType} onChange={(e) => examProps.setExamType(e.target.value)} className="w-full px-2 py-1.5 text-sm rounded-2xl border" style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}>
                   <option value="FLASH_CARD">플래시카드</option>
                   <option value="OX_PROBLEM">OX 문제</option>
@@ -1300,94 +1319,45 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 </select>
               </div>
               <div className="flex-1 min-w-0">
-                <label className="block text-[14px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>문항 수</label>
-                <div className="min-w-0">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    value={
-                      examCountFieldFocused
-                        ? examCountDraft
-                        : String(examProps.examCount)
-                    }
-                    onFocus={() => {
-                      examCountFieldFocusedRef.current = true;
-                      setExamCountFieldFocused(true);
-                      setExamCountDraft(String(examProps.examCount));
-                    }}
-                    onChange={(e) => {
-                      if (!examCountFieldFocusedRef.current) return;
-                      setExamCountDraft(e.target.value.replace(/\D/g, ""));
-                    }}
-                    onBlur={(e) => {
-                      examCountFieldFocusedRef.current = false;
-                      setExamCountFieldFocused(false);
-                      commitExamQuestionCountInput(
-                        e.target.value,
-                        examProps.examType,
-                        examProps.setExamCount,
-                      );
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key !== "Enter") return;
-                      e.preventDefault();
-                      (e.currentTarget as HTMLInputElement).blur();
-                    }}
-                    className="w-full min-w-0 px-2 py-1.5 text-sm rounded-2xl border"
-                    style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}
-                  />
-                </div>
+                <label className="block text-[13px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>문항 수</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  value={
+                    examCountFieldFocused
+                      ? examCountDraft
+                      : String(examProps.examCount)
+                  }
+                  onFocus={() => {
+                    examCountFieldFocusedRef.current = true;
+                    setExamCountFieldFocused(true);
+                    setExamCountDraft(String(examProps.examCount));
+                  }}
+                  onChange={(e) => {
+                    if (!examCountFieldFocusedRef.current) return;
+                    setExamCountDraft(e.target.value.replace(/\D/g, ""));
+                  }}
+                  onBlur={(e) => {
+                    examCountFieldFocusedRef.current = false;
+                    setExamCountFieldFocused(false);
+                    commitExamQuestionCountInput(
+                      e.target.value,
+                      examProps.examType,
+                      examProps.setExamCount,
+                    );
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key !== "Enter") return;
+                    e.preventDefault();
+                    (e.currentTarget as HTMLInputElement).blur();
+                  }}
+                  className="w-full min-w-0 px-2 py-1.5 text-sm rounded-2xl border"
+                  style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}
+                />
               </div>
-            </div>
-            <div>
-              <label className="block text-[14px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>
-                시험 이름 <span className="font-normal opacity-70">(선택)</span>
-              </label>
-              <input
-                type="text"
-                value={localExamDisplayName}
-                onChange={(e) => setLocalExamDisplayName(e.target.value)}
-                placeholder="비워 두면 자동 이름 · 직접 입력 시 아래 예시 참고"
-                aria-describedby="exam-display-name-hint"
-                className="block w-full px-2 py-1.5 text-sm rounded-2xl border m-0"
-                style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}
-              />
-              <p
-                id="exam-display-name-hint"
-                className="mt-1.5 pl-2 text-[11px] leading-snug space-y-1"
-                style={{ color: isDarkMode ? "#a1a1aa" : "#6b7280" }}
-              >
-                <span className="block">
-                  비워 두면{" "}
-                  <span className="font-medium opacity-90" style={{ color: isDarkMode ? "#e4e4e7" : "#374151" }}>
-                    유형 · 문항 수
-                  </span>
-                  형식으로 붙습니다. 같은 유형·문항 수 조합이 이미 있으면{" "}
-                  <span className="font-medium opacity-90" style={{ color: isDarkMode ? "#e4e4e7" : "#374151" }}>
-                    (2), (3)…
-                  </span>
-                  이 자동으로 붙습니다.
-                </span>
-                <span className="block pt-0.5">
-                  이름 예시 — 개념 정리를 위한 플래시카드, 중간고사 대비 암기용 문제, 빠른 복습용 테스트
-                </span>
-              </p>
-            </div>
-            <div>
-              <label className="block text-[14px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>주제</label>
-              <textarea
-                rows={1}
-                value={localExamTopic}
-                onChange={(e) => setLocalExamTopic(e.target.value)}
-                placeholder="이 시험이 다룰 내용"
-                className="block w-full px-2 py-1.5 text-sm rounded-2xl border resize-none m-0"
-                style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}
-              />
-            </div>
-            <div className="flex gap-3">
               <div className="flex-1 min-w-0">
-                <label className="block text-[14px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>난이도</label>
+                <label className="block text-[13px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>난이도</label>
                 <select value={examProps.profileProficiencyLevel} onChange={(e) => examProps.setProfileProficiencyLevel(e.target.value as "Beginner" | "Intermediate" | "Advanced")} className="w-full px-2 py-1.5 text-sm rounded-2xl border" style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}>
                   <option value="Beginner">초급</option>
                   <option value="Intermediate">중급</option>
@@ -1395,7 +1365,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 </select>
               </div>
               <div className="flex-1 min-w-0">
-                <label className="block text-[14px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>평가 중점</label>
+                <label className="block text-[13px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>평가 중점</label>
                 <select value={examProps.profileTargetDepth} onChange={(e) => examProps.setProfileTargetDepth(e.target.value as "Concept" | "Application" | "Derivation" | "Deep Understanding")} className="w-full px-2 py-1.5 text-sm rounded-2xl border" style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}>
                   <option value="Concept">개념 이해</option>
                   <option value="Application">응용</option>
@@ -1404,12 +1374,72 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 </select>
               </div>
               <div className="flex-1 min-w-0">
-                <label className="block text-[14px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>문제 스타일</label>
+                <label className="block text-[13px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>문제 스타일</label>
                 <select value={examProps.profileQuestionModality} onChange={(e) => examProps.setProfileQuestionModality(e.target.value as "Mathematical" | "Theoretical" | "Balance")} className="w-full px-2 py-1.5 text-sm rounded-2xl border" style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}>
                   <option value="Mathematical">수학적</option>
                   <option value="Theoretical">이론적</option>
                   <option value="Balance">균형</option>
                 </select>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1 min-w-0">
+                <div className="relative" ref={examNameInfoRef}>
+                  <div className="flex items-center gap-1 mb-0.5 pl-2">
+                    <label className="text-[14px] font-medium" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>
+                      시험 이름 <span className="font-normal opacity-70">(선택)</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setExamNameInfoOpen((prev) => !prev);
+                      }}
+                      className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] border cursor-pointer ${
+                        isDarkMode
+                          ? "border-zinc-500 text-zinc-300 hover:bg-zinc-700"
+                          : "border-gray-400 text-gray-600 hover:bg-gray-100"
+                      }`}
+                      aria-label="시험 이름 안내"
+                      title="시험 이름 안내"
+                    >
+                      i
+                    </button>
+                  </div>
+                  {examNameInfoOpen && (
+                    <div
+                      className={`absolute left-2 top-6 z-20 w-[320px] rounded-lg border px-2.5 py-2 text-[11px] leading-snug shadow-lg ${
+                        isDarkMode
+                          ? "bg-zinc-800 border-zinc-600 text-zinc-200"
+                          : "bg-white border-gray-200 text-gray-700"
+                      }`}
+                    >
+                      비워 두면 유형 · 문항 수 형식으로 붙습니다. 같은 유형·문항 수 조합이 이미 있으면 (2), (3)…이 자동으로 붙습니다.
+                      <br />
+                      이름 예시 — 개념 정리를 위한 플래시카드, 중간고사 대비 암기용 문제, 빠른 복습용 테스트
+                    </div>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  value={localExamDisplayName}
+                  onChange={(e) => setLocalExamDisplayName(e.target.value)}
+                  placeholder="시험 이름 (선택)"
+                  className="block w-full px-2 py-1.5 text-sm rounded-2xl border m-0"
+                  style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}
+                />
+              </div>
+              <div className="flex-1 min-w-0">
+                <label className="block text-[14px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>주제</label>
+                <textarea
+                  rows={1}
+                  value={localExamTopic}
+                  onChange={(e) => setLocalExamTopic(e.target.value)}
+                  placeholder="이 시험이 다룰 내용"
+                  className="block w-full px-2 py-1.5 text-sm rounded-2xl border resize-none m-0"
+                  style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}
+                />
               </div>
             </div>
             <div className="flex flex-col gap-2">
@@ -1720,41 +1750,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   </span>
                 )}
                 <div className={bubbleShellClass} style={bubbleShellStyle}>
-                {message.thoughtSummary != null &&
-                  (assistantEnabled || integratedModeActive) && (
-                  <div className="mb-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        assistantEnabled
-                          ? lectureAssistant.toggleThoughtExpanded(message.id)
-                          : integratedLearning.toggleThoughtExpanded(message.id)
-                      }
-                      className="text-xs font-medium underline-offset-2 hover:underline opacity-90"
-                    >
-                      {message.thoughtExpanded
-                        ? "▼ 사고 요약 접기"
-                        : "▶ 사고 요약 보기"}
-                    </button>
-                    {message.thoughtExpanded ? (
-                      <pre
-                        className={`mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md px-2 py-1.5 text-xs leading-relaxed ${
-                          borderlessLearningChat
-                            ? isDarkMode
-                              ? "border border-white/10 bg-transparent"
-                              : "border border-gray-200 bg-transparent"
-                            : message.assistantVariant === "orchestrator"
-                              ? "border border-white/25 bg-black/25"
-                              : isDarkMode
-                                ? "border border-white/15 bg-black/20"
-                                : "border border-gray-200 bg-white/80"
-                        }`}
-                      >
-                        {message.thoughtSummary || "…"}
-                      </pre>
-                    ) : null}
-                  </div>
-                )}
                 {message.isLoading && (
                   <div className="flex items-center gap-3 py-2">
                     <div className="relative">
@@ -1793,7 +1788,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   <span className="block min-w-0 overflow-hidden break-words whitespace-pre-wrap">
                     {message.text}
                   </span>
-                ) : message.markdown ? (
+                ) : message.markdown != null ||
+                  message.streamingMarkdown ||
+                  message.integratedQuizOpenButton ? (
                   <div className="min-w-0 overflow-hidden break-words">
                     {message.text?.trim() ? (
                       <div className="mb-2 font-semibold break-words">
@@ -1811,7 +1808,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                       >
                         {message.markdown}
                       </div>
-                    ) : (
+                    ) : message.markdown?.trim() ||
+                      message.assistantVariant !== "educational" ? (
                       <div
                         className={`prose max-w-none overflow-hidden break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words prose-headings:font-semibold ${
                           borderlessLearningChat
@@ -1831,15 +1829,96 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                               : ""
                         }`}
                       >
-                        <MarkdownContent>{message.markdown}</MarkdownContent>
+                        <MarkdownContent>{message.markdown ?? ""}</MarkdownContent>
                       </div>
-                    )}
+                    ) : null}
+                    {message.integratedQuizOpenButton &&
+                      integratedModeActive &&
+                      !message.isLoading && (
+                        <div className="mt-3">
+                          <button
+                            type="button"
+                            onClick={() => integratedLearning.openQuizOverlay()}
+                            className={`cursor-pointer rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
+                              isDarkMode
+                                ? "inline-flex items-center gap-1.5 border-[#FFFFFF] bg-[#FFFFFF] text-[#141414] hover:opacity-90 leading-none"
+                                : "inline-flex items-center gap-1.5 border-[#141414] bg-[#141414] text-[#FFFFFF] hover:opacity-90 leading-none"
+                            }`}
+                          >
+                            <svg
+                              width="17"
+                              height="17"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.8"
+                              className="block shrink-0"
+                              aria-hidden
+                            >
+                              <path d="M9 11.5L11 13.5L15.5 9" strokeLinecap="round" strokeLinejoin="round" />
+                              <path d="M20 12a8 8 0 1 1-4.6-7.2" strokeLinecap="round" />
+                            </svg>
+                            퀴즈 확인하기
+                          </button>
+                        </div>
+                      )}
                   </div>
                 ) : (
                   <span className="block min-w-0 overflow-hidden break-words whitespace-pre-wrap">
                     {message.text}
                   </span>
                 )}
+                {message.actionButtons &&
+                  message.actionButtons.length > 0 &&
+                  !message.isLoading &&
+                  integratedModeActive && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {message.actionButtons.map((btn) => (
+                        <button
+                          key={btn.id}
+                          type="button"
+                          onClick={() => integratedLearning.handleAction(btn.id)}
+                          className={`cursor-pointer rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                            btn.id.startsWith("quiz_type_")
+                              ? `${
+                                  isDarkMode
+                                    ? "border-[#FFFFFF] bg-[#FFFFFF] text-[#141414] hover:opacity-90"
+                                    : "border-[#141414] bg-[#141414] text-[#FFFFFF] hover:opacity-90"
+                                } inline-flex w-[110px] items-center justify-center gap-1.5`
+                              : btn.variant === "primary"
+                              ? "border-sky-300/80 bg-sky-500 text-white hover:opacity-90"
+                              : isDarkMode
+                                ? "border-zinc-600 bg-zinc-700 text-zinc-100 hover:bg-zinc-600"
+                                : "border-gray-300 bg-gray-100 text-gray-800 hover:bg-gray-200"
+                          }`}
+                        >
+                          {btn.id === "quiz_type_flash_card" ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+                              <rect x="4" y="6" width="16" height="12" rx="2" />
+                              <path d="M8 10h8M8 14h5" strokeLinecap="round" />
+                            </svg>
+                          ) : btn.id === "quiz_type_ox_problem" ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                              <circle cx="8" cy="12" r="3" />
+                              <path d="M14.5 9.5l5 5M19.5 9.5l-5 5" strokeLinecap="round" />
+                            </svg>
+                          ) : btn.id === "quiz_type_five_choice" ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+                              <path d="M8 7h12M8 12h12M8 17h12" strokeLinecap="round" />
+                              <circle cx="4.5" cy="7" r="1" fill="currentColor" />
+                              <circle cx="4.5" cy="12" r="1" fill="currentColor" />
+                              <circle cx="4.5" cy="17" r="1" fill="currentColor" />
+                            </svg>
+                          ) : btn.id === "quiz_type_short_answer" ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+                              <path d="M5 5h14v10H9l-4 4V5z" strokeLinejoin="round" />
+                            </svg>
+                          ) : null}
+                          {btn.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 {!message.isLoading &&
                   messageCopyText &&
                   (message.markdown?.trim() ||
@@ -1976,6 +2055,14 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       </div>
       )}
     </aside>
+    {integratedLearning.quizOverlayOpen &&
+    integratedLearning.quizOverlayModel ? (
+      <IntegratedLearningQuizOverlay
+        model={integratedLearning.quizOverlayModel}
+        onClose={integratedLearning.dismissQuizOverlay}
+        isDarkMode={isDarkMode}
+      />
+    ) : null}
     </>
   );
 };
