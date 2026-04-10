@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useRef,
   useEffect,
+  useMemo,
   forwardRef,
   useImperativeHandle,
 } from "react";
@@ -57,6 +58,8 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
   const [zoom, setZoom] = useState(1);
   const [zoomInputOpen, setZoomInputOpen] = useState(false);
   const [zoomInputValue, setZoomInputValue] = useState("");
+  const [isPageListOpen, setIsPageListOpen] = useState(false);
+  const [pageSearchQuery, setPageSearchQuery] = useState("");
   const zoomInputRef = useRef<HTMLInputElement>(null);
   const [baseWidth, setBaseWidth] = useState(800);
   const [scrollAreaWidth, setScrollAreaWidth] = useState(800);
@@ -350,6 +353,14 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
     }
   };
 
+  const filteredPageNumbers = useMemo(() => {
+    if (!numPages) return [];
+    const q = pageSearchQuery.trim();
+    const pages = Array.from({ length: numPages }, (_, i) => i + 1);
+    if (!q) return pages;
+    return pages.filter((p) => String(p).includes(q));
+  }, [numPages, pageSearchQuery]);
+
   return (
     <div
       ref={containerRef}
@@ -488,17 +499,30 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
           </button>
+          <button
+            type="button"
+            onClick={() => setIsPageListOpen((prev) => !prev)}
+            className={`p-1.5 rounded transition-colors cursor-pointer ${
+              isPageListOpen
+                ? isDarkMode
+                  ? "bg-zinc-700 text-white"
+                  : "bg-gray-200 text-[#141414]"
+                : "hover:opacity-80"
+            }`}
+            title="페이지 목록"
+            aria-label="페이지 목록 토글"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+            </svg>
+          </button>
         </div>
       )}
 
       {/* PDF 스크롤 영역 - 가로(페이지 전환) + 세로(긴 페이지) 스크롤, Ctrl+휠로 배율 조정 */}
-      <div
-        ref={scrollRef}
-        className="flex-1 min-h-0 overflow-x-auto overflow-y-auto pdf-scroll-area flex items-start snap-x snap-mandatory"
-        style={{ backgroundColor: isDarkMode ? "#141414" : "#FFFFFF" }}
-      >
       <Document
         file={fileUrl}
+        className="h-full min-h-0"
         onLoadSuccess={onDocumentLoadSuccess}
         loading={
           <div className="flex-1 flex items-center justify-center text-gray-500 text-sm">
@@ -511,43 +535,123 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
           </div>
         }
       >
-        {numPages != null && (
-          <div className="flex flex-nowrap py-3 min-h-full" style={{ gap: 0 }}>
-            {Array.from({ length: numPages }, (_, i) => {
-              const pageNum = i + 1;
-              return (
-                <div
-                  key={pageNum}
-                  data-page={pageNum}
-                  className="flex-shrink-0 flex justify-center items-start snap-center min-h-full"
+        <div className="h-full min-h-0 min-w-0 flex overflow-hidden">
+          {isPageListOpen && numPages != null && (
+            <aside
+              className={`w-56 min-w-[224px] max-w-[240px] min-h-0 border-r flex flex-col overflow-hidden ${
+                isDarkMode ? "border-zinc-700 bg-[#141414]" : "border-gray-200 bg-white"
+              }`}
+            >
+              <div className="p-2 border-b" style={{ borderColor: isDarkMode ? "#404040" : "#e5e7eb" }}>
+                <input
+                  type="text"
+                  value={pageSearchQuery}
+                  onChange={(e) => setPageSearchQuery(e.target.value.replace(/[^\d]/g, ""))}
+                  placeholder="페이지 번호 검색"
+                  className="w-full h-8 px-2 text-sm rounded border focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
                   style={{
-                    width: scrollAreaWidth || 800,
-                    minWidth: scrollAreaWidth || 800,
-                    backgroundColor: isDarkMode ? "#141414" : "#FFFFFF",
+                    backgroundColor: isDarkMode ? "#27272a" : "#ffffff",
+                    color: isDarkMode ? "#FFFFFF" : "#141414",
+                    borderColor: isDarkMode ? "#52525b" : "#d1d5db",
                   }}
-                >
+                />
+              </div>
+              <div
+                className="page-list-scroll flex-1 min-h-0 overflow-y-scroll overflow-x-hidden pl-1.5 pr-3 py-1.5 space-y-1"
+                style={{
+                  scrollbarWidth: "thin",
+                  scrollbarColor: isDarkMode ? "#52525b #141414" : "#cbd5e0 #ffffff",
+                  scrollbarGutter: "stable both-edges",
+                }}
+              >
+                {filteredPageNumbers.length === 0 ? (
+                  <p className={`px-2 py-1 text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                    검색 결과가 없습니다.
+                  </p>
+                ) : (
+                  filteredPageNumbers.map((pageNum) => (
+                    <button
+                      key={pageNum}
+                      type="button"
+                      onClick={() => scrollToPage(pageNum, "user")}
+                    className={`w-full text-left p-2 rounded text-sm transition-colors cursor-pointer border ${
+                        currentPage === pageNum
+                        ? "bg-emerald-600/20 border-emerald-400/60 text-emerald-500 ring-1 ring-emerald-500/80"
+                          : isDarkMode
+                          ? "border-zinc-700 text-gray-200 hover:bg-zinc-800"
+                          : "border-gray-200 text-gray-700 hover:bg-gray-100"
+                      }`}
+                    >
+                      <div className="flex flex-col items-center">
+                        <div
+                          className={`overflow-hidden rounded shadow-sm ${
+                            isDarkMode ? "bg-zinc-900" : "bg-white"
+                          }`}
+                        >
+                          <Page
+                            pageNumber={pageNum}
+                            width={120}
+                            renderTextLayer={false}
+                            renderAnnotationLayer={false}
+                            loading={
+                              <div
+                                className={`h-[156px] w-[120px] animate-pulse ${
+                                  isDarkMode ? "bg-zinc-800" : "bg-gray-100"
+                                }`}
+                              />
+                            }
+                          />
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </aside>
+          )}
+          <div
+            ref={scrollRef}
+            className="flex-1 min-h-0 overflow-x-auto overflow-y-auto pdf-scroll-area flex items-start snap-x snap-mandatory"
+            style={{ backgroundColor: isDarkMode ? "#141414" : "#FFFFFF" }}
+          >
+          {numPages != null && (
+            <div className="flex flex-nowrap py-3 min-h-full" style={{ gap: 0 }}>
+              {Array.from({ length: numPages }, (_, i) => {
+                const pageNum = i + 1;
+                return (
                   <div
+                    key={pageNum}
+                    data-page={pageNum}
+                    className="flex-shrink-0 flex justify-center items-start snap-center min-h-full"
                     style={{
-                      transform: `scale(${zoom})`,
-                      transformOrigin: "top center",
-                      transition: "transform 0.15s ease-out",
+                      width: scrollAreaWidth || 800,
+                      minWidth: scrollAreaWidth || 800,
+                      backgroundColor: isDarkMode ? "#141414" : "#FFFFFF",
                     }}
                   >
-                    <Page
-                      pageNumber={pageNum}
-                      width={pageWidth}
-                      renderTextLayer
-                      renderAnnotationLayer
-                      className="shadow-sm"
-                    />
+                    <div
+                      style={{
+                        transform: `scale(${zoom})`,
+                        transformOrigin: "top center",
+                        transition: "transform 0.15s ease-out",
+                      }}
+                    >
+                      <Page
+                        pageNumber={pageNum}
+                        width={pageWidth}
+                        renderTextLayer
+                        renderAnnotationLayer
+                        className="shadow-sm"
+                      />
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
+          )}
           </div>
-        )}
+        </div>
       </Document>
-      </div>
     </div>
   );
 });

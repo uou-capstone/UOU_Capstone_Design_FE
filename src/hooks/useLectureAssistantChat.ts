@@ -175,7 +175,7 @@ export function useLectureAssistantChat(options: {
     ]);
   }, [appendOrchestrator]);
 
-  const finishStreamAndContinue = useCallback(() => {
+  const finishStreamAndContinue = useCallback((opts?: { skipNextPagePrompt?: boolean }) => {
     streamingRef.current = false;
     abortRef.current = null;
     setBusy(false);
@@ -188,6 +188,10 @@ export function useLectureAssistantChat(options: {
         { id: "assistant_explain_yes", label: "예", variant: "primary" },
         { id: "assistant_explain_no", label: "아니오", variant: "muted" },
       ]);
+      return;
+    }
+    if (opts?.skipNextPagePrompt) {
+      setPhase("idle");
       return;
     }
     addNextPagePrompt();
@@ -204,28 +208,12 @@ export function useLectureAssistantChat(options: {
       setBusy(true);
       setPhase("streaming");
 
-      const thoughtId = nextMessageId();
       const answerId = nextMessageId();
       let cancelled = false;
       let answerStarted = false;
       let answerBuf = "";
 
       const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: thoughtId,
-          isUser: false,
-          roleBadge: "강의 보조",
-          assistantVariant: "orchestrator",
-          text: "사고 요약",
-          thoughtSummary: "",
-          thoughtExpanded: true,
-          thoughtFinished: false,
-          isLoading: true,
-        },
-      ]);
 
       abortRef.current?.();
       const streamAbort = new AbortController();
@@ -236,41 +224,8 @@ export function useLectureAssistantChat(options: {
         void lectureAiLegacyStreamApi.cancel(lectureId).catch(() => {});
       };
 
-      const finalizeThoughtRow = () => {
-        setMessages((p) =>
-          p.map((m) =>
-            m.id === thoughtId
-              ? {
-                  ...m,
-                  isLoading: false,
-                  thoughtFinished: true,
-                  thoughtExpanded: false,
-                  thoughtSummary: m.thoughtSummary || "",
-                }
-              : m,
-          ),
-        );
-      };
-
-      /** Gemini thinking / SSE `thought` 구간 — 토글 안에서 스트리밍 (문서 7.1) */
-      const appendThoughtDelta = (chunk: string) => {
-        if (cancelled || !chunk) return;
-        flushSync(() => {
-          setMessages((p) =>
-            p.map((m) =>
-              m.id === thoughtId
-                ? {
-                    ...m,
-                    isLoading: false,
-                    thoughtExpanded: true,
-                    thoughtFinished: false,
-                    thoughtSummary: (m.thoughtSummary ?? "") + chunk,
-                  }
-                : m,
-            ),
-          );
-        });
-      };
+      const finalizeThoughtRow = () => {};
+      const appendThoughtDelta = (_chunk: string) => {};
 
       /** 본문: SSE/모델 스트림 청크마다 즉시 UI 반영 (문서 7·Gemini 스트리밍과 동일한 UX) */
       const appendDeltaLive = (chunk: string) => {
@@ -393,7 +348,12 @@ export function useLectureAssistantChat(options: {
                 ),
               );
             }
-            finishStreamAndContinue();
+            const hasNextPageQuestionInAnswer = /다음\s*페이지로\s*넘어갈까요\??/.test(
+              answerBuf,
+            );
+            finishStreamAndContinue({
+              skipNextPagePrompt: hasNextPageQuestionInAnswer,
+            });
           } else {
             streamingRef.current = false;
             setBusy(false);
@@ -409,9 +369,7 @@ export function useLectureAssistantChat(options: {
           ) {
             setMessages((p) =>
               p.map((m) =>
-                m.id === thoughtId
-                  ? { ...m, isLoading: false }
-                  : m.id === answerId
+                m.id === answerId
                     ? { ...m, streamingMarkdown: false }
                     : m,
               ),
@@ -423,7 +381,7 @@ export function useLectureAssistantChat(options: {
             err instanceof Error ? err.message : "강의 보조 요청 실패";
           setMessages((p) => [
             ...p
-              .filter((m) => !(m.id === thoughtId && m.isLoading))
+              .filter((m) => true)
               .map((m) =>
                 m.id === answerId ? { ...m, streamingMarkdown: false } : m,
               ),

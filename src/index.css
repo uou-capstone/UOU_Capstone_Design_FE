@@ -359,6 +359,18 @@ html.dark {
   background: transparent;
 }
 
+/* PDF 페이지 미리보기 목록 스크롤바 */
+.page-list-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+.page-list-scroll::-webkit-scrollbar-thumb {
+  background: rgba(113, 113, 122, 0.7);
+  border-radius: 9999px;
+}
+.page-list-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 /* 우측 사이드바 시험 모드 드롭다운 - 화살표를 왼쪽으로 조정 */
 .exam-select-arrow-left select {
   appearance: none;

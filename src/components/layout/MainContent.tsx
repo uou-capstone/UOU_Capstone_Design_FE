@@ -932,7 +932,10 @@ const MainContent: React.FC<MainContentProps> = ({
     page: number;
     at: number;
   } | null>(null);
-  const [rightSidebarWidth, setRightSidebarWidth] = React.useState(400);
+  const RIGHT_SIDEBAR_DEFAULT_WIDTH = 480;
+  const [rightSidebarWidth, setRightSidebarWidth] = React.useState(
+    RIGHT_SIDEBAR_DEFAULT_WIDTH,
+  );
   /** PDF/MD 자료 뷰: 좌측 뷰어 너비(px). null이면 flex로 50:50 */
   const [resourcePreviewViewerWidthPx, setResourcePreviewViewerWidthPx] =
     React.useState<number | null>(null);
@@ -941,6 +944,7 @@ const MainContent: React.FC<MainContentProps> = ({
     null,
   );
   const resourcePreviewChatPanelRef = React.useRef<HTMLDivElement | null>(null);
+  const lastResourcePreviewSidebarWidthRef = React.useRef<number | null>(null);
 
   // 시험 세션 상세 보기 모달 상태
   const [examDetailSessionId, setExamDetailSessionId] = React.useState<
@@ -1020,6 +1024,20 @@ const MainContent: React.FC<MainContentProps> = ({
     "recent" | "name"
   >("recent");
   const [courseContentsLoaded, setCourseContentsLoaded] = React.useState(false);
+
+  React.useLayoutEffect(() => {
+    const isResourceDocPreview =
+      (previewFileUrl != null || previewMaterialId != null) &&
+      examDetailSessionId == null;
+    if (!isResourceDocPreview) return;
+    const id = requestAnimationFrame(() => {
+      const w = resourcePreviewChatPanelRef.current?.getBoundingClientRect().width;
+      if (w != null && Number.isFinite(w) && w > 0) {
+        lastResourcePreviewSidebarWidthRef.current = Math.round(w);
+      }
+    });
+    return () => cancelAnimationFrame(id);
+  }, [previewFileUrl, previewMaterialId, examDetailSessionId, resourcePreviewViewerWidthPx]);
 
   const patchResourceInUrl = React.useCallback(
     (opts: { material?: number | null; gen?: number | null }) => {
@@ -4107,7 +4125,9 @@ const MainContent: React.FC<MainContentProps> = ({
               }
             >
               {examDetailSessionId ? (
-                <div className={`flex-1 min-h-0 min-w-0 flex flex-col ${isDarkMode ? "bg-[#141414] text-gray-100" : "bg-white text-gray-900"}`}>
+                <div
+                  className={`group flex flex-1 min-h-0 min-w-0 flex-col ${isDarkMode ? "bg-[#141414] text-gray-100" : "bg-white text-gray-900"}`}
+                >
                   <div
                     className="shrink-0 h-10 min-h-10 max-h-10 flex items-center justify-between px-3 border-b box-border"
                     style={{
@@ -4155,11 +4175,29 @@ const MainContent: React.FC<MainContentProps> = ({
                           e.stopPropagation();
                           closeExamSessionDetail();
                         }}
-                        className={`p-1 rounded cursor-pointer shrink-0 ${isDarkMode ? "hover:bg-zinc-800" : "hover:bg-gray-100"}`}
+                        className={`shrink-0 cursor-pointer rounded-full p-1.5 transition-opacity opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100 ${
+                          isDarkMode
+                            ? "text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                            : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                        }`}
                         aria-label="시험 보기 닫기"
                         title="닫기"
                       >
-                        ✕
+                        <svg
+                          width="20"
+                          height="20"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          aria-hidden
+                        >
+                          <path
+                            d="M18 6L6 18M6 6l12 12"
+                            strokeWidth="2.2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
                       </button>
                     </div>
                   </div>
@@ -5308,7 +5346,21 @@ const MainContent: React.FC<MainContentProps> = ({
                 if (isResourceDocPreview) {
                   setResourcePreviewViewerWidthPx(null);
                 } else {
-                  setRightSidebarWidth(400);
+                  const preserved = lastResourcePreviewSidebarWidthRef.current;
+                  if (preserved != null && Number.isFinite(preserved)) {
+                    setRightSidebarWidth(preserved);
+                  } else {
+                    const rowWidth =
+                      resourcePreviewSplitRowRef.current?.getBoundingClientRect()
+                        .width;
+                    if (rowWidth != null && Number.isFinite(rowWidth)) {
+                      setRightSidebarWidth(
+                        Math.min(680, Math.max(280, Math.round(rowWidth / 2))),
+                      );
+                    } else {
+                      setRightSidebarWidth(RIGHT_SIDEBAR_DEFAULT_WIDTH);
+                    }
+                  }
                 }
               }}
               className={`shrink-0 w-0.1 cursor-col-resize flex items-center justify-center group hover:bg-emerald-500/30 transition-colors ${
