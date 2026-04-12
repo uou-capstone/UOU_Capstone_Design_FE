@@ -74,6 +74,25 @@ html.dark .prose:not(.prose-invert) :not(pre) > code {
   border-radius: 0.75rem;
 }
 
+/*
+ * 강의/통합학습 채팅(.learning-chat-md): 본문 블록 직후에 오는 제목(h) 위에만 가벼운 구분선.
+ * 마크다운 소스에 HR을 넣지 않아도 FE에서만 시각 구분.
+ */
+.learning-chat-md.prose
+  :where(p, ul, ol, blockquote, pre)
+  + :where(h1, h2, h3, h4, h5, h6),
+.learning-chat-md.prose div:has(> table) + :where(h1, h2, h3, h4, h5, h6) {
+  margin-top: 1.125rem !important;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgb(0 0 0 / 0.1);
+}
+.learning-chat-md.prose-invert
+  :where(p, ul, ol, blockquote, pre)
+  + :where(h1, h2, h3, h4, h5, h6),
+.learning-chat-md.prose-invert div:has(> table) + :where(h1, h2, h3, h4, h5, h6) {
+  border-top-color: rgb(255 255 255 / 0.12);
+}
+
 /* 전역 스타일 */
 * {
   box-sizing: border-box;

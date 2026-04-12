@@ -320,6 +320,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
   /** 강의학습·통합학습: 카드형 말풍선 없이 본문만 전체 너비 */
   const borderlessLearningChat = assistantEnabled || integratedModeActive;
+  /** v1 강의학습 에이전트(통합학습 제외): prose 제목(h)과 바로 아래 본문 간격만 살짝 축소 */
+  const lectureV1AgentMarkdown = assistantEnabled && !integratedModeActive;
 
   const copyLearningChatToClipboard = useCallback((raw: string) => {
     const t = raw.trim();
@@ -1812,9 +1814,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                       message.assistantVariant !== "educational" ? (
                       <div
                         className={`prose max-w-none overflow-hidden break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words prose-headings:font-semibold ${
+                          borderlessLearningChat ? "learning-chat-md" : ""
+                        } ${
                           borderlessLearningChat
                             ? "prose-base prose-neutral leading-[1.65]"
                             : "prose-sm prose-neutral leading-[1.7]"
+                        } ${
+                          lectureV1AgentMarkdown
+                            ? "[&_h1]:!mb-1.5 [&_h2]:!mb-1.5 [&_h3]:!mb-1.5 [&_h4]:!mb-1.5 [&_h5]:!mb-1.5 [&_h6]:!mb-1.5 [&_h1+*]:!mt-1.5 [&_h2+*]:!mt-1.5 [&_h3+*]:!mt-1.5 [&_h4+*]:!mt-1.5 [&_h5+*]:!mt-1.5 [&_h6+*]:!mt-1.5"
+                            : ""
                         } ${
                           message.assistantVariant === "orchestrator"
                             ? "[&_span:has(>img)]:!my-1.5 [&_img]:!my-0 [&_img]:!max-h-36 [&_img]:!w-auto [&_img]:!max-w-full [&_img]:!rounded-lg [&_img]:object-contain"
