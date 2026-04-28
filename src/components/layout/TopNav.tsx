@@ -212,7 +212,8 @@ const TopNav: React.FC<TopNavProps> = ({
         {user?.role === "TEACHER" &&
           !isSettingsPage &&
           !isReportPage &&
-          !isUpdatesPage && (
+          !isUpdatesPage &&
+          !isPreviewMode && (
           <div className="hidden items-center justify-center lg:flex">
             {isCourseDetail ? (
               <div className="relative" ref={lectureMenuRef}>

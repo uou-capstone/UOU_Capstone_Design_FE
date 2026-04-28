@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { MarkdownContent } from "./MarkdownContent";
+import { MarkdownContent } from "@/components/common/MarkdownContent";
 import type {
   IntegratedQuizDisplayItem,
   IntegratedQuizOverlayModel,
-} from "../../services/api";
+} from "@/services/api";
 
 type Props = {
   model: IntegratedQuizOverlayModel;

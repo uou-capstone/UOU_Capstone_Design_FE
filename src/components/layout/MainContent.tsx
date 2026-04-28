@@ -25,9 +25,9 @@ import {
   readCourseExamSessionResourceIds,
 } from "../../services/api";
 import RightSidebar from "./RightSidebar";
-import SettingsPage from "../pages/SettingsPage";
-import ReportPage from "../pages/ReportPage";
-import UpdatesPage from "../pages/UpdatesPage";
+import SettingsPage from "@/pages/dashboard/SettingsPage";
+import ReportPage from "@/pages/dashboard/ReportPage";
+import UpdatesPage from "@/pages/dashboard/UpdatesPage";
 import PdfViewer, { type PdfViewerHandle } from "../common/PdfViewer";
 import { CloseIcon, EditIcon, TrashIcon } from "../common/Icons";
 
@@ -72,6 +72,17 @@ type ResourcePreviewSnapshot = {
 type ExamResourceFilter =
   | { kind: "material"; materialId: number }
   | { kind: "generation"; sessionId: number };
+
+type PendingMaterialGenTask = {
+  taskId: string;
+  sessionId: number;
+  courseId: number;
+  lectureId: number;
+  keyword: string;
+  savedAt: number;
+};
+
+const MATERIAL_GEN_PENDING_STORAGE_KEY = "pending_material_gen_tasks_v1";
 
 /** 강의 리소스 그리드: PDF·마크다운(인라인) 및 동일 취급 API 경로만 노출 */
 function isPdfOrMarkdownResourceItem(item: CenterItem): boolean {
@@ -801,6 +812,53 @@ const MainContent: React.FC<MainContentProps> = ({
   const [streamedMaterialProgress, setStreamedMaterialProgress] =
     React.useState("");
   const materialStreamAbortRef = React.useRef<(() => void) | null>(null);
+  const getMaterialPendingTaskKey = React.useCallback(() => {
+    if (user?.userId == null || courseDetail?.courseId == null || selectedLectureId == null) {
+      return null;
+    }
+    return `${user.userId}:${courseDetail.courseId}:${selectedLectureId}`;
+  }, [user?.userId, courseDetail?.courseId, selectedLectureId]);
+  const saveMaterialPendingTask = React.useCallback(
+    (task: PendingMaterialGenTask) => {
+      const scopedKey = getMaterialPendingTaskKey();
+      if (!scopedKey) return;
+      try {
+        const raw = localStorage.getItem(MATERIAL_GEN_PENDING_STORAGE_KEY);
+        const parsed = raw ? (JSON.parse(raw) as Record<string, PendingMaterialGenTask>) : {};
+        parsed[scopedKey] = task;
+        localStorage.setItem(MATERIAL_GEN_PENDING_STORAGE_KEY, JSON.stringify(parsed));
+      } catch {
+        // ignore storage errors
+      }
+    },
+    [getMaterialPendingTaskKey],
+  );
+  const loadMaterialPendingTask = React.useCallback((): PendingMaterialGenTask | null => {
+    const scopedKey = getMaterialPendingTaskKey();
+    if (!scopedKey) return null;
+    try {
+      const raw = localStorage.getItem(MATERIAL_GEN_PENDING_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as Record<string, PendingMaterialGenTask>;
+      return parsed[scopedKey] ?? null;
+    } catch {
+      return null;
+    }
+  }, [getMaterialPendingTaskKey]);
+  const clearMaterialPendingTask = React.useCallback(() => {
+    const scopedKey = getMaterialPendingTaskKey();
+    if (!scopedKey) return;
+    try {
+      const raw = localStorage.getItem(MATERIAL_GEN_PENDING_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as Record<string, PendingMaterialGenTask>;
+      if (!(scopedKey in parsed)) return;
+      delete parsed[scopedKey];
+      localStorage.setItem(MATERIAL_GEN_PENDING_STORAGE_KEY, JSON.stringify(parsed));
+    } catch {
+      // ignore storage errors
+    }
+  }, [getMaterialPendingTaskKey]);
   const [examType, setExamType] = React.useState("FLASH_CARD");
   const [examCount, setExamCount] = React.useState(10);
   /** 시험 폼(이름·주제) 초기화 시 증가 — 입력은 RightSidebar 로컬 state로만 두어 MainContent 리렌더 감소 */
@@ -1044,6 +1102,10 @@ const MainContent: React.FC<MainContentProps> = ({
       setSearchParams(
         (prev) => {
           const next = new URLSearchParams(prev);
+          // 리소스/시험 URL 변경 시에도 현재 강의(주차) query는 항상 유지
+          if (selectedLectureId != null) {
+            next.set("lecture", String(selectedLectureId));
+          }
           next.delete("exam");
           if (opts.material != null) {
             next.set("material", String(opts.material));
@@ -1060,13 +1122,16 @@ const MainContent: React.FC<MainContentProps> = ({
         { replace: true },
       );
     },
-    [setSearchParams],
+    [setSearchParams, selectedLectureId],
   );
 
   const clearResourceParamsInUrl = React.useCallback(() => {
     setSearchParams(
       (prev) => {
         const next = new URLSearchParams(prev);
+        if (selectedLectureId != null) {
+          next.set("lecture", String(selectedLectureId));
+        }
         next.delete("material");
         next.delete("gen");
         next.delete("exam");
@@ -1074,7 +1139,7 @@ const MainContent: React.FC<MainContentProps> = ({
       },
       { replace: true },
     );
-  }, [setSearchParams]);
+  }, [setSearchParams, selectedLectureId]);
 
   const sortedCourses = React.useMemo(() => {
     const list = [...courses];
@@ -2288,8 +2353,15 @@ const MainContent: React.FC<MainContentProps> = ({
   }, [materialSessionId, materialPhase2Feedback]);
 
   const applyMaterialCompletion = React.useCallback(
-    (docUrl: string | null, finalDocument?: string | null) => {
+    (
+      docUrl: string | null,
+      finalDocument?: string | null,
+      options?: { sessionId?: number | null; keyword?: string | null },
+    ) => {
+      const effectiveSessionId = options?.sessionId ?? materialSessionId;
+      const effectiveKeyword = options?.keyword ?? materialKeyword;
       setMaterialAsyncTaskId(null);
+      clearMaterialPendingTask();
       setMaterialCompletedViaAsync(true);
       setStreamedMaterialContent("");
       setStreamedMaterialProgress("");
@@ -2297,15 +2369,15 @@ const MainContent: React.FC<MainContentProps> = ({
       if (docUrl) {
         setMaterialFinalUrl(docUrl);
         setMaterialGenStep(5);
-        const title = materialKeyword.trim() || "AI 자료";
+        const title = effectiveKeyword.trim() || "AI 자료";
         const newItem: CenterItem = {
-          id: `material-${materialSessionId!}-${Date.now()}`,
+          id: `material-${effectiveSessionId ?? Date.now()}-${Date.now()}`,
           type: "material",
           title: `${title} (문서)`,
           meta: "자료",
           createdAt: new Date().toISOString(),
           fileUrl: docUrl,
-          generationSessionId: materialSessionId!,
+          generationSessionId: effectiveSessionId ?? undefined,
           finalDocument:
             typeof finalDocument === "string" && finalDocument
               ? finalDocument
@@ -2327,18 +2399,18 @@ const MainContent: React.FC<MainContentProps> = ({
       selectedLectureId,
       courseDetail?.courseId,
       refetchCourseContents,
+      clearMaterialPendingTask,
     ],
   );
 
-  const handleMaterialPhase3To5Async = React.useCallback(async () => {
-    if (materialSessionId == null) return;
-    setSubmitting(true);
-    setMaterialAsyncTaskId(null);
-    setStreamedMaterialContent("");
-    setStreamedMaterialProgress("작업 시작 중…");
-
-    const pollUntilDone = async (taskId: string) => {
+  const pollMaterialTaskUntilDone = React.useCallback(
+    async (
+      taskId: string,
+      sessionId: number,
+      options?: { keyword?: string; silentOnFailure?: boolean },
+    ) => {
       setMaterialAsyncTaskId(taskId);
+      setSubmitting(true);
       const pollMs = 5000;
       const maxAttempts = 360;
       for (let i = 0; i < maxAttempts; i++) {
@@ -2358,31 +2430,48 @@ const MainContent: React.FC<MainContentProps> = ({
           let docUrl = statusRes.documentUrl ?? null;
           if (!docUrl) {
             try {
-              const docRes =
-                await materialGenerationApi.getDocument(materialSessionId);
+              const docRes = await materialGenerationApi.getDocument(sessionId);
               docUrl =
                 docRes.documentUrl ?? (docRes as { url?: string }).url ?? null;
             } catch {
               /* ignore */
             }
           }
-          applyMaterialCompletion(docUrl);
+          applyMaterialCompletion(docUrl, null, {
+            sessionId,
+            keyword: options?.keyword,
+          });
           return;
         }
         if (s === "FAILED" || s === "ERROR") {
-          window.alert(statusRes.message || "Phase 3~5 처리에 실패했습니다.");
+          if (!options?.silentOnFailure) {
+            window.alert(statusRes.message || "Phase 3~5 처리에 실패했습니다.");
+          }
+          clearMaterialPendingTask();
           setMaterialAsyncTaskId(null);
           setSubmitting(false);
           return;
         }
         await new Promise((r) => setTimeout(r, pollMs));
       }
-      window.alert(
-        "처리 시간이 초과되었습니다. 잠시 후 작업 상태를 확인해 주세요.",
-      );
+      if (!options?.silentOnFailure) {
+        window.alert(
+          "처리 시간이 초과되었습니다. 잠시 후 작업 상태를 확인해 주세요.",
+        );
+      }
+      clearMaterialPendingTask();
       setMaterialAsyncTaskId(null);
       setSubmitting(false);
-    };
+    },
+    [applyMaterialCompletion, clearMaterialPendingTask],
+  );
+
+  const handleMaterialPhase3To5Async = React.useCallback(async () => {
+    if (materialSessionId == null) return;
+    setSubmitting(true);
+    setMaterialAsyncTaskId(null);
+    setStreamedMaterialContent("");
+    setStreamedMaterialProgress("작업 시작 중…");
 
     try {
       const res = await materialGenerationApi.runAsync({
@@ -2395,6 +2484,14 @@ const MainContent: React.FC<MainContentProps> = ({
         return;
       }
       setMaterialAsyncTaskId(taskId);
+      saveMaterialPendingTask({
+        taskId,
+        sessionId: materialSessionId,
+        courseId: courseDetail?.courseId ?? 0,
+        lectureId: selectedLectureId ?? 0,
+        keyword: materialKeyword.trim(),
+        savedAt: Date.now(),
+      });
       setStreamedMaterialProgress("스트림 연결 중…");
 
       materialStreamAbortRef.current = materialGenerationApi.streamPhase(
@@ -2440,7 +2537,9 @@ const MainContent: React.FC<MainContentProps> = ({
               err.message ||
                 "스트림 연결에 실패했습니다. 상태 폴링으로 진행합니다.",
             );
-            pollUntilDone(taskId);
+            pollMaterialTaskUntilDone(taskId, materialSessionId, {
+              keyword: materialKeyword.trim(),
+            });
           },
         },
       );
@@ -2448,9 +2547,49 @@ const MainContent: React.FC<MainContentProps> = ({
       window.alert(
         e instanceof Error ? e.message : "Phase 3~5 실행에 실패했습니다.",
       );
+      clearMaterialPendingTask();
       setSubmitting(false);
     }
-  }, [materialSessionId, applyMaterialCompletion]);
+  }, [
+    materialSessionId,
+    applyMaterialCompletion,
+    saveMaterialPendingTask,
+    courseDetail?.courseId,
+    selectedLectureId,
+    materialKeyword,
+    pollMaterialTaskUntilDone,
+    clearMaterialPendingTask,
+  ]);
+
+  React.useEffect(() => {
+    if (selectedLectureId == null || courseDetail?.courseId == null) return;
+    if (materialAsyncTaskId) return;
+    const pending = loadMaterialPendingTask();
+    if (!pending) return;
+    if (
+      pending.lectureId !== selectedLectureId ||
+      pending.courseId !== courseDetail.courseId
+    ) {
+      return;
+    }
+    setMaterialSessionId(pending.sessionId);
+    if (!materialKeyword.trim() && pending.keyword) {
+      setMaterialKeyword(pending.keyword);
+    }
+    setMaterialGenStep(3);
+    setStreamedMaterialProgress("이전 작업 상태를 복원하는 중…");
+    void pollMaterialTaskUntilDone(pending.taskId, pending.sessionId, {
+      keyword: pending.keyword,
+      silentOnFailure: true,
+    });
+  }, [
+    selectedLectureId,
+    courseDetail?.courseId,
+    materialAsyncTaskId,
+    loadMaterialPendingTask,
+    pollMaterialTaskUntilDone,
+    materialKeyword,
+  ]);
 
   const handleMaterialPhase3 = React.useCallback(async () => {
     if (materialSessionId == null) return;
@@ -3724,6 +3863,8 @@ const MainContent: React.FC<MainContentProps> = ({
         description: "",
       });
       await onLectureCreated(lecture);
+      // 새로 만든 주차를 즉시 선택해 상세 화면으로 이동
+      onSelectLecture?.(lecture.lectureId);
       refetchCourseContents(courseDetail.courseId);
       setAddLectureModalOpen(false);
       setAddLectureWeekNumber("");
@@ -3938,7 +4079,7 @@ const MainContent: React.FC<MainContentProps> = ({
                         } else handleCourseSelect(course.courseId);
                       }
                     }}
-                    className={`text-left rounded-2xl flex cursor-pointer focus:outline-none relative overflow-hidden ${
+                    className={`text-left rounded-2xl flex cursor-pointer focus:outline-none relative overflow-hidden min-h-[112px] ${
                       isDarkMode
                         ? "border border-zinc-800"
                         : "border border-[#E5E7EB]"
@@ -5501,7 +5642,7 @@ const MainContent: React.FC<MainContentProps> = ({
           }`}
         >
           <div
-            className={`flex items-center justify-between gap-3 shrink-0 pb-2 border-b ${
+            className={`flex items-center justify-between gap-3 shrink-0 pb-3 border-b ${
               isDarkMode ? "border-zinc-700" : "border-gray-200"
             }`}
           >
@@ -5666,16 +5807,20 @@ const MainContent: React.FC<MainContentProps> = ({
 
           {/* 강의 리소스 박스 그리드 영역 */}
           <div
-            className={`flex-1 overflow-y-auto pt-3 ${
+            className={`flex-1 overflow-y-auto ${
               isDarkMode ? "text-gray-200" : "text-gray-800"
             }`}
           >
             {assessmentsLoading ? (
-              <div className="flex items-center justify-center py-12 text-sm opacity-70">
+              <div className="flex h-full items-center justify-center text-sm opacity-70">
                 목록 불러오는 중...
               </div>
+            ) : sortedItems.length === 0 ? (
+              <p className="flex h-full items-center justify-center text-sm opacity-70">
+                이 주차에는 아직 등록된 자료가 없습니다.
+              </p>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-6">
+              <div className="pt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-6">
                 {sortedItems.map((item) => {
                   const selectable =
                     isTeacher &&
@@ -5684,7 +5829,7 @@ const MainContent: React.FC<MainContentProps> = ({
                   return (
                     <div
                       key={item.id}
-                      className={`text-left rounded-2xl flex cursor-pointer focus:outline-none relative overflow-hidden ${
+                    className={`text-left rounded-2xl flex cursor-pointer focus:outline-none relative overflow-hidden min-h-[112px] ${
                         isDarkMode
                           ? "border border-zinc-800"
                           : "border border-[#E5E7EB]"
@@ -5716,11 +5861,15 @@ const MainContent: React.FC<MainContentProps> = ({
                           isDarkMode ? "hover:bg-zinc-900/90" : ""
                         }`}
                       >
-                        <p className="text-sm font-medium truncate">
-                          {item.title}
-                        </p>
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <h3 className="text-base font-semibold line-clamp-2 flex-1">
+                            {item.title}
+                          </h3>
+                        </div>
                         <p
-                          className={`text-xs mt-1 ${isDarkMode ? "text-gray-500" : "text-gray-400"}`}
+                          className={`text-xs line-clamp-3 flex-1 ${
+                            isDarkMode ? "text-gray-400" : "text-gray-600"
+                          }`}
                         >
                           {item.meta}
                           {item.type === "material" &&
@@ -6121,18 +6270,12 @@ const MainContent: React.FC<MainContentProps> = ({
           onClick={() => !addLectureSubmitting && setAddLectureModalOpen(false)}
         >
           <div
-            className={`w-full max-w-md rounded-xl shadow-xl border ${
-              isDarkMode
-                ? "bg-zinc-900 border-zinc-700 text-gray-100"
-                : "bg-white border-gray-200 text-gray-900"
+            className={`w-full max-w-md max-h-[calc(100vh-3rem)] overflow-y-auto p-6 sm:p-8 rounded-lg shadow-lg ${
+              isDarkMode ? "bg-zinc-800 text-gray-100" : "bg-white text-gray-900"
             }`}
             onClick={(e) => e.stopPropagation()}
           >
-            <div
-              className={`flex items-center justify-between px-5 py-4 border-b ${
-                isDarkMode ? "border-zinc-700/50" : "border-gray-200"
-              }`}
-            >
+            <div className="flex items-center justify-between mb-6 sm:mb-4">
               <h2
                 className={`text-lg font-semibold ${isDarkMode ? "text-gray-100" : "text-gray-900"}`}
               >
@@ -6143,7 +6286,7 @@ const MainContent: React.FC<MainContentProps> = ({
                 onClick={() =>
                   !addLectureSubmitting && setAddLectureModalOpen(false)
                 }
-                className={`p-1.5 rounded cursor-pointer ${
+                className={`p-1.5 rounded cursor-pointer transition-colors ${
                   isDarkMode
                     ? "hover:bg-zinc-700 text-gray-300"
                     : "hover:bg-gray-200 text-gray-500"
@@ -6155,55 +6298,57 @@ const MainContent: React.FC<MainContentProps> = ({
             </div>
             <form
               onSubmit={handleAddLectureSubmit}
-              className="px-5 py-4 space-y-4"
+              className="space-y-4 sm:space-y-5"
             >
-              <div>
-                <label
-                  className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}
-                >
-                  주차 번호 (숫자) *
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={addLectureWeekNumber}
-                  onChange={(e) => setAddLectureWeekNumber(e.target.value)}
-                  placeholder="예: 1"
-                  className={`w-full px-3 py-2 text-sm rounded border ${
-                    isDarkMode
-                      ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
-                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-zinc-500"}`}
-                  autoFocus
-                />
-              </div>
-              <div>
-                <label
-                  className={`block text-sm font-medium mb-1 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}
-                >
-                  제목 *
-                </label>
-                <input
-                  type="text"
-                  value={addLectureTitle}
-                  onChange={(e) => setAddLectureTitle(e.target.value)}
-                  placeholder="예: 1주차 - 오리엔테이션"
-                  className={`w-full px-3 py-2 text-sm rounded border ${
-                    isDarkMode
-                      ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
-                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-zinc-500"}`}
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-[72px_1fr] gap-3">
+                <div>
+                  <label
+                    className={`block text-xs sm:text-sm md:text-base font-medium mb-2 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}
+                  >
+                    주차 *
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={addLectureWeekNumber}
+                    onChange={(e) => setAddLectureWeekNumber(e.target.value)}
+                    placeholder="예: 1"
+                    className={`w-full px-3 py-2 text-sm rounded-lg border ${
+                      isDarkMode
+                        ? "bg-zinc-800 border-zinc-700 text-white placeholder-gray-500"
+                        : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
+                    } focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d] [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`}
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label
+                    className={`block text-xs sm:text-sm md:text-base font-medium mb-2 ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}
+                  >
+                    제목 *
+                  </label>
+                  <input
+                    type="text"
+                    value={addLectureTitle}
+                    onChange={(e) => setAddLectureTitle(e.target.value)}
+                    placeholder="예: 1주차 - 오리엔테이션"
+                    className={`w-full px-3 py-2 text-sm rounded-lg border ${
+                      isDarkMode
+                        ? "bg-zinc-800 border-zinc-700 text-white placeholder-gray-500"
+                        : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"
+                    } focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`}
+                  />
+                </div>
               </div>
               <div
-                className={`flex justify-end gap-2 pt-2 border-t ${isDarkMode ? "border-zinc-700/50" : "border-gray-200"}`}
+                className="flex justify-end gap-2 pt-2"
               >
                 <button
                   type="button"
                   onClick={() =>
                     !addLectureSubmitting && setAddLectureModalOpen(false)
                   }
-                  className={`px-4 py-2 text-sm rounded ${
+                  className={`px-4 py-2 text-sm rounded-lg ${
                     isDarkMode
                       ? "bg-zinc-800 hover:bg-zinc-700 text-gray-200"
                       : "bg-gray-100 hover:bg-gray-200 text-gray-700"
@@ -6218,16 +6363,14 @@ const MainContent: React.FC<MainContentProps> = ({
                     !addLectureWeekNumber.trim() ||
                     !addLectureTitle.trim()
                   }
-                  className={`px-4 py-2 text-sm rounded font-medium ${
+                  className={`px-4 py-2 text-sm rounded-lg font-medium ${
                     addLectureSubmitting ||
                     !addLectureWeekNumber.trim() ||
                     !addLectureTitle.trim()
                       ? isDarkMode
-                        ? "bg-zinc-800/40 text-gray-400 cursor-not-allowed"
-                        : "bg-emerald-200 text-emerald-500 cursor-not-allowed"
-                      : isDarkMode
-                        ? "bg-emerald-600 hover:bg-emerald-500 text-white"
-                        : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                        ? "bg-gray-700 text-gray-400 cursor-not-allowed"
+                        : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                      : "bg-[#ff824d] hover:bg-[#ff6b33] text-white cursor-pointer"
                   }`}
                 >
                   {addLectureSubmitting ? "추가 중..." : "추가"}
@@ -6564,7 +6707,7 @@ const MainContent: React.FC<MainContentProps> = ({
                 ✕
               </button>
             </div>
-            <div className="px-5 py-4 space-y-4 max-h-[60vh] overflow-y-auto">
+            <div className="px-5 py-4 space-y-4 max-h-[60vh] overflow-y-hidden">
               {/* Step 1: 키워드 입력 (PDF는 완전 선택 사항이므로 UI에서 제거) */}
               {materialGenStep === 1 && (
                 <>

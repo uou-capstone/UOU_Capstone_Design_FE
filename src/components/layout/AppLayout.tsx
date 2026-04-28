@@ -3,7 +3,7 @@ import { useNavigate, useParams, useLocation, useSearchParams } from "react-rout
 import { useTheme } from "../../contexts/ThemeContext";
 import MainContent from "./MainContent.tsx";
 import TopNav from "./TopNav.tsx";
-import { useCourses } from "../../hooks/useCourses";
+import { useCourses } from "@/features/courses/useCourses";
 import type { Course, CourseDetail, LectureResponseDto } from "../../services/api";
 
 type ViewMode = "course-list" | "course-detail";
@@ -115,9 +115,9 @@ const AppLayout: React.FC = () => {
       }
       return;
     }
-    // resetLectureOutputs() 호출 제거: 마지막 강의 복원을 위해 localStorage 유지
+    // 강의 선택 변경(currentLectureId)으로 이 effect가 다시 돌지 않도록 의존성 분리
     loadCourseDetail(selectedCourseId);
-  }, [selectedCourseId, loadCourseDetail, resetLectureOutputs, pathname]);
+  }, [selectedCourseId, loadCourseDetail, pathname]);
 
   // URL 경로에 따라 메뉴 동기화
   useEffect(() => {
@@ -139,6 +139,29 @@ const AppLayout: React.FC = () => {
 
   useEffect(() => {
     if (!selectedCourseId || !courseDetail?.lectures?.length) return;
+
+    // 현재 선택된 강의가 유효하면 유지하고, URL query만 동기화한다.
+    // (업로드/미리보기 중 searchParams 변경 시 OT로 되돌아가는 현상 방지)
+    if (
+      currentLectureId != null &&
+      courseDetail.lectures.some((l) => l.lectureId === currentLectureId)
+    ) {
+      const coursePath = `/courses/${selectedCourseId}`;
+      if (
+        pathname.startsWith(coursePath) &&
+        searchParams.get("lecture") !== String(currentLectureId)
+      ) {
+        setSearchParams(
+          (prev) => {
+            const next = new URLSearchParams(prev);
+            next.set("lecture", String(currentLectureId));
+            return next;
+          },
+          { replace: true },
+        );
+      }
+      return;
+    }
 
     let lectureIdToUse: number | null = null;
     const fromUrl = searchParams.get("lecture");
@@ -195,6 +218,7 @@ const AppLayout: React.FC = () => {
   }, [
     selectedCourseId,
     courseDetail,
+    currentLectureId,
     searchParams,
     pathname,
     setSearchParams,
@@ -237,7 +261,6 @@ const AppLayout: React.FC = () => {
   const handleLectureCreated = async (lecture: LectureResponseDto) => {
     if (!selectedCourseId) return;
     await loadCourseDetail(selectedCourseId);
-    resetLectureOutputs();
     setCurrentLectureId(lecture.lectureId);
     try {
       localStorage.setItem(getLastLectureStorageKey(selectedCourseId), String(lecture.lectureId));
@@ -276,7 +299,6 @@ const AppLayout: React.FC = () => {
 
   const handleLectureSelect = (lectureId: number) => {
     setCurrentLectureId(lectureId);
-    resetLectureOutputs();
     if (selectedCourseId != null) {
       try {
         localStorage.setItem(getLastLectureStorageKey(selectedCourseId), String(lectureId));
@@ -444,7 +466,7 @@ const AppLayout: React.FC = () => {
 
   return (
     <div
-      className={`h-screen w-full max-w-full flex flex-col transition-colors gap-8 overflow-hidden ${
+      className={`h-screen w-full max-w-full flex flex-col transition-colors gap-4 overflow-hidden ${
         isDarkMode ? "bg-[#141414] text-gray-100" : "bg-white text-gray-900"
       }`}
     >

@@ -11,9 +11,9 @@ import { useParams } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { MarkdownContent } from "../common/MarkdownContent";
-import { IntegratedLearningQuizOverlay } from "../common/IntegratedLearningQuizOverlay";
-import { useLectureAssistantChat } from "../../hooks/useLectureAssistantChat";
-import { useIntegratedLearningChat } from "../../hooks/useIntegratedLearningChat";
+import { IntegratedLearningQuizOverlay } from "@/features/integrated-learning/IntegratedLearningQuizOverlay";
+import { useLectureAssistantChat } from "@/features/lecture-assistant/useLectureAssistantChat";
+import { useIntegratedLearningChat } from "@/features/integrated-learning/useIntegratedLearningChat";
 import {
   lectureApi,
   getAuthToken,

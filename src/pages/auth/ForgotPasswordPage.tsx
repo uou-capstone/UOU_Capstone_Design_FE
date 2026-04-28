@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useTheme } from '../contexts/ThemeContext';
 import { Link } from 'react-router-dom';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const ForgotPasswordPage: React.FC = () => {
   const { isDarkMode } = useTheme();

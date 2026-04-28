@@ -6,7 +6,20 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  signup: (email: string, password: string, fullName: string, role: 'STUDENT' | 'TEACHER') => Promise<void>;
+  signup: (
+    email: string,
+    password: string,
+    fullName: string,
+    role: 'STUDENT' | 'TEACHER',
+    extra?: {
+      phoneNumber?: string;
+      birthDate?: string;
+      grade?: string;
+      classNumber?: string;
+      schoolName?: string;
+      department?: string;
+    }
+  ) => Promise<void>;
   logout: () => void;
   refreshUser: () => Promise<void>;
 }

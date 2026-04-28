@@ -1,6 +1,6 @@
 import React from 'react';
-import { useTheme } from '../../contexts/ThemeContext';
 import './TruckLoader.css';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const TruckLoader: React.FC = () => {
   const { isDarkMode } = useTheme();

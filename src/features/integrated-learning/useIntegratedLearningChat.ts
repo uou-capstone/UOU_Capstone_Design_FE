@@ -5,7 +5,7 @@ import {
   parseIntegratedLearningQuizOverlayFromMessageTail,
   type IntegratedLearningMessage,
   type IntegratedQuizOverlayModel,
-} from "../services/api";
+} from "@/services/api";
 
 const STREAM_REVEAL_INTERVAL_MS = 42;
 const STREAM_REVEAL_CHARS_PER_TICK = 14;

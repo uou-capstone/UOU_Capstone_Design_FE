@@ -701,7 +701,7 @@ export const userApi = {
     try {
       await apiRequest<unknown>(`/api/users/check-email?email=${encodeURIComponent(email)}`, {
         method: 'GET',
-      });
+      }, false);
       // 200 응답이면 사용 가능하다고 간주
       return true;
     } catch (error) {

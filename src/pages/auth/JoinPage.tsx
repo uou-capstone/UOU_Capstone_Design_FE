@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../contexts/ThemeContext';
-import { courseApi } from '../services/api';
-import TruckLoader from '../components/common/TruckLoader';
+import { useAuth } from '@/contexts/AuthContext';
+import { useTheme } from '@/contexts/ThemeContext';
+import { courseApi } from '@/services/api';
+import TruckLoader from '@/components/common/TruckLoader/TruckLoader';
 
 const JoinPage: React.FC = () => {
   const { isDarkMode } = useTheme();

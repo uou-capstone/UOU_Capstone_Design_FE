@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-import { lectureAiLegacyStreamApi } from "../services/api";
+import { lectureAiLegacyStreamApi } from "@/services/api";
 
 export type AssistantPhase =
   | "idle"
