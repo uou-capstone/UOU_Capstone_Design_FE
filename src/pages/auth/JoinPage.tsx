@@ -5,6 +5,35 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { courseApi } from '@/services/api';
 import TruckLoader from '@/components/common/TruckLoader/TruckLoader';
 
+function extractBackendErrorCode(message: string): string | null {
+  const patterns = [
+    /"code"\s*:\s*"([A-Z_]+)"/,
+    /\b(INVALID_INVITATION_CODE|JOIN_REQUEST_BLOCKED|JOIN_REQUEST_PENDING_EXISTS|ENROLLMENT_ALREADY_EXISTS)\b/,
+  ];
+  for (const p of patterns) {
+    const m = p.exec(message);
+    if (m?.[1]) return m[1];
+  }
+  return null;
+}
+
+function mapJoinRequestErrorMessage(raw: string): string {
+  const code = extractBackendErrorCode(raw);
+  if (code === 'INVALID_INVITATION_CODE') {
+    return '초대 코드가 올바르지 않습니다.';
+  }
+  if (code === 'JOIN_REQUEST_BLOCKED') {
+    return '해당 강의실 가입이 차단되었습니다. 교사에게 문의하세요.';
+  }
+  if (code === 'JOIN_REQUEST_PENDING_EXISTS') {
+    return '이미 대기 중인 요청이 있습니다.';
+  }
+  if (code === 'ENROLLMENT_ALREADY_EXISTS') {
+    return '이미 수강 중인 강의실입니다.';
+  }
+  return raw;
+}
+
 const JoinPage: React.FC = () => {
   const { isDarkMode } = useTheme();
   const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
@@ -46,7 +75,7 @@ const JoinPage: React.FC = () => {
   const joinWithCode = async (joinCode: string) => {
     const trimmedCode = joinCode.trim();
     if (!trimmedCode) {
-      setError('수강 코드 또는 강의실 ID를 입력해주세요.');
+      setError('초대 코드를 입력해주세요.');
       return;
     }
 
@@ -54,27 +83,22 @@ const JoinPage: React.FC = () => {
     setError(null);
     setShowConfirmDialog(false);
 
-    const isNumericId = /^\d+$/.test(trimmedCode);
-
     try {
-      if (isNumericId) {
-        // 강의실 ID로 수강 신청 (POST /api/courses/{courseId}/enroll)
-        await courseApi.enrollCourse(Number(trimmedCode));
-        navigate(`/courses/${trimmedCode}`, {
-          replace: true,
-          state: { message: '수강 신청이 완료되었습니다!' },
-        });
-      } else {
-        // 초대 코드로 수강 신청
-        const courseDetail = await courseApi.joinCourse(trimmedCode);
-        navigate(`/courses/${courseDetail.courseId}`, {
-          replace: true,
-          state: { message: '수강 신청이 완료되었습니다!' },
-        });
-      }
+      const created = await courseApi.requestJoinByInvitationCode(trimmedCode);
+      navigate('/', {
+        replace: true,
+        state: {
+          message:
+            `'${created.courseTitle}' 가입 요청이 전송되었습니다. 교사 승인 후 입장됩니다.`,
+        },
+      });
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '수강 신청에 실패했습니다.';
-      setError(errorMessage);
+      const rawMessage = err instanceof Error ? err.message : '수강 신청에 실패했습니다.';
+      const mapped = mapJoinRequestErrorMessage(rawMessage);
+      setError(mapped);
+      if (extractBackendErrorCode(rawMessage) === 'ENROLLMENT_ALREADY_EXISTS') {
+        navigate('/', { replace: true });
+      }
       setShowConfirmDialog(true);
     } finally {
       setIsJoining(false);
@@ -122,7 +146,7 @@ const JoinPage: React.FC = () => {
             </p>
           ) : (
             <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-              선생님이 알려준 강의실 ID 또는 수강 코드를 입력하면 강의실에 참여할 수 있습니다.
+              선생님이 알려준 초대 코드를 입력하면 가입 요청을 보낼 수 있습니다.
             </p>
           )}
         </div>
@@ -166,13 +190,13 @@ const JoinPage: React.FC = () => {
                   isDarkMode ? 'text-gray-200' : 'text-gray-700'
                 }`}
               >
-                강의실 ID / 수강 코드
+                초대 코드
               </label>
               <input
                 type="text"
                 value={codeInput}
                 onChange={(e) => setCodeInput(e.target.value)}
-                placeholder="예: 5 또는 ABCD-1234"
+                placeholder="예: 550e8400-e29b-41d4-a716-446655440000"
                 className={`w-full px-3 py-2 text-sm rounded border ${
                   isDarkMode
                     ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-500'
@@ -182,7 +206,7 @@ const JoinPage: React.FC = () => {
                 }`}
               />
               <p className={`mt-2 text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                강의실 ID(숫자) 또는 초대 링크의 수강 코드를 입력하세요.
+                초대 링크 또는 교사에게 받은 초대 코드를 입력하세요.
               </p>
             </div>
 

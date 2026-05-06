@@ -122,7 +122,7 @@ const ReportPage: React.FC = () => {
               onPaste={handlePaste}
               placeholder="발생한 오류나 건의 사항을 자세히 적어주세요."
               rows={6}
-              className={`w-full px-4 py-3 rounded-2xl text-sm border focus:outline-none focus:ring-2 focus:ring-emerald-500/50 resize-y min-h-[120px] ${inputBaseClass}`}
+              className={`w-full px-4 py-3 rounded-2xl text-sm border focus:outline-none focus:ring-2 focus:ring-emerald-500/50 resize-y min-h-30 ${inputBaseClass}`}
             />
           </div>
 
@@ -214,7 +214,7 @@ const ReportPage: React.FC = () => {
           </div>
         </form>
       </div>
-      <aside className="hidden lg:block w-[350px] min-w-0 shrink pl-8" />
+      <aside className="hidden lg:block w-[21.875rem] min-w-0 shrink pl-8" />
     </div>
   );
 };

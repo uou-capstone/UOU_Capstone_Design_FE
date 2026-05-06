@@ -1,7 +1,7 @@
 /* From Uiverse.io by dovatgabriel - Newton's cradle */
 
 .newtons-cradle {
-  --uib-size: 50px;
+  --uib-size: 3.125rem;
   --uib-speed: 1.2s;
   --uib-color: #474554;
   position: relative;

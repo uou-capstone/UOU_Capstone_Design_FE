@@ -124,7 +124,7 @@ const SettingsPage: React.FC = () => {
             <img
               src={profileImage}
               alt="Profile"
-              className="w-[120px] h-[120px] rounded-full object-cover transition-opacity group-hover:opacity-80"
+              className="size-30 rounded-full object-cover transition-opacity group-hover:opacity-80"
               onError={(e) => {
                 (e.target as HTMLImageElement).src =
                   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%23e5e7eb'/%3E%3Ctext x='50' y='60' text-anchor='middle' font-size='40' fill='%239ca3af'%3E%3F%3C/text%3E%3C/svg%3E";
@@ -132,7 +132,7 @@ const SettingsPage: React.FC = () => {
             />
           ) : (
             <div
-              className={`w-[120px] h-[120px] rounded-full flex items-center justify-center text-white font-semibold text-3xl ${
+              className={`size-30 rounded-full flex items-center justify-center text-white font-semibold text-3xl ${
                 isDarkMode ? "bg-gray-700" : "bg-gray-500"
               }`}
             >
@@ -176,14 +176,14 @@ const SettingsPage: React.FC = () => {
       </div>
 
       {/* 개인 정보 - 이메일과 gap-12 */}
-      <p className={`text-[24px] font-semibold mt-12 ${isDarkMode ? "text-white" : "text-[#141414]"}`}>
+      <p className={`text-2xl font-semibold mt-12 ${isDarkMode ? "text-white" : "text-[#141414]"}`}>
         개인 정보
       </p>
       {/* 이름 등 폼 - 개인정보 헤더와 gap-4 */}
       <div className="space-y-6 mt-4">
         {/* 이름 행 */}
         <div className="border-b pb-3.5" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
-          <div className="text-[16px]">
+          <div className="text-base">
             <div className="flex items-center justify-between">
               <div className={isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}>이름</div>
               <button
@@ -196,12 +196,12 @@ const SettingsPage: React.FC = () => {
                     setEditingField("name");
                   }
                 }}
-                className={`text-[14px] font-medium cursor-pointer ${isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}`}
+                className={`text-sm font-medium cursor-pointer ${isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}`}
               >
                 {editingField === "name" ? "Cancel" : "Edit"}
               </button>
             </div>
-            <div className={`mt-1 text-[14px] ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>{nickname || "-"}</div>
+            <div className={`mt-1 text-sm ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>{nickname || "-"}</div>
           </div>
 
           {editingField === "name" && (
@@ -263,7 +263,7 @@ const SettingsPage: React.FC = () => {
 
         {/* 전화번호 행 */}
         <div className="border-b pb-3.5" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
-          <div className="text-[16px]">
+          <div className="text-base">
             <div className="flex items-center justify-between">
               <div className={isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}>전화번호</div>
               <button
@@ -276,12 +276,12 @@ const SettingsPage: React.FC = () => {
                     setEditingField("phone");
                   }
                 }}
-                className={`text-[14px] font-medium cursor-pointer ${isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}`}
+                className={`text-sm font-medium cursor-pointer ${isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}`}
               >
                 {editingField === "phone" ? "Cancel" : "Edit"}
               </button>
             </div>
-            <div className={`mt-1 text-[14px] ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>{phoneNumber || "-"}</div>
+            <div className={`mt-1 text-sm ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>{phoneNumber || "-"}</div>
           </div>
 
           {editingField === "phone" && (
@@ -347,7 +347,7 @@ const SettingsPage: React.FC = () => {
 
         {/* 생년월일 행 */}
         <div className="border-b pb-3.5" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
-          <div className="text-[16px]">
+          <div className="text-base">
             <div className="flex items-center justify-between">
               <div className={isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}>생년월일</div>
               <button
@@ -360,12 +360,12 @@ const SettingsPage: React.FC = () => {
                     setEditingField("birth");
                   }
                 }}
-                className={`text-[14px] font-medium cursor-pointer ${isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}`}
+                className={`text-sm font-medium cursor-pointer ${isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}`}
               >
                 {editingField === "birth" ? "Cancel" : "Edit"}
               </button>
             </div>
-            <div className={`mt-1 text-[14px] ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>{birthDate || "-"}</div>
+            <div className={`mt-1 text-sm ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>{birthDate || "-"}</div>
           </div>
 
           {editingField === "birth" && (
@@ -423,7 +423,7 @@ const SettingsPage: React.FC = () => {
 
         {/* 비밀번호 행 */}
         <div className="border-b pb-3.5" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
-          <div className="text-[16px]">
+          <div className="text-base">
             <div className="flex items-center justify-between">
               <div className={isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}>비밀번호</div>
               <button
@@ -438,12 +438,12 @@ const SettingsPage: React.FC = () => {
                     setEditingField("password");
                   }
                 }}
-                className={`text-[14px] font-medium cursor-pointer ${isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}`}
+                className={`text-sm font-medium cursor-pointer ${isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}`}
               >
                 {editingField === "password" ? "Cancel" : "Edit"}
               </button>
             </div>
-            <div className={`mt-1 text-[14px] ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>••••••••</div>
+            <div className={`mt-1 text-sm ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>••••••••</div>
           </div>
 
           {editingField === "password" && (
@@ -504,11 +504,11 @@ const SettingsPage: React.FC = () => {
 
         {/* 계정 관리 */}
         <div className="pt-8 space-y-6">
-          <p className={`text-[24px] font-semibold ${isDarkMode ? "text-white" : "text-[#141414]"}`}>
+          <p className={`text-2xl font-semibold ${isDarkMode ? "text-white" : "text-[#141414]"}`}>
             계정 관리
           </p>
           <div className="border-b pb-3.5" style={{ borderColor: isDarkMode ? "#404040" : "#ededed" }}>
-            <div className="text-[16px]">
+            <div className="text-base">
               <div className="flex items-center justify-between">
                 <div className={isDarkMode ? "text-[#FFFFFF]" : "text-[#141414]"}>계정 삭제</div>
                 <button
@@ -519,19 +519,19 @@ const SettingsPage: React.FC = () => {
                       window.alert("계정 삭제 기능은 준비 중입니다.");
                     }
                   }}
-                  className="text-[14px] font-medium cursor-pointer text-[#ff824d] hover:opacity-80"
+                  className="text-sm font-medium cursor-pointer text-[#ff824d] hover:opacity-80"
                 >
                   삭제
                 </button>
               </div>
-              <div className={`mt-1 text-[14px] ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>
+              <div className={`mt-1 text-sm ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>
                 계정을 영구적으로 삭제합니다. 복구할 수 없습니다.
               </div>
             </div>
           </div>
         </div>
       </div>
-      <div className="h-[50px]" aria-hidden />
+      <div className="h-12.5" aria-hidden />
     </div>
   );
 
@@ -595,7 +595,7 @@ const SettingsPage: React.FC = () => {
                 <span className="font-semibold">전체 상태</span>
                 {overview?.status && (
                   <span
-                    className={`px-2 py-0.5 rounded-full text-[11px] ${
+                    className={`px-2 py-0.5 rounded-full text-xs ${
                       String(overview.status).toLowerCase() === "up"
                         ? isDarkMode
                           ? "bg-emerald-500/20 text-emerald-300"
@@ -616,14 +616,14 @@ const SettingsPage: React.FC = () => {
                     .slice(0, 5)
                     .map(([key, value]) => (
                       <div key={key} className="flex justify-between gap-2">
-                        <dt className="text-[11px] text-gray-500">{key}</dt>
-                        <dd className="text-[11px] font-medium text-right truncate max-w-[60%]">
+                        <dt className="text-xs text-gray-500">{key}</dt>
+                        <dd className="text-xs font-medium text-right truncate max-w-[60%]">
                           {String(value)}
                         </dd>
                       </div>
                     ))
                 ) : (
-                  <p className="text-[11px] text-gray-500">데이터 없음</p>
+                  <p className="text-xs text-gray-500">데이터 없음</p>
                 )}
               </dl>
             </div>
@@ -645,14 +645,14 @@ const SettingsPage: React.FC = () => {
                     .slice(0, 6)
                     .map(([key, value]) => (
                       <div key={key} className="flex justify-between gap-2">
-                        <dt className="text-[11px] text-gray-500">{key}</dt>
-                        <dd className="text-[11px] font-medium text-right truncate max-w-[60%]">
+                        <dt className="text-xs text-gray-500">{key}</dt>
+                        <dd className="text-xs font-medium text-right truncate max-w-[60%]">
                           {typeof value === "object" ? JSON.stringify(value) : String(value)}
                         </dd>
                       </div>
                     ))
                 ) : (
-                  <p className="text-[11px] text-gray-500">데이터 없음</p>
+                  <p className="text-xs text-gray-500">데이터 없음</p>
                 )}
               </dl>
             </div>
@@ -674,14 +674,14 @@ const SettingsPage: React.FC = () => {
                     .slice(0, 6)
                     .map(([key, value]) => (
                       <div key={key} className="flex justify-between gap-2">
-                        <dt className="text-[11px] text-gray-500">{key}</dt>
-                        <dd className="text-[11px] font-medium text-right truncate max-w-[60%]">
+                        <dt className="text-xs text-gray-500">{key}</dt>
+                        <dd className="text-xs font-medium text-right truncate max-w-[60%]">
                           {typeof value === "object" ? JSON.stringify(value) : String(value)}
                         </dd>
                       </div>
                     ))
                 ) : (
-                  <p className="text-[11px] text-gray-500">데이터 없음</p>
+                  <p className="text-xs text-gray-500">데이터 없음</p>
                 )}
               </dl>
             </div>
@@ -703,14 +703,14 @@ const SettingsPage: React.FC = () => {
                     .slice(0, 6)
                     .map(([key, value]) => (
                       <div key={key} className="flex justify-between gap-2">
-                        <dt className="text-[11px] text-gray-500">{key}</dt>
-                        <dd className="text-[11px] font-medium text-right truncate max-w-[60%]">
+                        <dt className="text-xs text-gray-500">{key}</dt>
+                        <dd className="text-xs font-medium text-right truncate max-w-[60%]">
                           {typeof value === "object" ? JSON.stringify(value) : String(value)}
                         </dd>
                       </div>
                     ))
                 ) : (
-                  <p className="text-[11px] text-gray-500">데이터 없음</p>
+                  <p className="text-xs text-gray-500">데이터 없음</p>
                 )}
               </dl>
             </div>
@@ -721,7 +721,7 @@ const SettingsPage: React.FC = () => {
   );
 
   const navButtonClass = (isActive: boolean) =>
-    `w-auto lg:w-full text-left flex items-center gap-2 rounded font-semibold text-[16px] transition-colors ${
+    `w-auto lg:w-full text-left flex items-center gap-2 rounded font-semibold text-base transition-colors ${
       isActive
         ? isDarkMode
           ? "text-[#FFFFFF]"
@@ -766,9 +766,9 @@ const SettingsPage: React.FC = () => {
           {navItems}
         </ul>
       </nav>
-      {/* 데스크톱: 좌측 사이드바 (1024px 이상에서만 표시) */}
+      {/* 데스크톱: 좌측 사이드바 (lg 브레이크포인트 이상에서만 표시) */}
       <nav className="hidden lg:block w-85 shrink-0 self-start">
-        <ul className="grid grid-flow-row gap-[2px]">
+        <ul className="grid grid-flow-row gap-0.5">
           {navItems}
         </ul>
       </nav>
@@ -777,8 +777,8 @@ const SettingsPage: React.FC = () => {
         {selectedSection === "account" && renderAccountSection()}
         {selectedSection === "system" && renderSystemSection()}
       </div>
-      {/* 우측 여백 - 기본 350px, 페이지 너비 줄일 때 먼저 줄어듦 */}
-      <aside className="hidden lg:block w-[350px] min-w-0 shrink pl-8" />
+      {/* 우측 여백 - 기본 `21.875rem`, 페이지 너비 줄일 때 먼저 줄어듦 */}
+      <aside className="hidden lg:block w-[21.875rem] min-w-0 shrink pl-8" />
     </div>
   );
 };

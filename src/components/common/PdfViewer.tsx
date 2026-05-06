@@ -11,9 +11,13 @@ import { Document, Page, pdfjs } from "react-pdf";
 import { useTheme } from "../../contexts/ThemeContext";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
+import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
-// pdfjs worker 설정 (Vite 환경)
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+// pdfjs worker 설정 (Vite 권장: ?url import 사용)
+pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
+// #region agent log
+fetch('http://127.0.0.1:7438/ingest/1d69742f-e23a-4107-bc62-2937b5322746',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b316ea'},body:JSON.stringify({sessionId:'b316ea',runId:'pre-fix',hypothesisId:'H1_workerUrl',location:'PdfViewer.tsx:workerSrc',message:'pdfjs workerSrc set',data:{workerSrc:pdfWorkerSrc},timestamp:Date.now()})}).catch(()=>{});
+// #endregion
 
 const MIN_ZOOM = 0.5;
 /** 사용자가 확대할 수 있는 절대 최대 배율 (기본은 뷰포트 fit 최대, 여기서 더 확대 가능) */
@@ -128,38 +132,33 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
     lastFileUrlRef.current = fileUrl;
 
     const fitZoomToView = async () => {
-      try {
-        const doc = await pdfjs.getDocument(fileUrl).promise;
-        const page = await doc.getPage(1);
-        const viewport = page.getViewport({ scale: 1 });
-        const pageW = viewport.width;
-        const pageH = viewport.height;
-        setPageAspectRatio(pageH / pageW);
+      // #region agent log
+      fetch('http://127.0.0.1:7438/ingest/1d69742f-e23a-4107-bc62-2937b5322746',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b316ea'},body:JSON.stringify({sessionId:'b316ea',runId:'pre-fix',hypothesisId:'H2_fitZoom_blobFetch',location:'PdfViewer.tsx:fitZoomToView:start',message:'fitZoomToView start',data:{fileUrlPrefix:String(fileUrl).slice(0,32),isBlob:String(fileUrl).startsWith('blob:'),numPages,baseWidth},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      // blob: URL은 pdf.js 내부 네트워크 레이어에서 재요청될 때 브라우저/환경에 따라 실패할 수 있어,
+      // 자동 fit 계산에서는 getDocument(fileUrl) 호출을 피합니다.
+      const scrollEl = scrollRef.current;
+      const containerH = (scrollEl?.clientHeight ?? 600) - 24;
+      const containerW = (scrollEl?.clientWidth ?? 800) - 16;
+      const aspect = pageAspectRatio || 1.414; // A4 비율 fallback
+      const pageW = baseWidth || 700;
+      const pageH = pageW * aspect;
 
-        await new Promise((r) => setTimeout(r, 350));
-        const scrollEl = scrollRef.current;
-        const containerH = (scrollEl?.clientHeight ?? 600) - 24;
-        const containerW = (scrollEl?.clientWidth ?? 800) - 16;
-
-        const maxWidthFromHeight = (containerH * pageW) / pageH;
-        const fitPageWidth = Math.min(containerW, maxWidthFromHeight);
-        const fitZoom = fitPageWidth / (baseWidth || 700);
-        const maxByViewport = Math.min(
-          containerW / (baseWidth || 700),
-          containerH / ((baseWidth || 700) * (pageH / pageW))
-        );
-        // 기본 배율 = 뷰포트에 맞춘 최대 (fitMaxZoom), ABSOLUTE_MAX_ZOOM까지 확대 가능
-        const newZoom = Math.max(
-          MIN_ZOOM,
-          Math.min(ABSOLUTE_MAX_ZOOM, fitZoom * 1.15, maxByViewport)
-        );
-        setZoom(newZoom);
-      } catch (e) {
-        console.error("PDF fit zoom:", e);
-      }
+      const maxWidthFromHeight = (containerH * pageW) / pageH;
+      const fitPageWidth = Math.min(containerW, maxWidthFromHeight);
+      const fitZoom = fitPageWidth / (baseWidth || 700);
+      const maxByViewport = Math.min(
+        containerW / (baseWidth || 700),
+        containerH / ((baseWidth || 700) * aspect),
+      );
+      const newZoom = Math.max(
+        MIN_ZOOM,
+        Math.min(ABSOLUTE_MAX_ZOOM, fitZoom * 1.15, maxByViewport),
+      );
+      setZoom(newZoom);
     };
     fitZoomToView();
-  }, [numPages, fileUrl, baseWidth]);
+  }, [numPages, fileUrl, baseWidth, pageAspectRatio]);
 
   const scrollToPage = useCallback(
     (page: number, source: PdfViewerPageChangeSource = "programmatic") => {
@@ -264,6 +263,9 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
     const root = scrollRef.current;
     if (!root) return;
 
+    // #region agent log
+    fetch('http://127.0.0.1:7438/ingest/1d69742f-e23a-4107-bc62-2937b5322746',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b316ea'},body:JSON.stringify({sessionId:'b316ea',runId:'pre-fix',hypothesisId:'H3_rootMargin',location:'PdfViewer.tsx:IntersectionObserver:init',message:'creating IntersectionObserver',data:{rootMargin:'0 -20% 0 -20%',thresholdCount:5},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     const observer = new IntersectionObserver(
       (entries) => {
         if (scrollProgrammaticRef.current) return;
@@ -538,7 +540,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
         <div className="h-full min-h-0 min-w-0 flex overflow-hidden">
           {isPageListOpen && numPages != null && (
             <aside
-              className={`w-56 min-w-[224px] max-w-[240px] min-h-0 border-r flex flex-col overflow-hidden ${
+              className={`w-56 min-w-56 max-w-60 min-h-0 border-r flex flex-col overflow-hidden ${
                 isDarkMode ? "border-zinc-700 bg-[#141414]" : "border-gray-200 bg-white"
               }`}
             >
@@ -595,7 +597,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
                             renderAnnotationLayer={false}
                             loading={
                               <div
-                                className={`h-[156px] w-[120px] animate-pulse ${
+                                className={`h-[9.75rem] w-30 animate-pulse ${
                                   isDarkMode ? "bg-zinc-800" : "bg-gray-100"
                                 }`}
                               />

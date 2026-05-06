@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -26,21 +26,9 @@ const SignupPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingEmail, setIsCheckingEmail] = useState(false);
   const [emailChecked, setEmailChecked] = useState<null | 'available' | 'unavailable'>(null);
+  const [emailAvailableMessage, setEmailAvailableMessage] = useState<string | null>(null);
   const [step, setStep] = useState(1);
   const TOTAL_STEPS = 4;
-  const todayIso = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const cardRef = useRef<HTMLDivElement | null>(null);
-  const [fixedCardHeight, setFixedCardHeight] = useState<number | null>(null);
-
-  useLayoutEffect(() => {
-    if (fixedCardHeight != null) return;
-    // 1단계 높이를 기준으로 전체 컨테이너 크기 고정
-    if (step !== 1) return;
-    if (!cardRef.current) return;
-    const h = Math.ceil(cardRef.current.getBoundingClientRect().height);
-    if (h > 0) setFixedCardHeight(h);
-  }, [fixedCardHeight, step]);
-
   const [birthParts, setBirthParts] = useState<{ year: string; month: string; day: string }>({
     year: '',
     month: '',
@@ -135,6 +123,12 @@ const SignupPage: React.FC = () => {
     return name.trim().length >= 2 && name.trim().length <= 50;
   };
 
+  // 전화번호 검증 (필수 입력 + 형식 검증)
+  const validatePhoneNumber = (phone: string): boolean => {
+    const phoneRegex = /^01[0-9]-?\d{3,4}-?\d{4}$/;
+    return phoneRegex.test(phone.trim());
+  };
+
   // 생년월일 검증: 미래 날짜 금지, 1900년 이전 금지
   const validateBirthDate = (dateStr: string): { isValid: boolean; message: string } => {
     if (!dateStr.trim()) return { isValid: true, message: '' };
@@ -158,6 +152,7 @@ const SignupPage: React.FC = () => {
     // 이메일이 바뀌면 중복 확인 상태 초기화
     if (name === 'email') {
       setEmailChecked(null);
+      setEmailAvailableMessage(null);
     }
 
     // 실시간 검증
@@ -191,6 +186,14 @@ const SignupPage: React.FC = () => {
       delete newErrors.fullName;
     }
 
+    if (name === 'phoneNumber' && !value.trim()) {
+      newErrors.phoneNumber = '전화번호를 입력해주세요.';
+    } else if (name === 'phoneNumber' && !validatePhoneNumber(value)) {
+      newErrors.phoneNumber = '전화번호 형식이 올바르지 않습니다.';
+    } else if (name === 'phoneNumber') {
+      delete newErrors.phoneNumber;
+    }
+
     if (name === 'birthDate') {
       const res = validateBirthDate(value);
       if (!res.isValid) newErrors.birthDate = res.message;
@@ -217,6 +220,13 @@ const SignupPage: React.FC = () => {
       newErrors.email = '이메일을 입력해주세요.';
     } else if (!validateEmail(formData.email)) {
       newErrors.email = '올바른 이메일 형식이 아닙니다.';
+    }
+
+    // 전화번호 검증
+    if (!formData.phoneNumber.trim()) {
+      newErrors.phoneNumber = '전화번호를 입력해주세요.';
+    } else if (!validatePhoneNumber(formData.phoneNumber)) {
+      newErrors.phoneNumber = '전화번호 형식이 올바르지 않습니다.';
     }
 
     // 비밀번호 검증
@@ -295,17 +305,13 @@ const SignupPage: React.FC = () => {
   };
 
   return (
-    <div className={`min-h-screen flex items-center justify-center px-4 py-6 sm:py-8 transition-colors ${
+    <div className={`min-h-screen flex items-center justify-center transition-colors px-4 py-6 sm:py-8 ${
       isDarkMode ? 'bg-[#141414]' : 'bg-gray-100'
     }`}>
-      <div
-        ref={cardRef}
-        style={fixedCardHeight != null ? { height: fixedCardHeight } : undefined}
-        className={`relative w-full max-w-md overflow-hidden p-5 sm:p-6 rounded-lg shadow-lg flex flex-col ${
-          isDarkMode ? 'bg-zinc-800' : 'bg-white'
-        }`}
-      >
-        <div className="text-center mb-1">
+      <div className={`w-full max-w-md max-h-[calc(100vh-3rem)] overflow-y-auto p-6 sm:p-8 rounded-lg shadow-lg ${
+        isDarkMode ? 'bg-zinc-800' : 'bg-white'
+      }`}>
+        <div className="text-center mb-3">
           <h1 className={`text-2xl sm:text-2xl md:text-3xl lg:text-4xl font-bold mb-2 ${
             isDarkMode ? 'text-white' : 'text-gray-900'
           }`}>
@@ -318,60 +324,65 @@ const SignupPage: React.FC = () => {
           </p>
         </div>
 
-        {error && (
-          <div
-            className={`absolute left-4 right-4 top-3 z-10 rounded-lg p-3 text-xs sm:text-sm md:text-base shadow-lg ${
-              isDarkMode ? 'bg-red-900/30 text-red-300' : 'bg-red-50 text-red-600'
-            }`}
-          >
-            <div className="line-clamp-2">{error}</div>
+        {/* 진행 상태 표시 (로그인 서버 상태 영역 구조와 동일) */}
+        <div className={`mb-3 text-xs sm:text-sm md:text-base ${
+          isDarkMode ? 'text-gray-400' : 'text-gray-600'
+        }`}>
+          <div className="flex items-center min-h-8">
+            <span className="flex-1 flex items-center justify-center gap-1.5 px-1 sm:px-2 py-0.5 sm:py-1">
+              {[1, 2, 3, 4].map((s) => (
+                <span
+                  key={s}
+                  className={`w-8 h-1 rounded-full ${
+                    s <= step ? 'bg-[#ff824d]' : (isDarkMode ? 'bg-zinc-600' : 'bg-gray-200')
+                  }`}
+                  aria-hidden
+                />
+              ))}
+            </span>
           </div>
-        )}
-
-        {/* 단계 표시 */}
-        <div className="flex justify-center gap-2 mb-4">
-          {[1, 2, 3, 4].map((s) => (
-            <span
-              key={s}
-              className={`w-8 h-1 rounded-full ${
-                s <= step ? 'bg-[#ff824d]' : (isDarkMode ? 'bg-zinc-600' : 'bg-gray-200')
-              }`}
-              aria-hidden
-            />
-          ))}
         </div>
-        <form onSubmit={handleSubmit} className="flex-1 flex flex-col min-h-0">
-          <div className="flex-1 min-h-0 space-y-1">
+        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5 md:space-y-6">
             {/* Step 1: 이름, 생년월일 */}
             {step === 1 && (
               <>
                 <div>
-                  <label className={`block text-xs sm:text-sm md:text-base font-medium mb-1 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>이름</label>
-                  <input
+                  <div className="flex items-end justify-between gap-2 mb-2">
+                    <label className={`block text-xs sm:text-sm md:text-base font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>이름</label>
+                    {(errors.fullName || error) && (
+                      <span className={`max-w-[65%] text-right text-xs ${isDarkMode ? 'text-red-300' : 'text-red-600'}`}>
+                        <span className="line-clamp-1">{errors.fullName || error}</span>
+                      </span>
+                    )}
+                  </div>
+                    <input
                     type="text"
                     name="fullName"
                     value={formData.fullName}
                     onChange={handleChange}
                     required
-                    className={`w-full px-3 py-2 text-sm rounded-lg border ${
+                    className={`w-full max-w-96 px-3 py-2 text-sm rounded-lg border ${
                       errors.fullName ? (isDarkMode ? 'bg-zinc-800 border-red-500 text-white' : 'bg-white border-red-500 text-gray-900') : (isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900')
                     } placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`}
                     placeholder="홍길동"
                   />
-                  <p
-                    className={`mt-1 text-xs h-5 overflow-hidden ${errors.fullName ? '' : 'invisible'} ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}
-                  >
-                    <span className="line-clamp-1">{errors.fullName || 'placeholder'}</span>
-                  </p>
-                </div>
+                  </div>
+                  
                 <div>
-                  <label className={`block text-xs sm:text-sm md:text-base font-medium mb-1 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>생년월일</label>
+                  <div className="flex items-end justify-between gap-2 mb-2">
+                    <label className={`block text-xs sm:text-sm md:text-base font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>생년월일</label>
+                    {errors.birthDate && (
+                      <span className={`max-w-[65%] text-right text-xs ${isDarkMode ? 'text-red-300' : 'text-red-600'}`}>
+                        <span className="line-clamp-1">{errors.birthDate}</span>
+                      </span>
+                    )}
+                  </div>
                   <div className="grid grid-cols-3 gap-2">
                     <select
                       name="birthYear"
                       value={birthParts.year}
                       onChange={(e) => setBirthPart('year', e.target.value)}
-                      className={`w-full px-3 py-1.5 text-sm rounded-lg border ${
+                      className={`w-full px-3 py-2 text-sm leading-5 rounded-lg border ${
                         errors.birthDate
                           ? (isDarkMode ? 'bg-zinc-800 border-red-500 text-white' : 'bg-white border-red-500 text-gray-900')
                           : (isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900')
@@ -389,7 +400,7 @@ const SignupPage: React.FC = () => {
                       value={birthParts.month}
                       onChange={(e) => setBirthPart('month', e.target.value)}
                       disabled={!birthParts.year}
-                      className={`w-full px-3 py-1.5 text-sm rounded-lg border ${
+                      className={`w-full px-3 py-2 text-sm leading-5 rounded-lg border ${
                         errors.birthDate
                           ? (isDarkMode ? 'bg-zinc-800 border-red-500 text-white' : 'bg-white border-red-500 text-gray-900')
                           : (isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900')
@@ -407,7 +418,7 @@ const SignupPage: React.FC = () => {
                       value={birthParts.day}
                       onChange={(e) => setBirthPart('day', e.target.value)}
                       disabled={!birthParts.year || !birthParts.month}
-                      className={`w-full px-3 py-1.5 text-sm rounded-lg border ${
+                      className={`w-full px-3 py-2 text-sm leading-5 rounded-lg border ${
                         errors.birthDate
                           ? (isDarkMode ? 'bg-zinc-800 border-red-500 text-white' : 'bg-white border-red-500 text-gray-900')
                           : (isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900')
@@ -422,15 +433,6 @@ const SignupPage: React.FC = () => {
                     </select>
                   </div>
                   <input type="hidden" name="birthDate" value={formData.birthDate} readOnly />
-                  <p
-                    className={`mt-1 text-xs h-5 overflow-hidden ${(formData.birthDate && formData.birthDate > todayIso) || errors.birthDate ? '' : 'invisible'} ${isDarkMode ? 'text-red-400' : 'text-red-600'}`}
-                  >
-                    <span className="line-clamp-1">
-                      {(formData.birthDate && formData.birthDate > todayIso)
-                        ? '생년월일은 오늘 이전이어야 합니다.'
-                        : (errors.birthDate || 'placeholder')}
-                    </span>
-                  </p>
                 </div>
               </>
             )}
@@ -439,21 +441,36 @@ const SignupPage: React.FC = () => {
             {step === 2 && (
               <>
                 <div>
-                  <label className={`block text-xs sm:text-sm md:text-base font-medium mb-1 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>전화번호</label>
+                  <div className="flex items-end justify-between gap-2 mb-2">
+                    <label className={`block text-xs sm:text-sm md:text-base font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>전화번호</label>
+                    {(errors.phoneNumber || error) && (
+                      <span className={`max-w-[65%] text-right text-xs ${isDarkMode ? 'text-red-300' : 'text-red-600'}`}>
+                        <span className="line-clamp-1">{errors.phoneNumber || error}</span>
+                      </span>
+                    )}
+                  </div>
                 <input
                   type="tel"
                   name="phoneNumber"
                   value={formData.phoneNumber}
                   onChange={handleChange}
-                  className={`w-full h-10 px-3 text-sm rounded-lg border ${isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900'} placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`}
+                  className={`w-full max-w-96 px-3 py-2 text-sm rounded-lg border ${isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900'} placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`}
                   placeholder="010-1234-5678"
                 />
-                <p className="text-xs h-5 overflow-hidden invisible">
-                  <span className="line-clamp-1">placeholder</span>
-                </p>
               </div>
               <div>
-                <label className={`block text-xs sm:text-sm md:text-base font-medium mb-1 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>이메일 (로그인 아이디)</label>
+                <div className="flex items-end justify-between gap-2 mb-2">
+                  <label className={`block text-xs sm:text-sm md:text-base font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>이메일</label>
+                  {errors.email ? (
+                    <span className={`max-w-[65%] text-right text-xs ${isDarkMode ? 'text-red-300' : 'text-red-600'}`}>
+                      <span className="line-clamp-1">{errors.email}</span>
+                    </span>
+                  ) : emailChecked === 'available' ? (
+                    <span className={`max-w-[65%] text-right text-xs ${isDarkMode ? 'text-emerald-300' : 'text-emerald-600'}`}>
+                      <span className="line-clamp-1">{emailAvailableMessage || '사용 가능한 이메일입니다.'}</span>
+                    </span>
+                  ) : null}
+                </div>
                 <div className="flex gap-2">
                   <input
                     type="email"
@@ -461,7 +478,7 @@ const SignupPage: React.FC = () => {
                     value={formData.email}
                     onChange={handleChange}
                     required
-                    className={`flex-1 w-full h-10 px-3 text-sm rounded-lg border ${
+                    className={`w-full max-w-96 px-3 py-2 text-sm rounded-lg border ${
                       errors.email ? (isDarkMode ? 'bg-zinc-800 border-red-500 text-white' : 'bg-white border-red-500 text-gray-900') : (isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900')
                     } placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`}
                     placeholder="example@email.com"
@@ -473,47 +490,35 @@ const SignupPage: React.FC = () => {
                       if (!validateEmail(formData.email)) { setErrors((p) => ({ ...p, email: '올바른 이메일 형식이 아닙니다.' })); return; }
                       setIsCheckingEmail(true);
                       try {
-                        await userApi.checkEmail(formData.email);
-                        setEmailChecked('available');
-                        setErrors((p) => { const { email, ...rest } = p; return rest; });
+                        const res = await userApi.checkEmail(formData.email);
+                        if (res.available) {
+                          setEmailChecked('available');
+                          setEmailAvailableMessage(res.message || '사용 가능한 이메일입니다.');
+                          // 이메일 관련 에러 제거
+                          setErrors((p) => {
+                            const { email, ...rest } = p;
+                            return rest;
+                          });
+                        } else {
+                          setEmailChecked('unavailable');
+                          setEmailAvailableMessage(null);
+                          setErrors((p) => ({ ...p, email: res.message || '이미 사용 중인 이메일입니다.' }));
+                        }
                       } catch (err) {
                         const msg = err instanceof Error ? err.message : '이메일 중복 확인에 실패했습니다.';
-                        // "인증되지 않은 사용자" = 로그인 요구(401), 이메일 중복이 아님
-                        if (msg.includes('인증되지 않은') || msg.includes('인증') && msg.includes('사용자') || msg.includes('401') || msg.includes('로그인')) {
-                          setEmailChecked(null);
-                          setErrors((p) => ({ ...p, email: '서버에서 로그인을 요구해 확인할 수 없습니다.' }));
-                        } else if (msg.includes('이미') || msg.includes('중복')) {
-                          setEmailChecked('unavailable');
-                          setErrors((p) => ({ ...p, email: '이미 사용 중인 이메일입니다.' }));
-                        } else {
-                          setEmailChecked(null);
-                          setErrors((p) => ({ ...p, email: msg }));
-                        }
+                        setEmailChecked(null);
+                        setEmailAvailableMessage(null);
+                        setErrors((p) => ({ ...p, email: msg }));
                       } finally {
                         setIsCheckingEmail(false);
                       }
                     }}
                     disabled={isCheckingEmail}
-                    className={`shrink-0 h-10 px-3 text-xs rounded-lg font-medium whitespace-nowrap ${isCheckingEmail ? (isDarkMode ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-gray-200 text-gray-500 cursor-not-allowed') : (isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-white cursor-pointer' : 'bg-gray-100 hover:bg-gray-200 text-gray-800 cursor-pointer')}`}
+                    className={`shrink-0 px-3 py-2 text-sm rounded-lg font-medium whitespace-nowrap ${isCheckingEmail ? (isDarkMode ? 'bg-gray-700 text-gray-400 cursor-not-allowed' : 'bg-gray-200 text-gray-500 cursor-not-allowed') : (isDarkMode ? 'bg-gray-700 hover:bg-gray-600 text-white cursor-pointer' : 'bg-gray-100 hover:bg-gray-200 text-gray-800 cursor-pointer')}`}
                   >
                     {isCheckingEmail ? '확인 중...' : '중복 확인'}
                   </button>
                 </div>
-                <p
-                  className={`text-xs h-5 overflow-hidden ${errors.email || emailChecked === 'available' ? '' : 'invisible'} ${
-                    errors.email
-                      ? (isDarkMode ? 'text-red-400' : 'text-red-600')
-                      : (isDarkMode ? 'text-green-400' : 'text-green-600')
-                  }`}
-                >
-                  <span className="line-clamp-1">
-                    {errors.email
-                      ? errors.email
-                      : emailChecked === 'available'
-                        ? '✓ 사용 가능한 이메일입니다'
-                        : 'placeholder'}
-                  </span>
-                </p>
               </div>
             </>
           )}
@@ -521,35 +526,76 @@ const SignupPage: React.FC = () => {
           {/* Step 3: 역할, 학교 정보 */}
           {step === 3 && (
             <>
-              <div>
-                <label className={`block text-xs sm:text-sm md:text-base font-medium mb-1 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>역할</label>
-                <select
-                  name="role"
-                  value={formData.role}
-                  onChange={handleChange}
-                  className={`w-full px-3 py-2 text-sm rounded-lg border ${isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900'} focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`}
-                >
-                  <option value="STUDENT">학생</option>
-                  <option value="TEACHER">선생님</option>
-                </select>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className={`block text-xs sm:text-sm md:text-base font-medium mb-1 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>학년</label>
-                  <input type="text" name="grade" value={formData.grade} onChange={handleChange} className={`w-full px-3 py-2 text-sm rounded-lg border ${isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900'} placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`} placeholder="예: 3학년" />
+              <div className="flex gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-end justify-between gap-2 mb-2">
+                    <label className={`block text-xs sm:text-sm md:text-base font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>역할</label>
+                    {error && (
+                      <span className={`max-w-[65%] text-right text-xs ${isDarkMode ? 'text-red-300' : 'text-red-600'}`}>
+                        <span className="line-clamp-1">{error}</span>
+                      </span>
+                    )}
+                  </div>
+                  <select
+                    name="role"
+                    value={formData.role}
+                    onChange={handleChange}
+                    className={`w-full max-w-96 px-3 py-2 text-sm rounded-lg border ${isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900'} focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`}
+                  >
+                    <option value="STUDENT">학생</option>
+                    <option value="TEACHER">선생님</option>
+                  </select>
                 </div>
-                <div>
-                  <label className={`block text-xs sm:text-sm md:text-base font-medium mb-1 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>반</label>
-                  <input type="text" name="classNumber" value={formData.classNumber} onChange={handleChange} className={`w-full px-3 py-2 text-sm rounded-lg border ${isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900'} placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`} placeholder="예: 2반" />
+
+                <div className="flex-1 min-w-0">
+                  <label className={`block text-xs sm:text-sm md:text-base font-medium mb-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>학교명</label>
+                  <input
+                    type="text"
+                    name="schoolName"
+                    value={formData.schoolName}
+                    onChange={handleChange}
+                    className={`w-full max-w-96 px-3 py-2 text-sm rounded-lg border ${isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900'} placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`}
+                    placeholder="학교 이름"
+                  />
                 </div>
               </div>
-              <div>
-                <label className={`block text-xs sm:text-sm md:text-base font-medium mb-1 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>학교명</label>
-                <input type="text" name="schoolName" value={formData.schoolName} onChange={handleChange} className={`w-full px-3 py-2 text-sm rounded-lg border ${isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900'} placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`} placeholder="학교 이름" />
-              </div>
-              <div>
-                <label className={`block text-xs sm:text-sm md:text-base font-medium mb-1 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>학과 / 부서</label>
-                <input type="text" name="department" value={formData.department} onChange={handleChange} className={`w-full px-3 py-2 text-sm rounded-lg border ${isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900'} placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`} placeholder="예: 컴퓨터공학과 / 수학과" />
+
+              <div className="flex gap-4">
+                <div className="flex-1 min-w-0">
+                  <label className={`block text-xs sm:text-sm md:text-base font-medium mb-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>학과 / 부서</label>
+                  <input
+                    type="text"
+                    name="department"
+                    value={formData.department}
+                    onChange={handleChange}
+                    className={`w-full max-w-96 px-3 py-2 text-sm rounded-lg border ${isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900'} placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`}
+                    placeholder="예: 컴퓨터공학과 / 수학과"
+                  />
+                </div>
+
+                <div className="flex-none min-w-0">
+                  <label className={`block text-xs sm:text-sm md:text-base font-medium mb-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>학년</label>
+                  <input
+                    type="text"
+                    name="grade"
+                    value={formData.grade}
+                    onChange={handleChange}
+                    className={`w-20 max-w-full px-3 py-2 text-sm rounded-lg border ${isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900'} placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`}
+                    placeholder="예: 3"
+                  />
+                </div>
+
+                <div className="flex-none min-w-0">
+                  <label className={`block text-xs sm:text-sm md:text-base font-medium mb-2 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>반</label>
+                  <input
+                    type="text"
+                    name="classNumber"
+                    value={formData.classNumber}
+                    onChange={handleChange}
+                    className={`w-20 max-w-full px-3 py-2 text-sm rounded-lg border ${isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900'} placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`}
+                    placeholder="예: 2"
+                  />
+                </div>
               </div>
             </>
           )}
@@ -558,75 +604,52 @@ const SignupPage: React.FC = () => {
           {step === 4 && (
             <>
               <div>
-                <label className={`block text-xs sm:text-sm md:text-base font-medium mb-1 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>비밀번호</label>
+                <div className="flex items-end justify-between gap-2 mb-2">
+                  <label className={`block text-xs sm:text-sm md:text-base font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>비밀번호</label>
+                  {(errors.password || error) && (
+                    <span className={`max-w-[65%] text-right text-xs ${isDarkMode ? 'text-red-300' : 'text-red-600'}`}>
+                      <span className="line-clamp-1">{errors.password || error}</span>
+                    </span>
+                  )}
+                </div>
                 <input
                   type="password"
                   name="password"
                   value={formData.password}
                   onChange={handleChange}
                   required
-                  className={`w-full px-3 py-2 text-sm rounded-lg border ${
+                  className={`w-full max-w-96 px-3 py-2 text-sm rounded-lg border ${
                     errors.password ? (isDarkMode ? 'bg-zinc-800 border-red-500 text-white' : 'bg-white border-red-500 text-gray-900') : (isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900')
                   } placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`}
                   placeholder="영문, 숫자, 특수문자 포함 8자 이상"
                 />
-                <p
-                  className={`mt-1 text-xs h-5 overflow-hidden ${errors.password || formData.password ? '' : 'invisible'} ${
-                    errors.password
-                      ? (isDarkMode ? 'text-red-400' : 'text-red-600')
-                      : (isDarkMode ? 'text-green-400' : 'text-green-600')
-                  }`}
-                >
-                  <span className="line-clamp-1">
-                    {errors.password
-                      ? errors.password
-                      : formData.password
-                        ? '✓ 비밀번호 형식이 올바릅니다'
-                        : 'placeholder'}
-                  </span>
-                </p>
               </div>
               <div>
-                <label className={`block text-xs sm:text-sm md:text-base font-medium mb-1 ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>비밀번호 확인</label>
+                <div className="flex items-end justify-between gap-2 mb-2">
+                  <label className={`block text-xs sm:text-sm md:text-base font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-700'}`}>비밀번호 확인</label>
+                  {errors.confirmPassword && (
+                    <span className={`max-w-[65%] text-right text-xs ${isDarkMode ? 'text-red-300' : 'text-red-600'}`}>
+                      <span className="line-clamp-1">{errors.confirmPassword}</span>
+                    </span>
+                  )}
+                </div>
                 <input
                   type="password"
                   name="confirmPassword"
                   value={formData.confirmPassword}
                   onChange={handleChange}
                   required
-                  className={`w-full px-3 py-2 text-sm rounded-lg border ${
+                  className={`w-full max-w-96 px-3 py-2 text-sm rounded-lg border ${
                     errors.confirmPassword ? (isDarkMode ? 'bg-zinc-800 border-red-500 text-white' : 'bg-white border-red-500 text-gray-900') : (isDarkMode ? 'bg-zinc-800 border-zinc-700 text-white' : 'bg-white border-gray-300 text-gray-900')
                   } placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`}
                   placeholder="비밀번호를 다시 입력하세요"
                 />
-                <p
-                  className={`mt-1 text-xs h-5 overflow-hidden ${
-                    errors.confirmPassword ||
-                    (formData.confirmPassword && formData.password === formData.confirmPassword)
-                      ? ''
-                      : 'invisible'
-                  } ${
-                    errors.confirmPassword
-                      ? (isDarkMode ? 'text-red-400' : 'text-red-600')
-                      : (isDarkMode ? 'text-green-400' : 'text-green-600')
-                  }`}
-                >
-                  <span className="line-clamp-1">
-                    {errors.confirmPassword
-                      ? errors.confirmPassword
-                      : (formData.confirmPassword && formData.password === formData.confirmPassword)
-                        ? '✓ 비밀번호가 일치합니다'
-                        : 'placeholder'}
-                  </span>
-                </p>
               </div>
               </>
             )}
 
-          </div>
-
           {/* 이전 / 다음 / 가입 버튼 (항상 같은 위치) */}
-          <div className="flex gap-2 pt-0.5 mt-auto">
+          <div className="flex w-full max-w-96 gap-2">
             {step > 1 && (
               <button
                 type="button"
@@ -643,23 +666,62 @@ const SignupPage: React.FC = () => {
                 type="button"
                 onClick={() => {
                   if (step === 1) {
-                    if (!formData.fullName.trim()) { setErrors((p) => ({ ...p, fullName: '이름을 입력해주세요.' })); return; }
-                    if (!validateName(formData.fullName)) { setErrors((p) => ({ ...p, fullName: '이름은 2자 이상 50자 이하여야 합니다.' })); return; }
+                    const stepErrors: Record<string, string> = {};
+                    if (!formData.fullName.trim()) {
+                      stepErrors.fullName = '이름을 입력해주세요.';
+                    } else if (!validateName(formData.fullName)) {
+                      stepErrors.fullName = '이름은 2자 이상 50자 이하여야 합니다.';
+                    }
                     if (!birthParts.year || !birthParts.month || !birthParts.day) {
-                      setErrors((p) => ({ ...p, birthDate: '생년월일을 선택해주세요.' }));
+                      stepErrors.birthDate = '생년월일을 선택해주세요.';
+                    } else {
+                      const birthRes = validateBirthDate(formData.birthDate);
+                      if (!birthRes.isValid) stepErrors.birthDate = birthRes.message;
+                    }
+                    if (Object.keys(stepErrors).length > 0) {
+                      setErrors((p) => ({ ...p, ...stepErrors }));
                       return;
                     }
-                    const birthRes = validateBirthDate(formData.birthDate);
-                    if (!birthRes.isValid) { setErrors((p) => ({ ...p, birthDate: birthRes.message })); return; }
                     setStep(2);
                   } else if (step === 2) {
-                    if (!formData.email) { setErrors((p) => ({ ...p, email: '이메일을 입력해주세요.' })); return; }
-                    if (!validateEmail(formData.email)) { setErrors((p) => ({ ...p, email: '올바른 이메일 형식이 아닙니다.' })); return; }
-                    if (errors.email || emailChecked !== 'available') {
-                      if (emailChecked !== 'available') setErrors((p) => ({ ...p, email: '이메일 중복 확인을 해주세요.' }));
+                    const stepErrors: Record<string, string> = {};
+                    if (!formData.phoneNumber.trim()) {
+                      stepErrors.phoneNumber = '전화번호를 입력해주세요.';
+                    } else if (!validatePhoneNumber(formData.phoneNumber)) {
+                      stepErrors.phoneNumber = '전화번호 형식이 올바르지 않습니다.';
+                    }
+                    if (!formData.email) {
+                      stepErrors.email = '이메일을 입력해주세요.';
+                    } else if (!validateEmail(formData.email)) {
+                      stepErrors.email = '올바른 이메일 형식이 아닙니다.';
+                    }
+
+                    // 입력/형식 오류가 있으면 먼저 표시
+                    if (Object.keys(stepErrors).length > 0) {
+                      setErrors((p) => ({ ...p, ...stepErrors }));
                       return;
                     }
-                    setStep(3);
+
+                    // 중복확인 통과면(available) stale 에러가 있어도 무시하고 진행
+                    if (emailChecked === 'available') {
+                      if (errors.email) {
+                        setErrors((p) => {
+                          const { email, ...rest } = p;
+                          return rest;
+                        });
+                      }
+                      setStep(3);
+                      return;
+                    }
+
+                    // 중복확인 결과(또는 서버 에러)가 이미 있으면 덮어쓰지 않음
+                    if (errors.email) {
+                      setErrors((p) => ({ ...p, ...stepErrors }));
+                      return;
+                    }
+
+                    setErrors((p) => ({ ...p, email: '이메일 중복 확인을 해주세요.' }));
+                    return;
                   } else if (step === 3) {
                     setStep(4);
                   }
@@ -687,7 +749,7 @@ const SignupPage: React.FC = () => {
         <div className={`mt-4 sm:mt-6 text-center text-xs sm:text-sm md:text-base ${
           isDarkMode ? 'text-gray-400' : 'text-gray-600'
         }`}>
-          이미 계정이 있으신가요?{' '}
+          계정이 있으신가요?{' '}
           <Link
             to="/login"
             className="font-medium hover:underline text-[#ff824d]"

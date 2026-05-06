@@ -45,27 +45,7 @@ function SystemIcon({ className }: { className?: string }) {
   );
 }
 
-function UploadIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-    </svg>
-  );
-}
-
-function SparklesIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-    </svg>
-  );
-}
-
 interface TopNavProps {
-  isCourseDetail?: boolean;
-  isSettingsPage?: boolean;
-  isReportPage?: boolean;
-  isUpdatesPage?: boolean;
   onNavigateHome?: () => void;
   onOpenSettings?: () => void;
   onOpenReport?: () => void;
@@ -75,10 +55,6 @@ interface TopNavProps {
 }
 
 const TopNav: React.FC<TopNavProps> = ({
-  isCourseDetail,
-  isSettingsPage,
-  isReportPage,
-  isUpdatesPage,
   onNavigateHome,
   onOpenSettings,
   onOpenReport,
@@ -91,8 +67,6 @@ const TopNav: React.FC<TopNavProps> = ({
   const navigate = useNavigate();
   const [isUserMenuOpen, setIsUserMenuOpen] = React.useState(false);
   const userMenuRef = React.useRef<HTMLDivElement | null>(null);
-  const [isLectureMenuOpen, setIsLectureMenuOpen] = React.useState(false);
-  const lectureMenuRef = React.useRef<HTMLDivElement | null>(null);
 
   const handleLogout = () => {
     setIsUserMenuOpen(false);
@@ -151,33 +125,11 @@ const TopNav: React.FC<TopNavProps> = ({
     };
   }, [isUserMenuOpen]);
 
-  React.useEffect(() => {
-    if (!isLectureMenuOpen) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        lectureMenuRef.current &&
-        event.target instanceof Node &&
-        !lectureMenuRef.current.contains(event.target)
-      ) {
-        setIsLectureMenuOpen(false);
-      }
-    };
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setIsLectureMenuOpen(false);
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    document.addEventListener("keydown", handleEscape);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleEscape);
-    };
-  }, [isLectureMenuOpen]);
-
   const isPreviewMode = !!previewFileName;
 
   return (
     <header
-      className={`flex items-end px-5 sm:px-6 lg:px-8 h-[52px] transition-colors ${
+      className={`flex shrink-0 items-center px-5 py-2.5 transition-colors ${
         isDarkMode ? "bg-[#141414]" : "bg-[#ffffff]"
       }`}
     >
@@ -185,7 +137,7 @@ const TopNav: React.FC<TopNavProps> = ({
         <button
           type="button"
           onClick={handleNavigateHome}
-          className={`truncate text-lg font-semibold h-9 flex items-center leading-9 ${isDarkMode ? "text-white" : "text-gray-900"}`}
+          className={`truncate text-lg font-semibold flex items-center ${isDarkMode ? "text-white" : "text-gray-900"}`}
         >
           AI Tutor LMS
         </button>
@@ -209,69 +161,6 @@ const TopNav: React.FC<TopNavProps> = ({
             </svg>
           </button>
         )}
-        {user?.role === "TEACHER" &&
-          !isSettingsPage &&
-          !isReportPage &&
-          !isUpdatesPage &&
-          !isPreviewMode && (
-          <div className="hidden items-center justify-center lg:flex">
-            {isCourseDetail ? (
-              <div className="relative" ref={lectureMenuRef}>
-                <button
-                  type="button"
-                  onClick={() => setIsLectureMenuOpen((prev) => !prev)}
-                  className={`relative rounded-full h-9 text-xs font-semibold px-3 cursor-pointer transition-colors ease-out ${
-                    isDarkMode ? "bg-[#FFFFFF] text-[#141414] hover:bg-white/90" : "bg-[#141414] text-white hover:bg-black"
-                  }`}
-                >
-                  <span className="flex items-center justify-center gap-x-2">
-                    <span className="truncate whitespace-nowrap">강의 만들기</span>
-                  </span>
-                </button>
-                {isLectureMenuOpen && (
-                  <div className="profile-dropdown-glass absolute right-0 mt-2 w-[200px] rounded-2xl z-20 overflow-hidden select-none">
-                    <div className="flex flex-col p-2 gap-0.5">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsLectureMenuOpen(false);
-                          window.dispatchEvent(new Event("open-upload-modal"));
-                        }}
-                        className="flex h-9 items-center rounded-xl p-2 gap-2 cursor-pointer text-base font-semibold text-white hover:bg-white/10 transition-colors"
-                      >
-                        <UploadIcon className="w-4 h-4 text-gray-400" />
-                        <span>자료 업로드</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsLectureMenuOpen(false);
-                          window.dispatchEvent(new Event("open-material-gen-modal"));
-                        }}
-                        className="flex h-9 items-center rounded-xl p-2 gap-2 cursor-pointer text-base font-semibold text-white hover:bg-white/10 transition-colors"
-                      >
-                        <SparklesIcon className="w-4 h-4 text-gray-400" />
-                        <span>자료 생성</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => window.dispatchEvent(new Event("open-course-modal"))}
-                className={`relative rounded-full h-9 text-xs font-semibold px-3 cursor-pointer transition-colors ease-out ${
-                  isDarkMode ? "bg-[#FFFFFF] text-[#141414] hover:bg-white/90" : "bg-[#141414] text-white hover:bg-black"
-                }`}
-              >
-                <span className="flex items-center justify-center gap-x-2">
-                  <span className="truncate whitespace-nowrap">강의실 만들기</span>
-                </span>
-              </button>
-            )}
-          </div>
-        )}
         {user ? (
           <div className="relative" ref={userMenuRef}>
             <button
@@ -291,7 +180,7 @@ const TopNav: React.FC<TopNavProps> = ({
             </button>
             {isUserMenuOpen && (
               <div
-                className="profile-dropdown-glass absolute right-0 mt-2 w-[240px] rounded-2xl z-20 overflow-hidden select-none"
+                className="profile-dropdown-glass absolute right-0 mt-2 w-60 rounded-2xl z-20 overflow-hidden select-none"
               >
                 <div className="flex flex-col p-4 pb-2">
                   <div className="truncate text-base font-semibold text-white">
@@ -308,18 +197,27 @@ const TopNav: React.FC<TopNavProps> = ({
                       테마
                     </span>
                     <div
-                      className="flex rounded-full p-1 shrink-0 bg-white/10"
+                      className="relative flex rounded-full p-1 shrink-0 bg-white/10"
                       onClick={(e) => e.stopPropagation()}
                     >
+                      {/* active indicator */}
+                      <div
+                        aria-hidden="true"
+                        className={`absolute top-1 left-1 w-8 h-8 rounded-full bg-black/40 transform-gpu will-change-transform transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
+                          themeMode === "dark"
+                            ? "translate-x-8"
+                            : themeMode === "system"
+                              ? "translate-x-16"
+                              : "translate-x-0"
+                        }`}
+                      />
                       {(["light", "dark", "system"] as const).map((mode) => (
                         <button
                           key={mode}
                           type="button"
                           onClick={() => setThemeMode(mode)}
-                          className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
-                            themeMode === mode
-                              ? "bg-black/40 text-white"
-                              : "text-gray-400 hover:text-gray-300"
+                          className={`relative z-10 flex items-center justify-center w-8 h-8 rounded-full transition-colors duration-200 ${
+                            themeMode === mode ? "text-white" : "text-gray-400 hover:text-gray-300"
                           }`}
                           aria-label={mode === "light" ? "라이트 모드" : mode === "dark" ? "다크 모드" : "시스템 모드"}
                         >

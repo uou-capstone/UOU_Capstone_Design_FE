@@ -12,6 +12,8 @@ type MenuItem = "lectures" | "settings" | "report" | "updates";
 type CourseLecture = NonNullable<NonNullable<CourseDetail["lectures"]>[number]>;
 
 const getLastLectureStorageKey = (courseId: number) => `course_${courseId}_last_lecture`;
+const MAX_COURSE_TITLE_LEN = 100;
+const MAX_COURSE_DESCRIPTION_LEN = 500;
 
 const AppLayout: React.FC = () => {
   const { isDarkMode } = useTheme();
@@ -28,8 +30,13 @@ const AppLayout: React.FC = () => {
 
   const {
     courses,
+    coursesPage,
+    courseListPage,
+    courseListSortOrder,
     isLoading: isCoursesLoading,
     fetchCourses,
+    setCourseListPage,
+    setCourseListSortOrder,
     getCourseDetail,
     updateCourse,
     deleteCourse,
@@ -55,6 +62,8 @@ const AppLayout: React.FC = () => {
 
   // 메뉴 상태 관리 (메인 페이지일 때만 사용) - 기본은 "강의"
   const [selectedMenu, setSelectedMenu] = useState<MenuItem>("lectures");
+  /** 강의(주차)/리소스 편집(수정/삭제) 모드 토글 */
+  const [lectureEditMode, setLectureEditMode] = useState(false);
   const viewMode: ViewMode = selectedCourseId ? "course-detail" : "course-list";
   const loadCourseDetail = useCallback(
     async (courseId: number) => {
@@ -225,11 +234,13 @@ const AppLayout: React.FC = () => {
   ]);
 
   const handleSelectCourse = (courseId: number) => {
+    setLectureEditMode(false);
     navigate(`/courses/${courseId}`);
   };
 
   const handleBackToCourses = () => {
     setSelectedMenu("lectures");
+    setLectureEditMode(false);
     navigate("/");
   };
 
@@ -404,6 +415,12 @@ const AppLayout: React.FC = () => {
         window.alert("강의실 제목은 비워둘 수 없습니다.");
         return;
       }
+      if (trimmedTitle.length > MAX_COURSE_TITLE_LEN) {
+        window.alert(
+          `강의실 제목은 ${MAX_COURSE_TITLE_LEN}자 이내로 입력해주세요. (현재 ${trimmedTitle.length}자)`,
+        );
+        return;
+      }
 
       const descriptionInput = window.prompt(
         "새 강의실 설명을 입력해주세요.",
@@ -415,6 +432,12 @@ const AppLayout: React.FC = () => {
       }
 
       const trimmedDescription = descriptionInput.trim();
+      if (trimmedDescription.length > MAX_COURSE_DESCRIPTION_LEN) {
+        window.alert(
+          `강의실 설명은 ${MAX_COURSE_DESCRIPTION_LEN}자 이내로 입력해주세요. (현재 ${trimmedDescription.length}자)`,
+        );
+        return;
+      }
       const result = await updateCourse(course.courseId, {
         title: trimmedTitle,
         description: trimmedDescription,
@@ -466,15 +489,11 @@ const AppLayout: React.FC = () => {
 
   return (
     <div
-      className={`h-screen w-full max-w-full flex flex-col transition-colors gap-4 overflow-hidden ${
+      className={`h-screen w-full max-w-full flex flex-col transition-colors overflow-hidden ${
         isDarkMode ? "bg-[#141414] text-gray-100" : "bg-white text-gray-900"
       }`}
     >
       <TopNav
-        isCourseDetail={viewMode === "course-detail"}
-        isSettingsPage={selectedMenu === "settings"}
-        isReportPage={selectedMenu === "report"}
-        isUpdatesPage={selectedMenu === "updates"}
         onNavigateHome={handleBackToCourses}
         onOpenSettings={() => {
           setSelectedMenu("settings");
@@ -495,8 +514,15 @@ const AppLayout: React.FC = () => {
         <MainContent
           key={`main-content-${selectedCourseId ?? "home"}-${mainContentResetKey}`}
           viewMode={viewMode}
+          lectureEditMode={lectureEditMode}
+          onLectureEditModeChange={setLectureEditMode}
           courses={courses}
+          coursesPage={coursesPage}
+          courseListPage={courseListPage}
+          courseListSortOrder={courseListSortOrder}
           isCoursesLoading={isCoursesLoading}
+          onCourseListPageChange={setCourseListPage}
+          onCourseListSortOrderChange={setCourseListSortOrder}
           onSelectCourse={handleSelectCourse}
           onBackToCourses={handleBackToCourses}
           courseDetail={courseDetail}

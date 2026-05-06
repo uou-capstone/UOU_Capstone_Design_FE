@@ -115,7 +115,7 @@ const ProfileMenu: React.FC = () => {
         createPortal(
           <div
             data-profile-menu-dropdown
-            className="fixed z-[9999] flex flex-col items-stretch rounded-2xl w-[240px] bg-glass-background-primary text-glass-text-primary glass shadow-glass backdrop-blur-glass select-none overflow-hidden"
+            className="fixed z-[9999] flex flex-col items-stretch rounded-2xl w-60 bg-glass-background-primary text-glass-text-primary glass shadow-glass backdrop-blur-glass select-none overflow-hidden"
             style={{
               width: DROPDOWN_WIDTH,
               top: position.top,
@@ -124,7 +124,7 @@ const ProfileMenu: React.FC = () => {
             onClick={(e) => e.stopPropagation()}
           >
             {/* 상단: 사용자 정보 + Set up profile */}
-            <div className="flex flex-col gap-y-[10px] px-[10px] pt-8 pb-4">
+            <div className="flex flex-col gap-y-2.5 px-2.5 pt-8 pb-4">
               <div className="flex flex-col">
                 <div className={`truncate text-sm font-semibold ${textPrimary}`}>
                   {user?.fullName ?? "Guest"}
@@ -181,6 +181,17 @@ const ProfileMenu: React.FC = () => {
                   Theme
                 </div>
                 <div className="relative isolate w-fit select-none rounded-full bg-glass-background-secondary p-1 flex items-center gap-1 h-9">
+                  {/* active indicator */}
+                  <div
+                    aria-hidden="true"
+                    className={`absolute top-1 left-1 w-9 h-7 rounded-full bg-[#3D3D3D] transform-gpu will-change-transform transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
+                      themeMode === "dark"
+                        ? "translate-x-10"
+                        : themeMode === "system"
+                          ? "translate-x-20"
+                          : "translate-x-0"
+                    }`}
+                  />
                   <ThemeOption
                     active={themeMode === "light"}
                     onClick={() => setThemeMode("light")}
@@ -216,25 +227,25 @@ const ProfileMenu: React.FC = () => {
 
             <div className="h-px bg-glass-border-divider" />
             {/* 푸터 */}
-            <div className="flex h-9 flex-row items-center justify-between px-4 text-[11px] leading-none text-glass-text-secondary">
+            <div className="flex h-9 flex-row items-center justify-between px-4 text-xs leading-none text-glass-text-secondary">
               <div className="flex flex-row items-center justify-start gap-3">
                 <button
                   type="button"
-                  className="text-[11px] hover:text-glass-text-primary"
+                  className="text-xs hover:text-glass-text-primary"
                   onClick={() => {}}
                 >
                   Privacy
                 </button>
                 <button
                   type="button"
-                  className="text-[11px] hover:text-glass-text-primary"
+                  className="text-xs hover:text-glass-text-primary"
                   onClick={() => {}}
                 >
                   Terms
                 </button>
                 <button
                   type="button"
-                  className="text-[11px] hover:text-glass-text-primary"
+                  className="text-xs hover:text-glass-text-primary"
                   onClick={() => {}}
                 >
                   Copyright
@@ -272,10 +283,8 @@ function ThemeOption({
       type="button"
       onClick={onClick}
       title={label}
-      className={`min-w-[36px] py-1.5 text-xs font-medium transition-colors ${
-        active
-          ? "bg-[#3D3D3D] text-white"
-          : "bg-transparent text-[#9CA3AF] hover:bg-[#353535]"
+      className={`relative z-10 min-w-9 py-1.5 text-xs font-medium transition-colors duration-200 ${
+        active ? "text-white" : "bg-transparent text-[#9CA3AF] hover:bg-[#353535]"
       }`}
     >
       {icon}
@@ -306,13 +315,13 @@ function MenuItem({
     <button
       type="button"
       onClick={onClick}
-      className={`flex h-9 items-center justify-center rounded-xl px-[10px] gap-x-2 cursor-pointer focus:bg-glass-background-primary-hover text-xs font-semibold ${textPrimary} ${rowClass}`}
+      className={`flex h-9 items-center justify-center rounded-xl px-2.5 gap-x-2 cursor-pointer focus:bg-glass-background-primary-hover text-xs font-semibold ${textPrimary} ${rowClass}`}
     >
       {icon && <span className="w-4 h-4 flex items-center justify-center shrink-0">{icon}</span>}
       {!icon && <span className="w-4 shrink-0" />}
       <span className="flex-1">{label}</span>
       {badge && (
-        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${badgeBg ?? "bg-zinc-200 text-zinc-700"}`}>
+        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${badgeBg ?? "bg-zinc-200 text-zinc-700"}`}>
           {badge}
         </span>
       )}

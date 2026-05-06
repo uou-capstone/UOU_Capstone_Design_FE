@@ -1,14 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, Link, useLocation } from 'react-router-dom';
+import { useNavigate, Link, useLocation, useSearchParams } from 'react-router-dom';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { checkServerStatus } from '@/services/api';
+import { sanitizePostLoginNext } from '@/utils/sanitizePostLoginNext';
 
 const LoginPage: React.FC = () => {
   const { isDarkMode } = useTheme();
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -16,6 +18,24 @@ const LoginPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [serverStatus, setServerStatus] = useState<{ online: boolean; message?: string } | null>(null);
   const [isCheckingServer, setIsCheckingServer] = useState(true);
+
+  const summarizeLoginError = (msg: string): string => {
+    const m = msg.toLowerCase();
+    if (
+      m.includes('401') ||
+      m.includes('unauthorized') ||
+      m.includes('invalid') ||
+      m.includes('로그인') ||
+      m.includes('인증')
+    ) {
+      return '이메일 또는 비밀번호를 확인해주세요.';
+    }
+    if (m.includes('네트워크') || m.includes('failed to fetch') || m.includes('fetch')) {
+      return '서버 통신에 실패했습니다.';
+    }
+    if (msg.trim().length === 0) return '로그인에 실패했습니다.';
+    return msg.trim().length > 38 ? `${msg.trim().slice(0, 38)}…` : msg.trim();
+  };
 
   // 서버 상태 확인
   useEffect(() => {
@@ -56,13 +76,12 @@ const LoginPage: React.FC = () => {
 
     try {
       await login(email, password);
-      // 로그인 후 리다이렉트 처리
+      const nextFromQuery = searchParams.get('next');
       const state = location.state as { redirectTo?: string } | null;
-      if (state?.redirectTo) {
-        navigate(state.redirectTo, { replace: true });
-      } else {
-        navigate('/');
-      }
+      const raw = nextFromQuery ?? state?.redirectTo;
+      const target =
+        raw != null && raw !== '' ? sanitizePostLoginNext(raw) : '/';
+      navigate(target, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : '로그인에 실패했습니다.');
     } finally {
@@ -77,7 +96,7 @@ const LoginPage: React.FC = () => {
       <div className={`w-full max-w-md max-h-[calc(100vh-3rem)] overflow-y-auto p-6 sm:p-8 rounded-lg shadow-lg ${
         isDarkMode ? 'bg-zinc-800' : 'bg-white'
       }`}>
-        <div className="text-center mb-6 sm:mb-4">
+        <div className="text-center mb-3">
           <h1 className={`text-2xl sm:text-2xl md:text-3xl lg:text-4xl font-bold mb-2 ${
             isDarkMode ? 'text-white' : 'text-gray-900'
           }`}>
@@ -90,44 +109,47 @@ const LoginPage: React.FC = () => {
           </p>
         </div>
 
-        {successMessage && (
-          <div className={`mb-3 sm:mb-4 p-2 sm:p-3 md:p-4 text-xs sm:text-sm md:text-base rounded-lg ${
-            isDarkMode ? 'bg-green-900/30 text-green-300' : 'bg-green-50 text-green-600'
-          }`}>
-            {successMessage}
-          </div>
-        )}
-        {/* 서버 상태 표시 */}
-        {serverStatus && (
-          <div className={`mb-3 sm:mb-4 text-xs sm:text-sm md:text-base ${
-            isDarkMode ? 'text-gray-400' : 'text-gray-600'
-          }`}>
-            <div className="flex items-center">
-              <span>서버상태:</span>
-              <span className={`text-base font-semibold tracking-wide px-1 sm:px-2 py-0.5 sm:py-1 rounded ${
+        {/* 서버 상태 표시 (초기부터 고정 렌더링해 레이아웃 흔들림 방지) */}
+        <div className={`mb-3 text-xs sm:text-sm md:text-base ${
+          isDarkMode ? 'text-gray-400' : 'text-gray-600'
+        }`}>
+          <div className="flex items-center min-h-8 w-full">
+            <span>서버:</span>
+            <span
+              className={`text-base font-semibold tracking-wide pl-1 rounded ${
                 isCheckingServer
-                  ? (isDarkMode ? 'text-yellow-200' : 'text-yellow-700')
-                  : serverStatus.online
+                  ? `animate-pulse ${isDarkMode ? 'text-yellow-200' : 'text-yellow-700'}`
+                  : serverStatus?.online
                     ? (isDarkMode ? 'text-green-200' : 'text-green-700')
                     : (isDarkMode ? 'text-red-200' : 'text-red-700')
-              }`}>
-                {isCheckingServer
-                  ? 'CHECKING...'
-                  : serverStatus.online
-                    ? 'ONLINE'
-                    : 'OFFLINE'}
+              }`}
+            >
+              {isCheckingServer
+                ? 'CHECKING...'
+                : serverStatus?.online
+                  ? 'ONLINE'
+                  : 'OFFLINE'}
+            </span>
+            {error && (!serverStatus || serverStatus.online) ? (
+              <span
+                className={`ml-auto text-xs sm:text-sm ${
+                  isDarkMode ? 'text-red-300' : 'text-red-600'
+                } font-medium whitespace-nowrap`}
+              >
+                {summarizeLoginError(error)}
               </span>
-            </div>
+            ) : successMessage ? (
+              <span
+                className={`ml-auto text-xs sm:text-sm ${
+                  isDarkMode ? 'text-emerald-300' : 'text-emerald-600'
+                } font-medium whitespace-nowrap`}
+              >
+                {successMessage}
+              </span>
+            ) : null}
           </div>
-        )}
-        
-        {error && !(serverStatus && !serverStatus.online) && (
-          <div className={`mb-3 sm:mb-4 p-2 sm:p-3 md:p-4 text-xs sm:text-sm md:text-base rounded-lg ${
-            isDarkMode ? 'bg-red-900/30 text-red-300' : 'bg-red-50 text-red-600'
-          }`}>
-            {error}
-          </div>
-        )}
+        </div>
+
 
         <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5 md:space-y-6">
           <div>
@@ -141,45 +163,31 @@ const LoginPage: React.FC = () => {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className={`w-[384px] max-w-full px-3 py-2 text-sm rounded-lg border ${
+              className={`w-full max-w-96 px-3 py-2 text-sm rounded-lg border ${
                 isDarkMode
                   ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-500'
                   : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-              } focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:border-emerald-500`}
+              } focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`}
               placeholder="example@email.com"
             />
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className={`block text-xs sm:text-sm md:text-base font-medium ${
+              <label className={`block text-xs sm:text-sm md:text-base font-medium mb-2 ${
                 isDarkMode ? 'text-gray-200' : 'text-gray-700'
               }`}>
                 비밀번호
               </label>
-              <Link
-                to="/forgot-password"
-                onClick={(e) => {
-                  e.preventDefault();
-                  window.alert('비밀번호 찾기 기능은 준비 중입니다.');
-                }}
-                className={`text-xs hover:underline ${
-                  'text-[#ff824d]'
-                }`}
-              >
-                비밀번호 찾기
-              </Link>
-            </div>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              className={`w-[384px] max-w-full px-3 py-2 text-sm rounded-lg border ${
+              className={`w-full max-w-96 px-3 py-2 text-sm rounded-lg border ${
                 isDarkMode
                   ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-500'
                   : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-              } focus:outline-none focus:ring-2 focus:ring-emerald-500/60 focus:border-emerald-500`}
+              } focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`}
               placeholder="비밀번호를 입력하세요"
             />
           </div>
@@ -187,7 +195,7 @@ const LoginPage: React.FC = () => {
           <button
             type="submit"
             disabled={isLoading}
-            className={`w-[384px] max-w-full py-3 mx-auto rounded-lg font-medium text-sm flex items-center justify-center transition-colors ${
+            className={`w-full max-w-96 py-3 mx-auto rounded-lg font-medium text-sm flex items-center justify-center transition-colors ${
               isLoading
                 ? isDarkMode
                   ? 'bg-gray-700 text-gray-400 cursor-not-allowed'

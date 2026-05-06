@@ -231,7 +231,7 @@ function ExamFlashStyleSideArrows(props: {
 }
 
 function examSingleFlashCardShellClass(isDarkMode: boolean): string {
-  return `flex w-full min-h-[min(280px,42dvh)] flex-col rounded-xl border p-5 text-left transition-colors ${
+  return `flex w-full min-h-[min(17.5rem,42dvh)] flex-col rounded-xl border p-5 text-left transition-colors ${
     isDarkMode
       ? "border-zinc-700 bg-zinc-900/70"
       : "border-gray-200 bg-gray-50"
@@ -398,7 +398,7 @@ function IntegratedFlashExamSection(props: {
   const frontText = current.front ?? "";
 
   return (
-    <section className="flex min-h-[min(360px,50dvh)] w-full flex-col">
+    <section className="flex min-h-[min(22.5rem,50dvh)] w-full flex-col">
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         <p className="text-center text-xs opacity-80">
           {index + 1} / {items.length}
@@ -415,13 +415,13 @@ function IntegratedFlashExamSection(props: {
           <button
             type="button"
             onClick={toggleFlip}
-            className={`${examSingleFlashCardShellClass(isDarkMode)} w-full h-full min-h-[260px]`}
+            className={`${examSingleFlashCardShellClass(isDarkMode)} w-full h-full min-h-64`}
           >
             <QuizCardMetaBar
               current={index + 1}
               total={items.length}
             />
-            <p className="mb-2 text-[11px] opacity-65">클릭해서 앞·뒤 전환</p>
+            <p className="mb-2 text-xs opacity-65">클릭해서 앞·뒤 전환</p>
             {!isFlipped ? (
               <p className="text-base leading-7 whitespace-pre-wrap break-words">
                 {frontText || "(앞면 없음)"}
@@ -614,7 +614,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
         onClick={onClose}
       />
       <div
-        className={`group relative z-10 flex max-h-[min(88vh,900px)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border ${panelClass}`}
+        className={`group relative z-10 flex max-h-[min(88vh,56.25rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border ${panelClass}`}
         onClick={(e) => e.stopPropagation()}
       >
         <header
@@ -671,7 +671,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                   />
                 </div>
                 {oxViewMode === "single" ? (
-                  <div className="flex min-h-[min(320px,40dvh)] w-full flex-col gap-3">
+                  <div className="flex min-h-[min(20rem,40dvh)] w-full flex-col gap-3">
                     <div className="relative min-h-0 w-full flex-1 px-10">
                       <ExamFlashStyleSideArrows
                         show={oxStats.total > 1}
@@ -744,7 +744,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                             </div>
                             {oxGraded && choice && hasGradableOxMeta && correctStr ? (
                               <div className="mt-4 space-y-1 border-t border-dashed border-gray-300 pt-3 dark:border-zinc-600">
-                                <p className="text-[11px]">
+                                <p className="text-xs">
                                   <span className="font-semibold">결과:</span>{" "}
                                   <span
                                     className={
@@ -756,19 +756,19 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                                     {userCorrect ? "정답" : "오답"}
                                   </span>
                                 </p>
-                                <p className="text-[11px] opacity-90">
+                                <p className="text-xs opacity-90">
                                   <span className="font-semibold">정답:</span>{" "}
                                   {normalizeExamOxCorrectAnswer(correctStr) ?? correctStr}
                                 </p>
                                 {q.explanation ? (
-                                  <p className="text-[11px] whitespace-pre-line opacity-80">
+                                  <p className="text-xs whitespace-pre-line opacity-80">
                                     <span className="font-semibold">해설:</span> {q.explanation}
                                   </p>
                                 ) : null}
                               </div>
                             ) : null}
                             {oxGraded && choice && !hasGradableOxMeta ? (
-                              <p className="mt-3 text-[11px] opacity-70">
+                              <p className="mt-3 text-xs opacity-70">
                                 서버에 정답 필드가 없어 O/X 선택만 표시합니다.
                               </p>
                             ) : null}
@@ -783,7 +783,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                             type="button"
                             onClick={() => setOxGraded(true)}
                             disabled={!oxStats.allAnswered || oxGraded}
-                            className={`inline-flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
+                            className={`inline-flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
                               isDarkMode ? "bg-emerald-600 text-white" : "bg-emerald-600 text-white"
                             }`}
                           >
@@ -791,7 +791,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                           </button>
                           {oxGraded && hasGradableOxMeta ? (
                             <p
-                              className={`text-[11px] font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                              className={`text-xs font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
                             >
                               {oxStats.total}문제 중 {oxStats.correctCount}문제 정답
                             </p>
@@ -873,7 +873,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                           </div>
                           {oxGraded && choice && hasGradableOxMeta && correctStr ? (
                             <div className="mt-2 space-y-1 border-t border-dashed border-gray-300 pt-2 dark:border-zinc-600">
-                              <p className="text-[11px]">
+                              <p className="text-xs">
                                 <span className="font-semibold">결과:</span>{" "}
                                 <span
                                   className={
@@ -885,12 +885,12 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                                   {userCorrect ? "정답" : "오답"}
                                 </span>
                               </p>
-                              <p className="text-[11px] opacity-90">
+                              <p className="text-xs opacity-90">
                                 <span className="font-semibold">정답:</span>{" "}
                                 {normalizeExamOxCorrectAnswer(correctStr) ?? correctStr}
                               </p>
                               {q.explanation ? (
-                                <p className="text-[11px] whitespace-pre-line opacity-80">
+                                <p className="text-xs whitespace-pre-line opacity-80">
                                   <span className="font-semibold">해설:</span> {q.explanation}
                                 </p>
                               ) : null}
@@ -904,7 +904,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                         type="button"
                         onClick={() => setOxGraded(true)}
                         disabled={!oxStats.allAnswered || oxGraded}
-                        className={`inline-flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
+                        className={`inline-flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
                           isDarkMode ? "bg-emerald-600 text-white" : "bg-emerald-600 text-white"
                         }`}
                       >
@@ -912,12 +912,12 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                       </button>
                       {oxGraded && hasGradableOxMeta ? (
                         <p
-                          className={`text-[11px] font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                          className={`text-xs font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
                         >
                           {oxStats.total}문제 중 {oxStats.correctCount}문제 정답
                         </p>
                       ) : (
-                        <p className="text-[11px] opacity-70">
+                        <p className="text-xs opacity-70">
                           모든 문항에 답을 고른 뒤 채점하기를 누르세요.
                         </p>
                       )}
@@ -938,7 +938,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                   />
                 </div>
                 {mcqViewMode === "single" ? (
-                  <div className="flex min-h-[min(320px,40dvh)] w-full flex-col gap-3">
+                  <div className="flex min-h-[min(20rem,40dvh)] w-full flex-col gap-3">
                     <div className="relative min-h-0 w-full flex-1 px-10">
                       <ExamFlashStyleSideArrows
                         show={mcqStats.total > 1}
@@ -1006,7 +1006,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                             </ul>
                             {mcqGraded && sel && hasKey ? (
                               <div className="mt-4 space-y-1 border-t border-dashed border-gray-300 pt-3 dark:border-zinc-600">
-                                <p className="text-[11px]">
+                                <p className="text-xs">
                                   <span className="font-semibold">결과:</span>{" "}
                                   <span
                                     className={
@@ -1019,14 +1019,14 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                                   </span>
                                 </p>
                                 {q.explanation ? (
-                                  <p className="text-[11px] whitespace-pre-line opacity-80">
+                                  <p className="text-xs whitespace-pre-line opacity-80">
                                     <span className="font-semibold">해설:</span> {q.explanation}
                                   </p>
                                 ) : null}
                               </div>
                             ) : null}
                             {mcqGraded && !hasKey ? (
-                              <p className="mt-3 text-[11px] opacity-70">
+                              <p className="mt-3 text-xs opacity-70">
                                 정답 정보가 없어 선택 결과만 표시합니다.
                               </p>
                             ) : null}
@@ -1041,7 +1041,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                             type="button"
                             onClick={() => setMcqGraded(true)}
                             disabled={!mcqStats.allAnswered || mcqGraded}
-                            className={`inline-flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
+                            className={`inline-flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
                               isDarkMode ? "bg-emerald-600 text-white" : "bg-emerald-600 text-white"
                             }`}
                           >
@@ -1049,7 +1049,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                           </button>
                           {mcqGraded && mcqItems.some((q) => resolveMcqCorrectKey(q)) ? (
                             <p
-                              className={`text-[11px] font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                              className={`text-xs font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
                             >
                               {mcqStats.total}문제 중 {mcqStats.correctCount}문제 정답
                             </p>
@@ -1129,7 +1129,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                           </ul>
                           {mcqGraded && sel && hasKey ? (
                             <div className="mt-2 space-y-1 border-t border-dashed border-gray-300 pt-2 dark:border-zinc-600">
-                              <p className="text-[11px]">
+                              <p className="text-xs">
                                 <span className="font-semibold">결과:</span>{" "}
                                 <span
                                   className={
@@ -1142,7 +1142,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                                 </span>
                               </p>
                               {q.explanation ? (
-                                <p className="text-[11px] whitespace-pre-line opacity-80">
+                                <p className="text-xs whitespace-pre-line opacity-80">
                                   <span className="font-semibold">해설:</span> {q.explanation}
                                 </p>
                               ) : null}
@@ -1155,7 +1155,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                       type="button"
                       onClick={() => setMcqGraded(true)}
                       disabled={!mcqStats.allAnswered || mcqGraded}
-                      className={`inline-flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
+                      className={`inline-flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
                         isDarkMode ? "bg-emerald-600 text-white" : "bg-emerald-600 text-white"
                       }`}
                     >
@@ -1163,7 +1163,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                     </button>
                     {mcqGraded && mcqItems.some((q) => resolveMcqCorrectKey(q)) ? (
                       <p
-                        className={`text-[11px] font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                        className={`text-xs font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
                       >
                         {mcqStats.total}문제 중 {mcqStats.correctCount}문제 정답
                       </p>
@@ -1176,7 +1176,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
             {shortStats.total > 0 ? (
               <section className="space-y-3">
                 <h3 className="text-sm font-semibold opacity-90">주관식·단답</h3>
-                <div className="relative min-h-[min(260px,36dvh)] w-full px-10">
+                <div className="relative min-h-[min(16.25rem,36dvh)] w-full px-10">
                   <ExamFlashStyleSideArrows
                     show={shortStats.total > 1}
                     isDarkMode={isDarkMode}
@@ -1218,7 +1218,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                           placeholder="답안을 입력하세요."
                         />
                         {shortGraded && q.referenceAnswer?.trim() ? (
-                          <div className="mt-3 space-y-1 border-t border-dashed border-gray-300 pt-3 text-[11px] dark:border-zinc-600">
+                          <div className="mt-3 space-y-1 border-t border-dashed border-gray-300 pt-3 text-xs dark:border-zinc-600">
                             <p className="font-semibold opacity-90">참고 답안</p>
                             <p className="whitespace-pre-wrap opacity-90">{q.referenceAnswer}</p>
                             {q.explanation ? (
@@ -1229,7 +1229,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                           </div>
                         ) : null}
                         {shortGraded && !q.referenceAnswer?.trim() ? (
-                          <p className="mt-3 text-[11px] opacity-70">
+                          <p className="mt-3 text-xs opacity-70">
                             참고 답안이 없습니다. 스스로 검토해 보세요.
                           </p>
                         ) : null}
@@ -1242,7 +1242,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                     type="button"
                     onClick={() => setShortGraded(true)}
                     disabled={!shortStats.allAnswered || shortGraded}
-                    className={`inline-flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-[11px] font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
+                    className={`inline-flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
                       isDarkMode ? "bg-emerald-600 text-white" : "bg-emerald-600 text-white"
                     }`}
                   >

@@ -78,7 +78,7 @@ const markdownBodyComponents: Components = {
         {...props}
         src={src}
         alt={alt ?? ""}
-        className="mx-auto max-h-[min(70vh,720px)] w-auto max-w-full rounded-xl border border-black/10 shadow-sm dark:border-white/10"
+        className="mx-auto max-h-[min(70vh,45rem)] w-auto max-w-full rounded-xl border border-black/10 shadow-sm dark:border-white/10"
         loading="lazy"
         decoding="async"
       />

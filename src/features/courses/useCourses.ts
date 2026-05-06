@@ -1,10 +1,18 @@
 import { useState, useCallback } from 'react';
-import { courseApi, Course, CourseDetail } from '@/services/api';
+import { courseApi, Course, CourseDetail, PageResponse } from '@/services/api';
+
+type CourseSortOrder = 'recent' | 'name';
 
 export const useCourses = () => {
   const [courses, setCourses] = useState<Course[]>([]);
+  const [coursesPage, setCoursesPage] = useState<PageResponse<Course> | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [sortOrder, setSortOrder] = useState<CourseSortOrder>('recent');
+  const updateCourseListSortOrder = useCallback((nextSortOrder: CourseSortOrder) => {
+    setSortOrder(nextSortOrder);
+  }, []);
 
   // 모든 강의실 조회
   const fetchCourses = useCallback(async () => {
@@ -12,18 +20,23 @@ export const useCourses = () => {
       setIsLoading(true);
       setError(null);
       
-      const fetchedCourses = await courseApi.getAllCourses();
-      setCourses(fetchedCourses);
+      const fetchedCourses = await courseApi.getAllCourses({
+        page,
+        size: 20,
+      });
+      setCoursesPage(fetchedCourses);
+      setCourses(fetchedCourses.content ?? []);
     } catch (err) {
       // 에러 발생 시 조용히 처리 (빈 목록으로 표시)
       // 회원가입 직후나 서버 오류 시에도 에러 메시지를 표시하지 않음
+      setCoursesPage(null);
       setCourses([]);
       setError(null); // 에러 상태를 null로 유지하여 에러 메시지가 표시되지 않도록 함
       console.error('Failed to fetch courses:', err);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [page]);
 
   // 강의실 상세 조회
   const getCourseDetail = useCallback(async (courseId: number): Promise<CourseDetail | null> => {
@@ -82,27 +95,19 @@ export const useCourses = () => {
     }
   }, []);
 
-  // 수강 신청 (학생 전용)
-  const enrollCourse = useCallback(async (courseId: number): Promise<{ success: boolean; error?: string }> => {
-    try {
-      await courseApi.enrollCourse(courseId);
-      return { success: true };
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : '수강 신청에 실패했습니다.';
-      console.error('Failed to enroll course:', err);
-      return { success: false, error: errorMessage };
-    }
-  }, []);
-
   return {
     courses,
+    coursesPage,
+    courseListPage: page,
+    courseListSortOrder: sortOrder,
     isLoading,
     error,
     fetchCourses,
+    setCourseListPage: setPage,
+    setCourseListSortOrder: updateCourseListSortOrder,
     getCourseDetail,
     createCourse,
     updateCourse,
     deleteCourse,
-    enrollCourse,
   };
 };

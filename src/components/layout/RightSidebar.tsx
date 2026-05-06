@@ -138,8 +138,9 @@ interface RightSidebarProps {
     fileName: string,
     materialId?: number | null,
   ) => void;
-  /** true이면 width(px) 대신 부모 너비를 가득 채움(분할 레이아웃용) */
+  /** true이면 고정 너비 대신 부모 너비를 가득 채움(분할 레이아웃용) */
   fillContainer?: boolean;
+  /** 레이아웃용 너비(논리 픽셀 값; `1rem` = 16px 가정 시 `rem`으로 변환해 적용) */
   width?: number;
   lectureId?: number;
   courseId?: number;
@@ -941,7 +942,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const resetInputText = () => {
     setInputText("");
     if (textareaRef.current) {
-      textareaRef.current.style.height = '44px';
+      textareaRef.current.style.height = "2.75rem";
     }
   };
 
@@ -1190,7 +1191,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         fillContainer ? "w-full min-w-0" : "flex-shrink-0"
       }`}
       style={{
-        width: fillContainer ? "100%" : `${width}px`,
+        width: fillContainer ? "100%" : `${width / 16}rem`,
         minWidth: fillContainer ? 0 : undefined,
         backgroundColor: isDarkMode ? "#141414" : "#FFFFFF",
         color: isDarkMode ? "#FFFFFF" : "#141414",
@@ -1219,8 +1220,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         </div>
       )}
 
-      {/* 강의 학습 | 시험 만들기 탭 - 설정페이지 모바일 스타일 (항상) */}
-      {examProps && viewMode === "course-detail" && examProps.isTeacher && (
+      {/* 강의 학습 | 시험(교사만) | 통합학습 — PDF 분할 패널에서 교사·학생 공통 탭 노출 */}
+      {examProps && viewMode === "course-detail" && (
         <nav
           className="pl-3 shrink-0 h-10 min-h-10 max-h-10 flex items-center border-b box-border"
           style={{ borderColor: isDarkMode ? "#404040" : "#e5e7eb" }}
@@ -1233,7 +1234,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   setLearningTab("study");
                   examProps.onExamModeChange(false);
                 }}
-                className={`w-auto flex items-center gap-2 rounded font-semibold text-[16px] transition-colors ${
+                className={`w-auto flex items-center gap-2 rounded font-semibold text-base transition-colors ${
                   !examProps.examMode && learningTab === "study"
                     ? isDarkMode
                       ? "text-[#FFFFFF]"
@@ -1244,21 +1245,23 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 강의 학습
               </button>
             </li>
-            <li className="flex items-center">
-              <button
-                type="button"
-                onClick={() => examProps.onExamModeChange(true)}
-                className={`w-auto flex items-center gap-2 rounded font-semibold text-[16px] transition-colors ${
-                  examProps.examMode
-                    ? isDarkMode
-                      ? "text-[#FFFFFF]"
-                      : "text-[#141414]"
-                    : "text-[#adadad]"
-                }`}
-              >
-                시험
-              </button>
-            </li>
+            {examProps.isTeacher ? (
+              <li className="flex items-center">
+                <button
+                  type="button"
+                  onClick={() => examProps.onExamModeChange(true)}
+                  className={`w-auto flex items-center gap-2 rounded font-semibold text-base transition-colors ${
+                    examProps.examMode
+                      ? isDarkMode
+                        ? "text-[#FFFFFF]"
+                        : "text-[#141414]"
+                      : "text-[#adadad]"
+                  }`}
+                >
+                  시험
+                </button>
+              </li>
+            ) : null}
             <li className="flex items-center">
               <button
                 type="button"
@@ -1266,7 +1269,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   setLearningTab("integrated");
                   examProps.onExamModeChange(false);
                 }}
-                className={`w-auto flex items-center gap-2 rounded font-semibold text-[16px] transition-colors ${
+                className={`w-auto flex items-center gap-2 rounded font-semibold text-base transition-colors ${
                   !examProps.examMode && learningTab === "integrated"
                     ? isDarkMode
                       ? "text-[#FFFFFF]"
@@ -1292,7 +1295,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               <select
                 value={examProps.recoverSelectedId}
                 onChange={(e) => examProps.setRecoverSelectedId(e.target.value)}
-                className="text-xs px-2 py-1 rounded border flex-1 max-w-[180px]"
+                className="text-xs px-2 py-1 rounded border flex-1 max-w-[11.25rem]"
                 style={{
                   backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF",
                   borderColor: isDarkMode ? "#52525b" : "#d1d5db",
@@ -1312,7 +1315,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           <div className="flex-1 min-h-0 overflow-y-auto pl-3 py-3 flex flex-col gap-3">
             <div className="flex gap-2">
               <div className="flex-1 min-w-0">
-                <label className="block text-[13px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>시험 유형</label>
+                <label className="block text-sm font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>시험 유형</label>
                 <select value={examProps.examType} onChange={(e) => examProps.setExamType(e.target.value)} className="w-full px-2 py-1.5 text-sm rounded-2xl border" style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}>
                   <option value="FLASH_CARD">플래시카드</option>
                   <option value="OX_PROBLEM">OX 문제</option>
@@ -1321,7 +1324,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 </select>
               </div>
               <div className="flex-1 min-w-0">
-                <label className="block text-[13px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>문항 수</label>
+                <label className="block text-sm font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>문항 수</label>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -1359,7 +1362,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 />
               </div>
               <div className="flex-1 min-w-0">
-                <label className="block text-[13px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>난이도</label>
+                <label className="block text-sm font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>난이도</label>
                 <select value={examProps.profileProficiencyLevel} onChange={(e) => examProps.setProfileProficiencyLevel(e.target.value as "Beginner" | "Intermediate" | "Advanced")} className="w-full px-2 py-1.5 text-sm rounded-2xl border" style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}>
                   <option value="Beginner">초급</option>
                   <option value="Intermediate">중급</option>
@@ -1367,7 +1370,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 </select>
               </div>
               <div className="flex-1 min-w-0">
-                <label className="block text-[13px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>평가 중점</label>
+                <label className="block text-sm font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>평가 중점</label>
                 <select value={examProps.profileTargetDepth} onChange={(e) => examProps.setProfileTargetDepth(e.target.value as "Concept" | "Application" | "Derivation" | "Deep Understanding")} className="w-full px-2 py-1.5 text-sm rounded-2xl border" style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}>
                   <option value="Concept">개념 이해</option>
                   <option value="Application">응용</option>
@@ -1376,7 +1379,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 </select>
               </div>
               <div className="flex-1 min-w-0">
-                <label className="block text-[13px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>문제 스타일</label>
+                <label className="block text-sm font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>문제 스타일</label>
                 <select value={examProps.profileQuestionModality} onChange={(e) => examProps.setProfileQuestionModality(e.target.value as "Mathematical" | "Theoretical" | "Balance")} className="w-full px-2 py-1.5 text-sm rounded-2xl border" style={{ backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF", borderColor: isDarkMode ? "#52525b" : "#d1d5db", color: isDarkMode ? "#FFFFFF" : "#141414" }}>
                   <option value="Mathematical">수학적</option>
                   <option value="Theoretical">이론적</option>
@@ -1388,7 +1391,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               <div className="flex-1 min-w-0">
                 <div className="relative" ref={examNameInfoRef}>
                   <div className="flex items-center gap-1 mb-0.5 pl-2">
-                    <label className="text-[14px] font-medium" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>
+                    <label className="text-sm font-medium" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>
                       시험 이름 <span className="font-normal opacity-70">(선택)</span>
                     </label>
                     <button
@@ -1398,7 +1401,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                         e.stopPropagation();
                         setExamNameInfoOpen((prev) => !prev);
                       }}
-                      className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-[10px] border cursor-pointer ${
+                      className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-xs border cursor-pointer ${
                         isDarkMode
                           ? "border-zinc-500 text-zinc-300 hover:bg-zinc-700"
                           : "border-gray-400 text-gray-600 hover:bg-gray-100"
@@ -1411,7 +1414,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   </div>
                   {examNameInfoOpen && (
                     <div
-                      className={`absolute left-2 top-6 z-20 w-[320px] rounded-lg border px-2.5 py-2 text-[11px] leading-snug shadow-lg ${
+                      className={`absolute left-2 top-6 z-20 w-80 rounded-lg border px-2.5 py-2 text-xs leading-snug shadow-lg ${
                         isDarkMode
                           ? "bg-zinc-800 border-zinc-600 text-zinc-200"
                           : "bg-white border-gray-200 text-gray-700"
@@ -1433,7 +1436,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 />
               </div>
               <div className="flex-1 min-w-0">
-                <label className="block text-[14px] font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>주제</label>
+                <label className="block text-sm font-medium mb-0.5 pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>주제</label>
                 <textarea
                   rows={1}
                   value={localExamTopic}
@@ -1446,13 +1449,13 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             </div>
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between mb-0.5">
-                <span className="text-[14px] font-medium pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>시험목록</span>
+                <span className="text-sm font-medium pl-2" style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}>시험목록</span>
                 <div className="flex items-center gap-1">
                   {!examProps.examEditMode ? (
                     <button
                       type="button"
                       onClick={() => examProps.onExamEditModeChange?.(true)}
-                      className={`flex items-center justify-center w-[24px] h-[24px] rounded-full cursor-pointer transition-colors ${
+                      className={`flex items-center justify-center size-6 rounded-full cursor-pointer transition-colors ${
                         isDarkMode
                           ? "text-gray-400 hover:text-gray-200 hover:bg-zinc-700"
                           : "text-gray-500 hover:text-gray-700 hover:bg-zinc-200"
@@ -1475,7 +1478,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                           const exam = examProps.recoverExams.find((e) => e.id === ids[0]);
                           if (exam?.examSessionId) examProps.onExamClick?.(exam.examSessionId);
                         }}
-                        className={`flex items-center justify-center w-[24px] h-[24px] rounded-full cursor-pointer transition-colors ${
+                        className={`flex items-center justify-center size-6 rounded-full cursor-pointer transition-colors ${
                           isDarkMode
                             ? "text-gray-400 hover:text-gray-200 hover:bg-zinc-700"
                             : "text-gray-500 hover:text-gray-700 hover:bg-zinc-200"
@@ -1488,7 +1491,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                       <button
                         type="button"
                         onClick={examProps.onDeleteSelectedExams}
-                        className="flex items-center justify-center w-[24px] h-[24px] rounded-full cursor-pointer text-[#ff824d] hover:opacity-80"
+                        className="flex items-center justify-center size-6 rounded-full cursor-pointer text-[#ff824d] hover:opacity-80"
                         aria-label="삭제"
                         title="삭제"
                       >
@@ -1497,7 +1500,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                       <button
                         type="button"
                         onClick={() => examProps.onExamEditModeChange?.(false)}
-                        className={`flex items-center justify-center w-[24px] h-[24px] rounded-full cursor-pointer transition-colors ${
+                        className={`flex items-center justify-center size-6 rounded-full cursor-pointer transition-colors ${
                           isDarkMode
                             ? "bg-[#FFFFFF] text-[#141414] hover:opacity-90"
                             : "bg-[#141414] text-[#FFFFFF] hover:opacity-90"
@@ -1547,8 +1550,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     } ${
                       inBulkMode && checked
                         ? isDarkMode
-                          ? "shadow-[inset_0_0_0_2px_#FFFFFF]"
-                          : "shadow-[inset_0_0_0_2px_#141414]"
+                          ? "shadow-[inset_0_0_0_0.125rem_#FFFFFF]"
+                          : "shadow-[inset_0_0_0_0.125rem_#141414]"
                         : ""
                     }`}
                     style={{ color: isDarkMode ? "#FFFFFF" : "#141414", backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF" }}
@@ -1585,7 +1588,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             <button
               type="button"
               onClick={examProps.onRecoverSession}
-              className={`shrink-0 text-[14px] px-2 py-1.5 rounded-2xl border cursor-pointer ${isDarkMode ? "border-zinc-600 hover:bg-white/10" : "border-gray-300 hover:bg-black/5"}`}
+              className={`shrink-0 text-sm px-2 py-1.5 rounded-2xl border cursor-pointer ${isDarkMode ? "border-zinc-600 hover:bg-white/10" : "border-gray-300 hover:bg-black/5"}`}
               style={{ color: isDarkMode ? "#FFFFFF" : "#141414" }}
             >
               세션 복구
@@ -1629,13 +1632,13 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         {learningTab === "integrated" && showIntegratedBetaNotice ? (
           <div className="sticky top-0 z-20 flex justify-center pb-2 pointer-events-none">
             <div
-              className={`pointer-events-auto w-[min(100%,440px)] rounded-2xl border px-4 py-4 shadow-xl ${
+              className={`pointer-events-auto w-[min(100%,27.5rem)] rounded-2xl border px-4 py-4 shadow-xl ${
                 isDarkMode
                   ? "border-slate-500/60 bg-slate-700/95 text-white"
                   : "border-slate-300 bg-white text-[#141414]"
               }`}
             >
-              <p className="text-center text-[16px] leading-relaxed font-semibold whitespace-pre-line">
+              <p className="text-center text-base leading-relaxed font-semibold whitespace-pre-line">
                 맞춤형 학습과 시험 등을{"\n"}통합적으로 관리해주는 AI 에이전트입니다
               </p>
               <div className="mt-4 flex justify-center">
@@ -1692,7 +1695,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     : null;
 
             const bubbleShellClass = borderlessLearningChat
-              ? `w-full max-w-none min-w-0 overflow-hidden break-words px-0 py-2 text-[15px] leading-[1.65] border-0 shadow-none rounded-none bg-transparent ${
+              ? `w-full max-w-none min-w-0 overflow-hidden break-words px-0 py-2 text-base leading-[1.65] border-0 shadow-none rounded-none bg-transparent ${
                   message.isUser
                     ? isDarkMode
                       ? "text-right text-zinc-300"
@@ -1705,7 +1708,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                         ? "text-zinc-100"
                         : "text-gray-900"
                 }`
-              : `${bubbleWidth} min-w-0 overflow-hidden break-words px-3.5 py-2.5 ${commonStyles?.rounded ?? "rounded-lg"} text-[14px] leading-[1.65] border ${
+              : `${bubbleWidth} min-w-0 overflow-hidden break-words px-3.5 py-2.5 ${commonStyles?.rounded ?? "rounded-lg"} text-sm leading-[1.65] border ${
                   message.isUser
                     ? isDarkMode
                       ? "bg-emerald-500/90 text-white border-emerald-300/50"
@@ -1743,7 +1746,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               >
                 {message.roleBadge && (
                   <span
-                    className={`mb-1 block w-full text-[10px] font-semibold tracking-wide opacity-70 ${
+                    className={`mb-1 block w-full text-xs font-semibold tracking-wide opacity-70 ${
                       message.isUser ? "text-right" : "text-left"
                     }`}
                     style={{ color: isDarkMode ? "#a1a1aa" : "#6b7280" }}
@@ -1804,8 +1807,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                       <div
                         className={`max-w-none whitespace-pre-wrap break-words ${
                           borderlessLearningChat
-                            ? `text-[15px] leading-[1.65] ${isDarkMode ? "text-zinc-100" : "text-gray-900"}`
-                            : `text-[14px] leading-[1.7] ${isDarkMode ? "text-white/95" : "text-gray-900"}`
+                            ? `text-base leading-[1.65] ${isDarkMode ? "text-zinc-100" : "text-gray-900"}`
+                            : `text-sm leading-[1.7] ${isDarkMode ? "text-white/95" : "text-gray-900"}`
                         }`}
                       >
                         {message.markdown}
@@ -1892,7 +1895,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                                   isDarkMode
                                     ? "border-[#FFFFFF] bg-[#FFFFFF] text-[#141414] hover:opacity-90"
                                     : "border-[#141414] bg-[#141414] text-[#FFFFFF] hover:opacity-90"
-                                } inline-flex w-[110px] items-center justify-center gap-1.5`
+                                } inline-flex w-[6.875rem] items-center justify-center gap-1.5`
                               : btn.variant === "primary"
                               ? "border-sky-300/80 bg-sky-500 text-white hover:opacity-90"
                               : isDarkMode
@@ -1974,14 +1977,14 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
       {/* 채팅 입력창 */}
       <div
-        className={`shrink-0 w-full py-2 h-[55px] flex items-center ${
+        className={`shrink-0 w-full py-2 h-14 flex items-center ${
           borderlessLearningChat ? "px-4" : "px-3"
         }`}
         style={{ backgroundColor: isDarkMode ? "#141414" : "#FFFFFF" }}
       >
         {/* 통합된 입력 컨테이너 */}
         <div
-          className="flex items-center w-full rounded-lg border h-full min-h-[44px]"
+          className="flex items-center w-full rounded-lg border h-full min-h-11"
           style={{
             backgroundColor: isDarkMode ? "#27272a" : "#FFFFFF",
             borderColor: isDarkMode ? "#52525b" : "#d1d5db",
@@ -1997,7 +2000,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               // 높이 자동 조절
               if (textareaRef.current) {
                 textareaRef.current.style.height = 'auto';
-                textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px';
+                textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 120) / 16}rem`;
               }
             }}
             onKeyPress={handleKeyPress}
@@ -2021,12 +2024,12 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     ? (waitingForAnswer ? "AI 질문에 대한 답변을 입력하고 Enter" : "Enter로 다음 세그먼트 진행")
                     : "Enter를 눌러 학습을 시작하세요"
             }
-            className={`flex-1 min-h-[44px] py-2.5 px-3 text-sm resize-none bg-transparent border-0 focus:outline-none overflow-y-auto leading-6 ${
+            className={`flex-1 min-h-11 py-2.5 px-3 text-sm resize-none bg-transparent border-0 focus:outline-none overflow-y-auto leading-6 ${
               isDarkMode ? "placeholder-gray-500" : "placeholder-gray-400"
             }`}
             style={{
               color: isDarkMode ? "#FFFFFF" : "#141414",
-              maxHeight: "120px",
+              maxHeight: "7.5rem",
             }}
             rows={1}
           />

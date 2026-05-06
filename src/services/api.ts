@@ -1,3 +1,5 @@
+import { sanitizePostLoginNext } from "../utils/sanitizePostLoginNext";
+
 const BACKEND_URL = 'https://uouaitutor.duckdns.org';
 // 일부 TS 설정에서는 import.meta.env 타입 선언이 없어 오류가 나므로 any 캐스트로 우회한다.
 const META_ENV = (import.meta as any)?.env ?? {};
@@ -16,6 +18,22 @@ export interface TokenResponseDto {
   refreshToken: string;
 }
 
+export interface PageResponse<T> {
+  content: T[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+  first: boolean;
+  last: boolean;
+}
+
+export interface PageQueryParams {
+  page?: number;
+  size?: number;
+  sort?: string;
+}
+
 export interface User {
   userId: number;
   email: string;
@@ -31,11 +49,340 @@ export interface Course {
   title: string;
   teacherName: string;
   description?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CourseListQueryParams extends PageQueryParams {}
+
+export type StudentReportStatusFilter =
+  | 'all'
+  | 'excelling'
+  | 'on_track'
+  | 'needs_attention'
+  | 'insufficient_data';
+
+export interface StudentReportListQueryParams extends PageQueryParams {
+  q?: string;
+  status?: StudentReportStatusFilter;
+}
+
+export interface StudentReportListItem {
+  studentId: number;
+  userId: number;
+  name: string;
+  email?: string;
+  averageScorePercent?: number;
+  reportStatus: StudentReportStatusFilter | string;
+  latestActivityAt?: string;
+  courseProgressPercent?: number;
+}
+
+export interface StudentReportCompetency {
+  competencyId?: number;
+  competencyName: string;
+  scorePercent?: number;
+  level?: string;
+  feedback?: string;
+}
+
+export interface StudentReportDetailResponse {
+  studentId: number;
+  userId: number;
+  name: string;
+  email?: string;
+  reportStatus: StudentReportStatusFilter | string;
+  averageScorePercent?: number;
+  narrativeReport?: string;
+  competencies: StudentReportCompetency[];
+  latestActivityAt?: string;
+}
+
+function normalizeStudentReportListItem(
+  raw: Record<string, unknown>,
+): StudentReportListItem {
+  const n = (v: unknown): number | undefined => {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)))
+      return Number(v);
+    return undefined;
+  };
+
+  const studentObj =
+    raw.student != null && typeof raw.student === "object" && !Array.isArray(raw.student)
+      ? (raw.student as Record<string, unknown>)
+      : null;
+
+  const name =
+    String(
+      raw.name ??
+        raw.studentName ??
+        raw.student_name ??
+        studentObj?.name ??
+        studentObj?.studentName ??
+        studentObj?.student_name ??
+        "",
+    ) || "";
+
+  const email =
+    (raw.email ??
+      raw.studentEmail ??
+      raw.student_email ??
+      studentObj?.email ??
+      studentObj?.studentEmail ??
+      studentObj?.student_email) as unknown;
+
+  const reportStatus =
+    String(raw.reportStatus ?? raw.report_status ?? raw.status ?? "") || "all";
+
+  const activityObj =
+    raw.activitySummary != null &&
+    typeof raw.activitySummary === "object" &&
+    !Array.isArray(raw.activitySummary)
+      ? (raw.activitySummary as Record<string, unknown>)
+      : null;
+
+  const latestActivityAt =
+    (raw.latestActivityAt ??
+      raw.latest_activity_at ??
+      raw.latestActivity ??
+      raw.latest_activity ??
+      activityObj?.latestActivityAt ??
+      activityObj?.latest_activity_at) as unknown;
+
+  const scoreObj =
+    raw.scoreSummary != null &&
+    typeof raw.scoreSummary === "object" &&
+    !Array.isArray(raw.scoreSummary)
+      ? (raw.scoreSummary as Record<string, unknown>)
+      : null;
+
+  const avg =
+    raw.averageScorePercent ??
+    raw.average_score_percent ??
+    raw.averageScore ??
+    raw.average_score ??
+    scoreObj?.averageScorePercent ??
+    scoreObj?.average_score_percent ??
+    raw.averageScorePercent;
+
+  return {
+    studentId: Number(raw.studentId ?? raw.student_id ?? studentObj?.studentId ?? 0),
+    userId: Number(raw.userId ?? raw.user_id ?? studentObj?.userId ?? 0),
+    name,
+    email: typeof email === "string" && email.trim() !== "" ? email : undefined,
+    averageScorePercent: n(avg),
+    reportStatus,
+    latestActivityAt:
+      typeof latestActivityAt === "string" && latestActivityAt.trim() !== ""
+        ? latestActivityAt
+        : undefined,
+    courseProgressPercent: n(raw.courseProgressPercent ?? raw.course_progress_percent),
+  };
+}
+
+function normalizeStudentReportDetail(
+  raw: Record<string, unknown>,
+): StudentReportDetailResponse {
+  const studentObj =
+    raw.student != null && typeof raw.student === "object" && !Array.isArray(raw.student)
+      ? (raw.student as Record<string, unknown>)
+      : null;
+
+  const activityObj =
+    raw.activitySummary != null &&
+    typeof raw.activitySummary === "object" &&
+    !Array.isArray(raw.activitySummary)
+      ? (raw.activitySummary as Record<string, unknown>)
+      : null;
+
+  const scoreObj =
+    raw.scoreSummary != null &&
+    typeof raw.scoreSummary === "object" &&
+    !Array.isArray(raw.scoreSummary)
+      ? (raw.scoreSummary as Record<string, unknown>)
+      : null;
+
+  const name =
+    String(
+      raw.name ??
+        raw.studentName ??
+        raw.student_name ??
+        studentObj?.name ??
+        studentObj?.studentName ??
+        studentObj?.student_name ??
+        "",
+    ) || "";
+
+  const email =
+    (raw.email ??
+      raw.studentEmail ??
+      raw.student_email ??
+      studentObj?.email ??
+      studentObj?.studentEmail ??
+      studentObj?.student_email) as unknown;
+
+  const reportStatus =
+    String(raw.reportStatus ?? raw.report_status ?? raw.status ?? "") || "all";
+
+  const latestActivityAt =
+    (raw.latestActivityAt ??
+      raw.latest_activity_at ??
+      activityObj?.latestActivityAt ??
+      activityObj?.latest_activity_at) as unknown;
+
+  const avg =
+    raw.averageScorePercent ??
+    raw.average_score_percent ??
+    scoreObj?.averageScorePercent ??
+    scoreObj?.average_score_percent;
+
+  const n = (v: unknown): number | undefined => {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)))
+      return Number(v);
+    return undefined;
+  };
+
+  const competenciesRaw =
+    raw.competencies ??
+    raw.competencyList ??
+    raw.competency_list ??
+    raw.competency ??
+    null;
+
+  const competencies: StudentReportCompetency[] = Array.isArray(competenciesRaw)
+    ? competenciesRaw
+        .map((c) => {
+          if (c == null || typeof c !== "object" || Array.isArray(c)) return null;
+          const obj = c as Record<string, unknown>;
+          const competencyName = String(
+            obj.competencyName ??
+              obj.competency_name ??
+              obj.name ??
+              obj.key ??
+              obj.label ??
+              "",
+          ).trim();
+          if (!competencyName) return null;
+          return {
+            competencyId:
+              typeof obj.competencyId === "number" ? obj.competencyId : undefined,
+            competencyName,
+            scorePercent: n(obj.scorePercent ?? obj.score_percent ?? obj.score),
+            level:
+              typeof obj.level === "string" && obj.level.trim() !== ""
+                ? obj.level
+                : undefined,
+            feedback:
+              typeof obj.feedback === "string" && obj.feedback.trim() !== ""
+                ? obj.feedback
+                : undefined,
+          };
+        })
+        .filter((x): x is StudentReportCompetency => x != null)
+    : [];
+
+  return {
+    studentId: Number(raw.studentId ?? raw.student_id ?? studentObj?.studentId ?? 0),
+    userId: Number(raw.userId ?? raw.user_id ?? studentObj?.userId ?? 0),
+    name,
+    email: typeof email === "string" && email.trim() !== "" ? email : undefined,
+    reportStatus,
+    averageScorePercent: n(avg),
+    narrativeReport:
+      typeof raw.narrativeReport === "string" && raw.narrativeReport.trim() !== ""
+        ? raw.narrativeReport
+        : typeof raw.narrative_report === "string" &&
+            String(raw.narrative_report).trim() !== ""
+          ? String(raw.narrative_report)
+          : undefined,
+    competencies,
+    latestActivityAt:
+      typeof latestActivityAt === "string" && latestActivityAt.trim() !== ""
+        ? latestActivityAt
+        : undefined,
+  };
 }
 
 export interface CourseDetail extends Course {
   lectures?: Lecture[];
   invitationCode?: string;
+}
+
+export type CourseJoinRequestStatus =
+  | 'PENDING'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'BLOCKED';
+
+export interface CourseJoinRequestCreateResponse {
+  requestId: number;
+  courseId: number;
+  courseTitle: string;
+  status: CourseJoinRequestStatus;
+  requestedAt: string;
+}
+
+export interface CourseJoinRequestListItem {
+  requestId: number;
+  studentId: number;
+  studentName: string;
+  studentEmail: string;
+  status: CourseJoinRequestStatus;
+  requestedAt: string;
+}
+
+export interface CourseJoinRequestListQueryParams extends PageQueryParams {
+  status?: CourseJoinRequestStatus;
+}
+
+/** 교사용 가입 요청 페이지: BE가 requestedAt 외에 createdAt·snake_case만 줄 수 있어 통일 */
+function pickFirstNonEmptyString(
+  raw: Record<string, unknown>,
+  keys: string[],
+): string {
+  for (const k of keys) {
+    const v = raw[k];
+    if (v == null) continue;
+    if (typeof v === "number" && Number.isFinite(v)) {
+      const ms = v < 1e12 ? v * 1000 : v;
+      const d = new Date(ms);
+      if (!Number.isNaN(d.getTime())) return d.toISOString();
+      continue;
+    }
+    const s = String(v).trim();
+    if (s !== "") return s;
+  }
+  return "";
+}
+
+function normalizeCourseJoinRequestListItem(
+  raw: Record<string, unknown>,
+): CourseJoinRequestListItem {
+  return {
+    requestId: Number(raw.requestId ?? raw.request_id ?? 0),
+    studentId: Number(raw.studentId ?? raw.student_id ?? 0),
+    studentName: String(raw.studentName ?? raw.student_name ?? ""),
+    studentEmail: String(raw.studentEmail ?? raw.student_email ?? ""),
+    status: String(raw.status ?? "PENDING") as CourseJoinRequestStatus,
+    requestedAt: pickFirstNonEmptyString(raw, [
+      "requestedAt",
+      "requested_at",
+      "requestedDateTime",
+      "requested_date_time",
+      "createdAt",
+      "created_at",
+      "createdDate",
+      "created_date",
+      "appliedAt",
+      "applied_at",
+      "registeredAt",
+      "registered_at",
+      "requestedTime",
+      "requested_time",
+    ]),
+  };
 }
 
 export interface Lecture {
@@ -295,6 +642,157 @@ export const removeRefreshToken = (): void => {
   localStorage.removeItem('refreshToken');
 };
 
+export const clearStoredAuth = (): void => {
+  removeAuthToken();
+  removeRefreshToken();
+};
+
+const getCurrentAppPath = (): string => {
+  if (typeof window === 'undefined') return '/';
+  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+};
+
+export const redirectToLogin = (options?: {
+  preserveNext?: boolean;
+  replace?: boolean;
+}): void => {
+  if (typeof window === 'undefined') return;
+  const preserveNext = options?.preserveNext ?? true;
+  const replace = options?.replace ?? true;
+  const loginUrl = new URL('/login', window.location.origin);
+  if (preserveNext) {
+    const next = getCurrentAppPath();
+    if (next && next !== '/login' && next !== '/auth/callback') {
+      const safeNext = sanitizePostLoginNext(next);
+      if (safeNext !== '/') {
+        loginUrl.searchParams.set('next', safeNext);
+      }
+    }
+  }
+  if (replace) {
+    window.location.replace(loginUrl.toString());
+    return;
+  }
+  window.location.assign(loginUrl.toString());
+};
+
+const isDevHost = (): boolean =>
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+const resolveApiEndpointUrl = (endpoint: string): string => {
+  const shouldUseViteProxy = isDevHost() && endpoint.startsWith('/api');
+  return shouldUseViteProxy ? endpoint : (API_BASE_URL ? `${String(API_BASE_URL).replace(/\/$/, '')}${endpoint}` : endpoint);
+};
+
+const AUTH_REFRESH_ENDPOINT = '/api/auth/refresh';
+let refreshRequestPromise: Promise<TokenResponseDto> | null = null;
+
+const parseResponseBody = async (response: Response): Promise<{ json: Record<string, unknown> | null; text: string }> => {
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    try {
+      const json = (await response.json()) as unknown;
+      if (json != null && typeof json === 'object' && !Array.isArray(json)) {
+        return { json: json as Record<string, unknown>, text: JSON.stringify(json) };
+      }
+      return { json: null, text: JSON.stringify(json) };
+    } catch {
+      return { json: null, text: '' };
+    }
+  }
+
+  try {
+    const text = await response.text();
+    return { json: null, text };
+  } catch {
+    return { json: null, text: '' };
+  }
+};
+
+const invalidateSessionAndRedirect = (preserveNext: boolean): void => {
+  clearStoredAuth();
+  redirectToLogin({ preserveNext });
+};
+
+const SSE_RECONNECT_DELAYS_MS = [1000, 2000, 5000] as const;
+
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => window.setTimeout(resolve, ms));
+
+const isRecoverableTransportError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) return false;
+  if (error.name === 'AbortError') return false;
+  const message = error.message.toLowerCase();
+  return (
+    message.includes('fetch') ||
+    message.includes('network') ||
+    message.includes('networkerror') ||
+    message.includes('network request failed') ||
+    message.includes('stream')
+  );
+};
+
+const performTokenRefresh = async (options?: {
+  preserveNext?: boolean;
+}): Promise<TokenResponseDto> => {
+  if (refreshRequestPromise) return refreshRequestPromise;
+
+  const currentRefreshToken = getRefreshToken();
+  if (!currentRefreshToken) {
+    invalidateSessionAndRedirect(options?.preserveNext ?? true);
+    throw new Error('리프레시 토큰이 없습니다. 다시 로그인해주세요.');
+  }
+
+  refreshRequestPromise = (async () => {
+    const response = await fetch(resolveApiEndpointUrl(AUTH_REFRESH_ENDPOINT), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: currentRefreshToken }),
+      mode: 'cors',
+      credentials: 'omit',
+      redirect: 'manual',
+    });
+
+    const { json, text } = await parseResponseBody(response);
+    if (!response.ok) {
+      const code = typeof json?.code === 'string' ? json.code : '';
+      const message =
+        (typeof json?.message === 'string' && json.message) ||
+        (typeof json?.detail === 'string' && json.detail) ||
+        text ||
+        `토큰 갱신 실패 (${response.status})`;
+
+      if (
+        response.status === 401 ||
+        code === 'INVALID_TOKEN' ||
+        code === 'TOKEN_EXPIRED' ||
+        code === 'UNAUTHORIZED'
+      ) {
+        invalidateSessionAndRedirect(options?.preserveNext ?? true);
+      }
+      throw new Error(code ? `[${code}] ${message}` : message);
+    }
+
+    const parsed = (json ?? {}) as Partial<TokenResponseDto>;
+    if (!parsed.accessToken || !parsed.refreshToken) {
+      invalidateSessionAndRedirect(options?.preserveNext ?? true);
+      throw new Error('토큰 갱신 응답이 올바르지 않습니다.');
+    }
+
+    setAuthToken(parsed.accessToken);
+    setRefreshToken(parsed.refreshToken);
+    return {
+      accessToken: parsed.accessToken,
+      refreshToken: parsed.refreshToken,
+    };
+  })().finally(() => {
+    refreshRequestPromise = null;
+  });
+
+  return refreshRequestPromise;
+};
+
 // API 요청 헤더 생성
 const createHeaders = (includeAuth: boolean = true, isFormData: boolean = false): HeadersInit => {
   const headers: HeadersInit = {};
@@ -320,102 +818,111 @@ const apiRequest = async <T>(
   includeAuth: boolean = true
 ): Promise<T> => {
   const requestEndpoint = endpoint;
-  // 개발(localhost)에서는 Vite proxy(/api -> duckdns)를 활용해 CORS를 피한다.
-  // API_BASE_URL을 그대로 붙이면 브라우저가 cross-origin 요청을 하면서 CORS/네트워크 오류가 날 수 있음.
-  const isDevHost =
-    typeof window !== 'undefined' &&
-    (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-  const shouldUseViteProxy = isDevHost && endpoint.startsWith('/api');
-  const url = shouldUseViteProxy ? endpoint : (API_BASE_URL ? `${API_BASE_URL}${endpoint}` : endpoint);
+  const url = resolveApiEndpointUrl(endpoint);
   const isFormData = options.body instanceof FormData;
-  const config: RequestInit = {
-    ...options,
-    headers: {
-      ...createHeaders(includeAuth, isFormData),
-      ...options.headers,
-    },
-  };
+  const shouldHandleAuthFailure =
+    includeAuth &&
+    requestEndpoint !== AUTH_REFRESH_ENDPOINT &&
+    requestEndpoint !== '/api/auth/login' &&
+    requestEndpoint !== '/api/auth/signup' &&
+    requestEndpoint !== '/api/auth/logout';
 
   try {
-    // fetch HeadersInit는 union 타입이라 인덱싱이 어렵기 때문에, 여기서는 단순 객체로 다룬다.
-    const finalHeaders: Record<string, string> = {
-      ...(config.headers as Record<string, string>),
-    };
+    let retried = false;
+    while (true) {
+      const config: RequestInit = {
+        ...options,
+        headers: {
+          ...createHeaders(includeAuth, isFormData),
+          ...options.headers,
+        },
+      };
 
-    if (isFormData) {
-      delete finalHeaders['Content-Type'];
-      delete finalHeaders['content-type'];
-    }
+      const finalHeaders: Record<string, string> = {
+        ...(config.headers as Record<string, string>),
+      };
 
-    const hasAuthHeader = !!finalHeaders['Authorization'];
-    const token = getAuthToken();
-    
-    const finalConfig: RequestInit = {
-      ...config,
-      headers: finalHeaders,
-      mode: 'cors',
-      credentials: 'omit',
-    };
-
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        ...finalConfig,
-        redirect: 'manual',
-      });
-    } catch (fetchError) {
-      throw fetchError;
-    }
-    
-    // 리다이렉트 응답 처리
-    if (response.type === 'opaqueredirect' || response.status === 302 || response.status === 301 || response.status === 307 || response.status === 308) {
-      const location = response.headers.get('location');
-      
-      if (requestEndpoint.includes('/api/auth/login') || requestEndpoint.includes('/api/auth/signup')) {
-        // 로그인/회원가입 API는 리다이렉트를 반환하면 안 됨
-        // 백엔드 설정 문제: Security 필터가 인증이 필요 없는 엔드포인트까지 보호하고 있음
-        const errorMsg = `백엔드 설정 문제: 로그인/회원가입 API가 리다이렉트를 반환하고 있습니다.\n\n` +
-          `해결 방법 (백엔드):\n` +
-          `1. /api/auth/login, /api/auth/signup 엔드포인트를 Security 필터에서 제외\n` +
-          `2. permitAll() 설정 추가\n` +
-          `3. OPTIONS 요청(CORS preflight)에 대해 리다이렉트 대신 200 OK 반환\n\n` +
-          `현재 요청: ${requestEndpoint}`;
-        throw new Error(errorMsg);
+      if (isFormData) {
+        delete finalHeaders['Content-Type'];
+        delete finalHeaders['content-type'];
       }
-      
-      // opaqueredirect는 CORS preflight 요청에서 리다이렉트가 발생한 경우일 수 있음
-      if (response.type === 'opaqueredirect' && !location) {
-        console.warn('CORS preflight 요청에서 리다이렉트가 발생했습니다. 백엔드 CORS 설정을 확인해주세요.', {
-          endpoint: requestEndpoint,
-          hasToken: !!token,
-          hasAuthHeader,
-          responseType: response.type,
-          responseStatus: response.status,
-          url: response.url,
+
+      const hasAuthHeader = !!finalHeaders['Authorization'];
+      const token = getAuthToken();
+      const finalConfig: RequestInit = {
+        ...config,
+        headers: finalHeaders,
+        mode: 'cors',
+        credentials: 'omit',
+      };
+
+      let response: Response;
+      try {
+        response = await fetch(url, {
+          ...finalConfig,
+          redirect: 'manual',
         });
+      } catch (fetchError) {
+        throw fetchError;
+      }
+
+      // 리다이렉트 응답 처리
+      if (response.type === 'opaqueredirect' || response.status === 302 || response.status === 301 || response.status === 307 || response.status === 308) {
+        const location = response.headers.get('location');
         
-        if (token && hasAuthHeader) {
-          // 더 자세한 안내 메시지
-          const errorMsg = `백엔드 CORS 설정 문제로 인해 요청이 실패했습니다.\n\n` +
-            `해결 방법:\n` +
-            `1. 백엔드에서 OPTIONS 요청에 대해 리다이렉트 대신 200 OK를 반환하도록 설정\n` +
-            `2. CORS 설정에서 Authorization 헤더를 허용하도록 설정\n` +
-            `3. Access-Control-Allow-Headers에 "Authorization" 포함\n` +
-            `4. CORS 필터가 Security 필터보다 먼저 실행되도록 설정\n\n` +
+        if (requestEndpoint.includes('/api/auth/login') || requestEndpoint.includes('/api/auth/signup')) {
+          const errorMsg = `백엔드 설정 문제: 로그인/회원가입 API가 리다이렉트를 반환하고 있습니다.\n\n` +
+            `해결 방법 (백엔드):\n` +
+            `1. /api/auth/login, /api/auth/signup 엔드포인트를 Security 필터에서 제외\n` +
+            `2. permitAll() 설정 추가\n` +
+            `3. OPTIONS 요청(CORS preflight)에 대해 리다이렉트 대신 200 OK 반환\n\n` +
             `현재 요청: ${requestEndpoint}`;
           throw new Error(errorMsg);
-        } else {
-          throw new Error('로그인이 필요합니다. 로그인 페이지로 이동해주세요.');
         }
-      }
-      
-      // 인증이 필요한 API인 경우
-      if (location && location.includes('/oauth2/authorization/')) {
+        
+        if (response.type === 'opaqueredirect' && !location) {
+          console.warn('CORS preflight 요청에서 리다이렉트가 발생했습니다. 백엔드 CORS 설정을 확인해주세요.', {
+            endpoint: requestEndpoint,
+            hasToken: !!token,
+            hasAuthHeader,
+            responseType: response.type,
+            responseStatus: response.status,
+            url: response.url,
+          });
+          
+          if (token && hasAuthHeader) {
+            const errorMsg = `백엔드 CORS 설정 문제로 인해 요청이 실패했습니다.\n\n` +
+              `해결 방법:\n` +
+              `1. 백엔드에서 OPTIONS 요청에 대해 리다이렉트 대신 200 OK를 반환하도록 설정\n` +
+              `2. CORS 설정에서 Authorization 헤더를 허용하도록 설정\n` +
+              `3. Access-Control-Allow-Headers에 "Authorization" 포함\n` +
+              `4. CORS 필터가 Security 필터보다 먼저 실행되도록 설정\n\n` +
+              `현재 요청: ${requestEndpoint}`;
+            throw new Error(errorMsg);
+          } else {
+            throw new Error('로그인이 필요합니다. 로그인 페이지로 이동해주세요.');
+          }
+        }
+        
+        if (location && location.includes('/oauth2/authorization/')) {
+          if (!token || !hasAuthHeader) {
+            throw new Error('로그인이 필요합니다. 로그인 페이지로 이동해주세요.');
+          } else {
+            console.warn('인증 토큰이 헤더에 포함되었지만 백엔드가 인증을 요구합니다.', {
+              endpoint: requestEndpoint,
+              hasToken: !!token,
+              hasAuthHeader,
+              location,
+              responseType: response.type,
+              responseStatus: response.status,
+            });
+            throw new Error('백엔드 인증 오류가 발생했습니다. 토큰은 유지되며, 잠시 후 다시 시도하거나 브라우저를 새로고침해주세요.');
+          }
+        }
+        
         if (!token || !hasAuthHeader) {
           throw new Error('로그인이 필요합니다. 로그인 페이지로 이동해주세요.');
         } else {
-          // 토큰이 있고 헤더에도 포함되었지만 백엔드가 인식하지 못하는 경우
-          // 이는 백엔드 설정 문제일 수 있음
           console.warn('인증 토큰이 헤더에 포함되었지만 백엔드가 인증을 요구합니다.', {
             endpoint: requestEndpoint,
             hasToken: !!token,
@@ -428,104 +935,114 @@ const apiRequest = async <T>(
         }
       }
       
-      if (!token || !hasAuthHeader) {
-        throw new Error('로그인이 필요합니다. 로그인 페이지로 이동해주세요.');
-      } else {
-        // 토큰이 있고 헤더에도 포함되었지만 백엔드가 인식하지 못하는 경우
-        console.warn('인증 토큰이 헤더에 포함되었지만 백엔드가 인증을 요구합니다.', {
-          endpoint: requestEndpoint,
-          hasToken: !!token,
-          hasAuthHeader,
-          location,
-          responseType: response.type,
-          responseStatus: response.status,
-        });
-        throw new Error('백엔드 인증 오류가 발생했습니다. 토큰은 유지되며, 잠시 후 다시 시도하거나 브라우저를 새로고침해주세요.');
+      if (response.status === 0) {
+        throw new Error('네트워크 연결 실패');
       }
-    }
-    
-    if (response.status === 0) {
-      throw new Error('네트워크 연결 실패');
-    }
-    
-    // 201 Created 응답 처리 (회원가입 성공)
-    if (response.status === 201) {
+      
+      if (response.status === 201) {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await response.json();
+          return data;
+        } else {
+          const text = await response.text();
+          return text as T;
+        }
+      }
+      
+      if (!response.ok) {
+        let errorText = '';
+        let errorJson: any = null;
+        try {
+          const contentType = response.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            errorJson = await response.json();
+            errorText = JSON.stringify(errorJson, null, 2);
+          } else {
+            errorText = await response.text();
+          }
+        } catch (e) {
+          errorText = '응답 본문을 읽을 수 없습니다';
+        }
+
+        if (
+          response.status === 401 &&
+          shouldHandleAuthFailure &&
+          !retried &&
+          getRefreshToken()
+        ) {
+          retried = true;
+          await performTokenRefresh({ preserveNext: true });
+          continue;
+        }
+        
+        if (response.status === 401) {
+          const fallback =
+            errorJson?.message ||
+            errorJson?.title ||
+            errorText ||
+            "인증이 필요합니다. (응답 본문의 code를 백엔드에 전달해 주세요.)";
+          const obj =
+            errorJson != null && typeof errorJson === "object" && !Array.isArray(errorJson)
+              ? (errorJson as Record<string, unknown>)
+              : null;
+
+          if (shouldHandleAuthFailure) {
+            invalidateSessionAndRedirect(true);
+          }
+          throw new Error(formatSpring401ForDisplay(obj, String(fallback)));
+        }
+        
+        if (response.status === 409) {
+          const backendMessage = errorJson?.message || errorJson?.title || errorText || '이미 존재하는 이메일입니다.';
+          throw new Error(backendMessage);
+        }
+
+        if (response.status === 502 || response.status === 503 || response.status === 504) {
+          const baseUrl = API_BASE_URL || BACKEND_URL;
+          const isDevHost =
+            typeof window !== "undefined" &&
+            (window.location.hostname === "localhost" ||
+              window.location.hostname === "127.0.0.1");
+          const hint = isDevHost ? ` (백엔드: ${baseUrl})` : "";
+          throw new Error(
+            `서버가 일시적으로 응답하지 않습니다 (${response.status}). 잠시 후 다시 시도해 주세요.${hint}`,
+          );
+        }
+        
+        if (errorText.includes('ERR_NGROK') || errorText.includes('ngrok') || errorText.includes('<!DOCTYPE html>')) {
+          if (errorText.includes('ERR_NGROK_3200') || errorText.includes('is offline')) {
+            throw new Error(
+              'ngrok 터널이 오프라인 상태입니다. 터널이 종료되었거나 연결이 끊어진 것 같습니다.',
+            );
+          }
+          throw new Error('ngrok 관련 오류가 발생했습니다. 터널 상태를 확인해주세요.');
+        }
+
+        const backendMessage = errorJson?.message || errorJson?.title || errorText;
+        const detail =
+          typeof backendMessage === 'string'
+            ? backendMessage.trim()
+            : String(backendMessage ?? '').trim();
+        throw new Error(detail || `요청에 실패했습니다. (${response.status})`);
+      }
+
+      if (response.status === 204) {
+        return {} as T;
+      }
+
       const contentType = response.headers.get('content-type');
       if (contentType && contentType.includes('application/json')) {
-        const data = await response.json();
-        return data;
+        try {
+          const data = await response.json();
+          return data;
+        } catch {
+          return {} as T;
+        }
       } else {
         const text = await response.text();
         return text as T;
       }
-    }
-    
-    if (!response.ok) {
-      let errorText = '';
-      let errorJson: any = null;
-      try {
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          errorJson = await response.json();
-          errorText = JSON.stringify(errorJson, null, 2);
-        } else {
-          errorText = await response.text();
-        }
-      } catch (e) {
-        errorText = '응답 본문을 읽을 수 없습니다';
-      }
-      
-      // 401 Unauthorized — TOKEN_EXPIRED | INVALID_TOKEN | UNAUTHORIZED 등 code 확인
-      if (response.status === 401) {
-        const fallback =
-          errorJson?.message ||
-          errorJson?.title ||
-          errorText ||
-          "인증이 필요합니다. (응답 본문의 code를 백엔드에 전달해 주세요.)";
-        const obj =
-          errorJson != null && typeof errorJson === "object" && !Array.isArray(errorJson)
-            ? (errorJson as Record<string, unknown>)
-            : null;
-        throw new Error(formatSpring401ForDisplay(obj, String(fallback)));
-      }
-      
-      // 409 Conflict 처리 (이미 존재하는 이메일)
-      if (response.status === 409) {
-        const backendMessage = errorJson?.message || errorJson?.title || errorText || '이미 존재하는 이메일입니다.';
-        throw new Error(backendMessage);
-      }
-      
-      // ngrok HTML 에러 페이지 감지
-      if (errorText.includes('ERR_NGROK') || errorText.includes('ngrok') || errorText.includes('<!DOCTYPE html>')) {
-        if (errorText.includes('ERR_NGROK_3200') || errorText.includes('is offline')) {
-          throw new Error(`API Error (${response.status} ${response.statusText}): ngrok 터널이 오프라인 상태입니다. 터널이 종료되었거나 연결이 끊어진 것 같습니다.`);
-        } else {
-          throw new Error(`API Error (${response.status} ${response.statusText}): ngrok 관련 오류가 발생했습니다. 터널 상태를 확인해주세요.`);
-        }
-      }
-      
-      // 백엔드에서 보낸 에러 메시지가 있으면 사용
-      const backendMessage = errorJson?.message || errorJson?.title || errorText;
-      throw new Error(`API Error (${response.status} ${response.statusText}): ${backendMessage}`);
-    }
-
-    // 204 No Content 응답 처리
-    if (response.status === 204) {
-      return {} as T;
-    }
-
-    const contentType = response.headers.get('content-type');
-    if (contentType && contentType.includes('application/json')) {
-      try {
-        const data = await response.json();
-        return data;
-      } catch {
-        // 빈 본문 등으로 JSON 파싱 실패 시 (DELETE 200 등)
-        return {} as T;
-      }
-    } else {
-      const text = await response.text();
-      return text as T;
     }
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -629,26 +1146,25 @@ export const authApi = {
 
   // 토큰 갱신
   refresh: async (): Promise<TokenResponseDto> => {
-    const currentRefreshToken = getRefreshToken();
-    if (!currentRefreshToken) {
-      throw new Error('리프레시 토큰이 없습니다. 다시 로그인해주세요.');
-    }
+    return performTokenRefresh({ preserveNext: true });
+  },
+
+  exchangeOAuthCode: async (code: string): Promise<TokenResponseDto> => {
     const response = await apiRequest<TokenResponseDto>(
-      '/api/auth/refresh',
+      '/api/auth/oauth/exchange',
       {
         method: 'POST',
-        body: JSON.stringify({ refreshToken: currentRefreshToken }),
+        body: JSON.stringify({ code }),
       },
-      false
+      false,
     );
 
-    if (response.accessToken) {
-      setAuthToken(response.accessToken);
-    }
-    if (response.refreshToken) {
-      setRefreshToken(response.refreshToken);
+    if (!response.accessToken || !response.refreshToken) {
+      throw new Error('OAuth 로그인 응답이 올바르지 않습니다.');
     }
 
+    setAuthToken(response.accessToken);
+    setRefreshToken(response.refreshToken);
     return response;
   },
 
@@ -697,17 +1213,14 @@ export const userApi = {
   },
 
   // 이메일 중복 확인
-  checkEmail: async (email: string): Promise<boolean> => {
-    try {
-      await apiRequest<unknown>(`/api/users/check-email?email=${encodeURIComponent(email)}`, {
+  checkEmail: async (email: string): Promise<{ email: string; available: boolean; message: string }> => {
+    return apiRequest<{ email: string; available: boolean; message: string }>(
+      `/api/auth/check-email?email=${encodeURIComponent(email)}`,
+      {
         method: 'GET',
-      }, false);
-      // 200 응답이면 사용 가능하다고 간주
-      return true;
-    } catch (error) {
-      // 백엔드 에러 메시지를 그대로 던져서 상위에서 처리
-      throw error;
-    }
+      },
+      false,
+    );
   },
 
   // 회원 탈퇴
@@ -733,8 +1246,26 @@ export const courseApi = {
   },
 
   // 강의실 전체 조회
-  getAllCourses: async (): Promise<Course[]> => {
-    return apiRequest<Course[]>('/api/courses');
+  getAllCourses: async (params?: CourseListQueryParams): Promise<PageResponse<Course>> => {
+    const searchParams = new URLSearchParams();
+    searchParams.set('page', String(params?.page ?? 0));
+    searchParams.set('size', String(Math.min(params?.size ?? 20, 100)));
+    searchParams.set('sort', params?.sort ?? 'updatedAt,desc');
+    const qs = searchParams.toString();
+    const res = await apiRequest<unknown>(`/api/courses${qs ? `?${qs}` : ''}`);
+    if (Array.isArray(res)) {
+      const content = res as Course[];
+      return {
+        content,
+        page: 0,
+        size: content.length,
+        totalElements: content.length,
+        totalPages: 1,
+        first: true,
+        last: true,
+      };
+    }
+    return res as PageResponse<Course>;
   },
 
   // 강의실 상세 조회
@@ -760,18 +1291,91 @@ export const courseApi = {
     });
   },
 
-  // 수강 신청 (학생)
-  enrollCourse: async (courseId: number): Promise<string> => {
-    return apiRequest<string>(`/api/courses/${courseId}/enroll`, {
+  // 학생 가입 요청 생성 (승인 대기 모델)
+  requestJoinByInvitationCode: async (
+    invitationCode: string,
+  ): Promise<CourseJoinRequestCreateResponse> => {
+    return apiRequest<CourseJoinRequestCreateResponse>(`/api/courses/join-requests`, {
       method: 'POST',
+      body: JSON.stringify({ invitationCode }),
     });
   },
 
-  // 초대 코드로 수강 신청 (학생)
-  joinCourse: async (code: string): Promise<CourseDetail> => {
-    return apiRequest<CourseDetail>(`/api/courses/join?code=${code}`, {
-      method: 'POST',
-    });
+  // 교사 가입 요청 목록 조회
+  getCourseJoinRequests: async (
+    courseId: number,
+    params?: CourseJoinRequestListQueryParams,
+  ): Promise<PageResponse<CourseJoinRequestListItem>> => {
+    const searchParams = new URLSearchParams();
+    searchParams.set('status', params?.status ?? 'PENDING');
+    searchParams.set('page', String(params?.page ?? 0));
+    searchParams.set('size', String(Math.min(params?.size ?? 20, 100)));
+    searchParams.set('sort', params?.sort ?? 'createdAt,desc');
+    const res = await apiRequest<
+      PageResponse<Record<string, unknown>>
+    >(
+      `/api/courses/${encodeURIComponent(courseId)}/join-requests?${searchParams.toString()}`,
+    );
+    const content = Array.isArray(res.content)
+      ? res.content.map((item) =>
+          normalizeCourseJoinRequestListItem(item as Record<string, unknown>),
+        )
+      : [];
+    return { ...res, content };
+  },
+
+  approveJoinRequest: async (courseId: number, requestId: number): Promise<void> => {
+    await apiRequest<void>(
+      `/api/courses/${encodeURIComponent(courseId)}/join-requests/${encodeURIComponent(requestId)}/approve`,
+      { method: 'POST' },
+    );
+  },
+
+  rejectJoinRequest: async (courseId: number, requestId: number): Promise<void> => {
+    await apiRequest<void>(
+      `/api/courses/${encodeURIComponent(courseId)}/join-requests/${encodeURIComponent(requestId)}/reject`,
+      { method: 'POST' },
+    );
+  },
+
+  blockJoinRequest: async (courseId: number, requestId: number): Promise<void> => {
+    await apiRequest<void>(
+      `/api/courses/${encodeURIComponent(courseId)}/join-requests/${encodeURIComponent(requestId)}/block`,
+      { method: 'POST' },
+    );
+  },
+};
+
+export const studentReportApi = {
+  getStudentReports: async (
+    courseId: number,
+    params?: StudentReportListQueryParams,
+  ): Promise<PageResponse<StudentReportListItem>> => {
+    const searchParams = new URLSearchParams();
+    searchParams.set('page', String(params?.page ?? 0));
+    searchParams.set('size', String(Math.min(params?.size ?? 20, 100)));
+    searchParams.set('sort', params?.sort ?? 'name,asc');
+    if (params?.q) searchParams.set('q', params.q);
+    if (params?.status && params.status !== 'all') {
+      searchParams.set('status', params.status);
+    }
+    const res = await apiRequest<PageResponse<Record<string, unknown>>>(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/students?${searchParams.toString()}`,
+    );
+    const content = Array.isArray(res.content)
+      ? res.content.map((it) => normalizeStudentReportListItem(it))
+      : [];
+    return { ...(res as unknown as PageResponse<StudentReportListItem>), content };
+  },
+
+  getStudentReportDetail: async (
+    courseId: number,
+    studentId: number,
+  ): Promise<StudentReportDetailResponse> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/students/${encodeURIComponent(studentId)}`,
+    );
+    return normalizeStudentReportDetail(raw);
   },
 };
 
@@ -1479,24 +2083,25 @@ export const materialGenerationApi = {
     }
   ): (() => void) => {
     const endpoint = `/api/materials/generation/phase${phase}/stream?sessionId=${encodeURIComponent(sessionId)}`;
-    const isDevHost =
-      typeof window !== "undefined" &&
-      (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
-    const shouldUseViteProxy = isDevHost && endpoint.startsWith("/api");
-    const url = shouldUseViteProxy ? endpoint : (API_BASE_URL ? `${API_BASE_URL}${endpoint}` : endpoint);
-    const token = getAuthToken();
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-
     let cancelled = false;
     const abortController = new AbortController();
+    let completed = false;
 
-    (async () => {
+    const connect = async (attemptIndex: number): Promise<void> => {
+      const token = getAuthToken();
+      const headers: Record<string, string> = {};
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
       try {
-        const res = await fetch(url, { method: "GET", headers, mode: "cors", credentials: "omit", signal: abortController.signal });
+        const res = await fetch(resolveApiEndpointUrl(endpoint), {
+          method: "GET",
+          headers,
+          mode: "cors",
+          credentials: "omit",
+          signal: abortController.signal,
+        });
         if (!res.ok) {
-          callbacks.onError?.(new Error(`스트림 요청 실패: ${res.status}`));
-          return;
+          throw new Error(`스트림 요청 실패: ${res.status}`);
         }
         const contentType = (res.headers.get("Content-Type") || "").toLowerCase();
         const isSSE = contentType.includes("text/event-stream");
@@ -1505,14 +2110,34 @@ export const materialGenerationApi = {
             for await (const eventData of iterateSseDataPayloadsFromResponse(res, {
               signal: abortController.signal,
             })) {
-              if (cancelled) break;
+              if (cancelled) return;
               try {
                 const data = eventData ? (JSON.parse(eventData) as Record<string, unknown>) : {};
-                if (data.finalDocument != null || data.documentUrl != null) {
+                const type = String(data.type ?? data.event ?? "").toLowerCase();
+                if (type === "heartbeat") continue;
+                if (type === "timeout") {
+                  if (attemptIndex < SSE_RECONNECT_DELAYS_MS.length) {
+                    callbacks.onProgress?.({
+                      message: `연결 재시도 중... (${attemptIndex + 1}/${SSE_RECONNECT_DELAYS_MS.length})`,
+                    });
+                    await sleep(SSE_RECONNECT_DELAYS_MS[attemptIndex]);
+                    await connect(attemptIndex + 1);
+                    return;
+                  }
+                  callbacks.onError?.(new Error("스트림 재연결에 실패했습니다. 다시 시도해주세요."));
+                  return;
+                }
+                if (type === "error") {
+                  callbacks.onError?.(new Error(String(data.message ?? "스트림 오류")));
+                  return;
+                }
+                if (data.finalDocument != null || data.documentUrl != null || type === "done") {
+                  completed = true;
                   callbacks.onDone?.({
                     finalDocument: typeof data.finalDocument === "string" ? data.finalDocument : undefined,
                     documentUrl: typeof data.documentUrl === "string" ? data.documentUrl : undefined,
                   });
+                  return;
                 } else if (data.progressPercentage != null || data.message != null || data.currentPhase != null) {
                   callbacks.onProgress?.({
                     progressPercentage: typeof data.progressPercentage === "number" ? data.progressPercentage : undefined,
@@ -1527,9 +2152,24 @@ export const materialGenerationApi = {
               }
             }
           } catch (e) {
+            if (!cancelled && isRecoverableTransportError(e) && attemptIndex < SSE_RECONNECT_DELAYS_MS.length) {
+              callbacks.onProgress?.({
+                message: `연결 재시도 중... (${attemptIndex + 1}/${SSE_RECONNECT_DELAYS_MS.length})`,
+              });
+              await sleep(SSE_RECONNECT_DELAYS_MS[attemptIndex]);
+              await connect(attemptIndex + 1);
+              return;
+            }
             if (!cancelled && e instanceof Error && e.name !== "AbortError") {
               callbacks.onError?.(e);
             }
+          }
+          if (!completed && !cancelled && attemptIndex < SSE_RECONNECT_DELAYS_MS.length) {
+            callbacks.onProgress?.({
+              message: `연결 재시도 중... (${attemptIndex + 1}/${SSE_RECONNECT_DELAYS_MS.length})`,
+            });
+            await sleep(SSE_RECONNECT_DELAYS_MS[attemptIndex]);
+            await connect(attemptIndex + 1);
           }
           return;
         }
@@ -1550,9 +2190,19 @@ export const materialGenerationApi = {
         }
         if (buffer.trim()) callbacks.onContent?.(buffer);
       } catch (e) {
+        if (!cancelled && isRecoverableTransportError(e) && attemptIndex < SSE_RECONNECT_DELAYS_MS.length) {
+          callbacks.onProgress?.({
+            message: `연결 재시도 중... (${attemptIndex + 1}/${SSE_RECONNECT_DELAYS_MS.length})`,
+          });
+          await sleep(SSE_RECONNECT_DELAYS_MS[attemptIndex]);
+          await connect(attemptIndex + 1);
+          return;
+        }
         if (!cancelled && e instanceof Error && e.name !== "AbortError") callbacks.onError?.(e);
       }
-    })();
+    };
+
+    void connect(0);
 
     return () => {
       cancelled = true;
@@ -2032,126 +2682,147 @@ const postLearningEventAndCollect = async (
     type: eventBody.type,
     payload: eventBody.payload ?? {},
   });
+  for (let reconnectAttempt = 0; reconnectAttempt <= SSE_RECONNECT_DELAYS_MS.length; reconnectAttempt++) {
+    const fetchEvent = () =>
+      fetch(resolveBrowserApiUrl(endpoint), {
+        method: "POST",
+        headers,
+        body: JSON.stringify(requestBody),
+        mode: "cors",
+        credentials: "omit",
+        signal: streamCallbacks?.signal,
+      });
 
-  const fetchEvent = () =>
-    fetch(resolveBrowserApiUrl(endpoint), {
-      method: "POST",
-      headers,
-      body: JSON.stringify(requestBody),
-      mode: "cors",
-      credentials: "omit",
-      signal: streamCallbacks?.signal,
-    });
-
-  let res = await fetchEvent();
-
-  if (!res.ok && res.status === 401 && getRefreshToken()) {
     try {
-      await authApi.refresh();
-      const t2 = getAuthToken();
-      if (t2?.trim()) {
-        headers.Authorization = `Bearer ${t2.trim()}`;
-        res = await fetchEvent();
-      }
-    } catch {
-      /* 아래 동일 에러 처리 */
-    }
-  }
+      let res = await fetchEvent();
 
-  if (!res.ok) {
-    const text = await res.text();
-    const ep = parseSpringErrorJsonFromText(text);
-    const merged401 = ep ? unwrapSpringSessionJson(ep) : null;
-    const base = text || "학습 이벤트 요청 실패";
-    const line =
-      res.status === 401
-        ? formatSpring401ForDisplay(merged401 ?? ep, base)
-        : base;
-    throw new Error(`API Error (${res.status}): ${line}`);
-  }
-
-  const reader = res.body?.getReader();
-  if (!reader) return [];
-  const decoder = new TextDecoder();
-  const events: Record<string, unknown>[] = [];
-  let buffer = "";
-
-  while (true) {
-    if (streamCallbacks?.signal?.aborted) {
-      try {
-        await reader.cancel();
-      } catch {
-        /* ignore */
-      }
-      return events;
-    }
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line) continue;
-      const payload = line.startsWith("data:")
-        ? line.slice(5).trim()
-        : line;
-      const parsed = normalizeSseData(payload);
-      if (!parsed) continue;
-      const eventType = String(parsed.type ?? "");
-      if (eventType === "heartbeat") continue;
-      events.push(parsed);
-      if (eventType === "error") {
-        const errMsg =
-          pickFirstString(parsed, ["message", "error", "detail"]) ??
-          "스트림 오류";
-        streamCallbacks?.onError?.(errMsg, parsed);
-        return events;
-      }
-      if (eventType === "done" || toBool(parsed.final) === true) {
-        streamCallbacks?.onDone?.(parsed);
-        return events;
-      }
-      const deltaText = learningSseEventDeltaText(parsed);
-      if (deltaText && streamCallbacks) {
-        if (isLearningThoughtSseEvent(parsed)) {
-          streamCallbacks.onThoughtDelta?.(deltaText, parsed);
-        } else {
-          streamCallbacks.onAgentDelta?.(deltaText, parsed);
+      if (!res.ok && res.status === 401 && getRefreshToken()) {
+        try {
+          await authApi.refresh();
+          const t2 = getAuthToken();
+          if (t2?.trim()) {
+            headers.Authorization = `Bearer ${t2.trim()}`;
+            res = await fetchEvent();
+          }
+        } catch {
+          /* 아래 동일 에러 처리 */
         }
       }
-    }
-  }
 
-  const tail = buffer.trim();
-  if (tail.length > 0) {
-    const payload = tail.startsWith("data:") ? tail.slice(5).trim() : tail;
-    const parsed = normalizeSseData(payload);
-    if (parsed) {
-      events.push(parsed);
-      const t = String(parsed.type ?? "");
-      if (t === "error") {
-        const errMsg =
-          pickFirstString(parsed, ["message", "error", "detail"]) ??
-          "스트림 오류";
-        streamCallbacks?.onError?.(errMsg, parsed);
-      } else if (t === "done" || toBool(parsed.final) === true) {
-        streamCallbacks?.onDone?.(parsed);
-      } else if (t !== "heartbeat") {
-        const deltaText = learningSseEventDeltaText(parsed);
-        if (deltaText && streamCallbacks) {
-          if (isLearningThoughtSseEvent(parsed)) {
-            streamCallbacks.onThoughtDelta?.(deltaText, parsed);
-          } else {
-            streamCallbacks.onAgentDelta?.(deltaText, parsed);
+      if (!res.ok) {
+        const text = await res.text();
+        const ep = parseSpringErrorJsonFromText(text);
+        const merged401 = ep ? unwrapSpringSessionJson(ep) : null;
+        const base = text || "학습 이벤트 요청 실패";
+        const line =
+          res.status === 401
+            ? formatSpring401ForDisplay(merged401 ?? ep, base)
+            : base;
+        throw new Error(`API Error (${res.status}): ${line}`);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) return [];
+      const decoder = new TextDecoder();
+      const events: Record<string, unknown>[] = [];
+      let buffer = "";
+      let shouldReconnect = false;
+
+      while (true) {
+        if (streamCallbacks?.signal?.aborted) {
+          try {
+            await reader.cancel();
+          } catch {
+            /* ignore */
+          }
+          return events;
+        }
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const rawLine of lines) {
+          const line = rawLine.trim();
+          if (!line) continue;
+          const payload = line.startsWith("data:")
+            ? line.slice(5).trim()
+            : line;
+          const parsed = normalizeSseData(payload);
+          if (!parsed) continue;
+          const eventType = String(parsed.type ?? "");
+          if (eventType === "heartbeat") continue;
+          if (eventType === "timeout") {
+            shouldReconnect = true;
+            break;
+          }
+          events.push(parsed);
+          if (eventType === "error") {
+            const errMsg =
+              pickFirstString(parsed, ["message", "error", "detail"]) ??
+              "스트림 오류";
+            streamCallbacks?.onError?.(errMsg, parsed);
+            return events;
+          }
+          if (eventType === "done" || toBool(parsed.final) === true) {
+            streamCallbacks?.onDone?.(parsed);
+            return events;
+          }
+          const deltaText = learningSseEventDeltaText(parsed);
+          if (deltaText && streamCallbacks) {
+            if (isLearningThoughtSseEvent(parsed)) {
+              streamCallbacks.onThoughtDelta?.(deltaText, parsed);
+            } else {
+              streamCallbacks.onAgentDelta?.(deltaText, parsed);
+            }
           }
         }
+        if (shouldReconnect) break;
+      }
+
+      if (!shouldReconnect) {
+        const tail = buffer.trim();
+        if (tail.length > 0) {
+          const payload = tail.startsWith("data:") ? tail.slice(5).trim() : tail;
+          const parsed = normalizeSseData(payload);
+          if (parsed) {
+            events.push(parsed);
+            const t = String(parsed.type ?? "");
+            if (t === "error") {
+              const errMsg =
+                pickFirstString(parsed, ["message", "error", "detail"]) ??
+                "스트림 오류";
+              streamCallbacks?.onError?.(errMsg, parsed);
+            } else if (t === "done" || toBool(parsed.final) === true) {
+              streamCallbacks?.onDone?.(parsed);
+            } else if (t !== "heartbeat") {
+              const deltaText = learningSseEventDeltaText(parsed);
+              if (deltaText && streamCallbacks) {
+                if (isLearningThoughtSseEvent(parsed)) {
+                  streamCallbacks.onThoughtDelta?.(deltaText, parsed);
+                } else {
+                  streamCallbacks.onAgentDelta?.(deltaText, parsed);
+                }
+              }
+            }
+          }
+        }
+        return events;
+      }
+    } catch (error) {
+      if (!isRecoverableTransportError(error) || reconnectAttempt >= SSE_RECONNECT_DELAYS_MS.length) {
+        throw error;
       }
     }
+
+    if (reconnectAttempt >= SSE_RECONNECT_DELAYS_MS.length) {
+      throw new Error("스트림 재연결에 실패했습니다. 다시 시도해주세요.");
+    }
+    await sleep(SSE_RECONNECT_DELAYS_MS[reconnectAttempt]);
   }
 
-  return events;
+  throw new Error("스트림 재연결에 실패했습니다. 다시 시도해주세요.");
 };
 
 /** 연속 agent_delta 청크를 하나로 합쳐 스트림 표시와 매핑을 단순화 */
@@ -3713,59 +4384,75 @@ export const streamLectureAssistant = (
   body: LectureAssistantStreamRequestBody,
   callbacks: LectureAssistantStreamCallbacks,
 ): (() => void) => {
-  const isDevHost =
-    typeof window !== "undefined" &&
-    (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
   const path = `/api/lectures/${encodeURIComponent(lectureId)}/assistant/stream`;
-  const url =
-    isDevHost && path.startsWith("/api")
-      ? path
-      : `${String(API_BASE_URL).replace(/\/$/, "")}${path}`;
-  const token = getAuthToken();
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Accept: "text/event-stream",
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
   const ac = new AbortController();
   let cancelled = false;
 
   void (async () => {
     try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-        mode: "cors",
-        credentials: "omit",
-        signal: ac.signal,
-      });
-      if (!res.ok) {
-        const t = await res.text();
-        throw new Error(
-          `API Error (${res.status}): ${t || "강의 보조 스트림 요청 실패"}`,
-        );
-      }
-      for await (const payload of iterateSseDataPayloadsFromResponse(res, {
-        signal: ac.signal,
-      })) {
-        if (cancelled) return;
-        if (!payload) continue;
-        if (payload === "[DONE]") {
-          callbacks.onDone?.();
-          return;
-        }
-        let parsed: Record<string, unknown>;
+      for (let reconnectAttempt = 0; reconnectAttempt <= SSE_RECONNECT_DELAYS_MS.length; reconnectAttempt++) {
+        const token = getAuthToken();
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        };
+        if (token) headers.Authorization = `Bearer ${token}`;
+
         try {
-          parsed = JSON.parse(payload) as Record<string, unknown>;
-        } catch {
-          callbacks.onAnswerDelta?.(payload);
-          continue;
+          const res = await fetch(resolveApiEndpointUrl(path), {
+            method: "POST",
+            headers,
+            body: JSON.stringify(body),
+            mode: "cors",
+            credentials: "omit",
+            signal: ac.signal,
+          });
+          if (!res.ok) {
+            const t = await res.text();
+            throw new Error(
+              `API Error (${res.status}): ${t || "강의 보조 스트림 요청 실패"}`,
+            );
+          }
+          let shouldReconnect = false;
+          for await (const payload of iterateSseDataPayloadsFromResponse(res, {
+            signal: ac.signal,
+          })) {
+            if (cancelled) return;
+            if (!payload) continue;
+            if (payload === "[DONE]") {
+              callbacks.onDone?.();
+              return;
+            }
+            let parsed: Record<string, unknown>;
+            try {
+              parsed = JSON.parse(payload) as Record<string, unknown>;
+            } catch {
+              callbacks.onAnswerDelta?.(payload);
+              continue;
+            }
+            const type = String(parsed.type ?? parsed.event ?? "").toLowerCase();
+            if (type === "heartbeat") continue;
+            if (type === "timeout") {
+              shouldReconnect = true;
+              break;
+            }
+            const r = dispatchAssistantSsePayload(parsed, callbacks);
+            if (r === "done" || r === "error") return;
+          }
+          if (!shouldReconnect) {
+            if (!cancelled) callbacks.onDone?.();
+            return;
+          }
+        } catch (e) {
+          if (cancelled || (e instanceof Error && e.name === "AbortError")) return;
+          if (!isRecoverableTransportError(e) || reconnectAttempt >= SSE_RECONNECT_DELAYS_MS.length) {
+            callbacks.onError?.(e instanceof Error ? e : new Error(String(e)));
+            return;
+          }
         }
-        const r = dispatchAssistantSsePayload(parsed, callbacks);
-        if (r === "done" || r === "error") return;
+        await sleep(SSE_RECONNECT_DELAYS_MS[reconnectAttempt]);
       }
-      if (!cancelled) callbacks.onDone?.();
+      callbacks.onError?.(new Error("스트림 재연결에 실패했습니다. 다시 시도해주세요."));
     } catch (e) {
       if (cancelled || (e instanceof Error && e.name === "AbortError")) return;
       callbacks.onError?.(e instanceof Error ? e : new Error(String(e)));

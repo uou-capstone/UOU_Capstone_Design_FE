@@ -186,7 +186,7 @@ const UpdatesPage: React.FC = () => {
 
   return (
     <div className="h-full min-h-0 overflow-hidden">
-      <div className="mx-auto grid h-full w-full max-w-7xl grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+      <div className="mx-auto grid h-full w-full max-w-7xl grid-cols-1 gap-4 lg:grid-cols-[20rem_1fr]">
         <aside className={`rounded-2xl border p-4 ${cardClass} min-h-0`}>
           <div className="mb-4 flex flex-wrap gap-2">
             {(
@@ -281,7 +281,7 @@ const UpdatesPage: React.FC = () => {
                   <div className="flex h-full flex-col items-center justify-center">
                     <div>{d}</div>
                     {hasLogs ? (
-                      <div className="mt-0.5 text-[10px] opacity-90">{count}건</div>
+                      <div className="mt-0.5 text-xs opacity-90">{count}건</div>
                     ) : null}
                   </div>
                 </button>

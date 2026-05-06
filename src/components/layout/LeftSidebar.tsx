@@ -95,6 +95,22 @@ const LectureIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M12 4v16m8-8H4"
+    />
+  </svg>
+);
+
 const LeftSidebar: React.FC<LeftSidebarProps> = ({
   width = 200,
   expandedWidth = 200,
@@ -151,26 +167,26 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     transition: "transition-all duration-300",
     rounded: "rounded-lg",
     buttonBase:
-      "flex items-center rounded-lg text-sm transition-all duration-300 cursor-pointer min-h-[30px]",
+      "flex items-center rounded-lg text-sm transition-all duration-300 cursor-pointer min-h-8",
   };
 
-  const sidebarBgClass = isDarkMode ? "bg-[#141414]" : "bg-[#ffffff]";
-  const sidebarTextClass = isDarkMode ? "text-white" : "text-[#0D0D0D]";
-  const buttonDefaultTextClass = isDarkMode ? "text-white" : "text-[#0D0D0D]";
-  const buttonDefaultHoverClass = isDarkMode ? "hover:bg-zinc-700" : "hover:bg-zinc-200";
-  const selectedButtonClass = "bg-emerald-600 text-white";
-  const textSecondaryClass = isDarkMode ? "text-white" : "text-gray-700";
-  const textMutedClass = isDarkMode ? "text-white" : "text-gray-500";
-  const dividerClass = isDarkMode ? "border-white/10" : "border-gray-200";
-  const profileAvatarBgClass = isDarkMode ? "bg-white/10" : "bg-gray-200";
-  const profileAvatarTextClass = isDarkMode ? "text-white" : "text-gray-700";
-  const dropdownBgClass = isDarkMode ? "bg-zinc-900" : "bg-white";
-  const dropdownBorderClass = isDarkMode
-    ? "border-white/10"
-    : "border-gray-200";
-  const tooltipBgClass = isDarkMode ? "bg-gray-900" : "bg-white";
-  const tooltipTextClass = isDarkMode ? "text-white" : "text-gray-900";
-  const tooltipBorderClass = isDarkMode ? "" : "border border-gray-200";
+  // 프로필 메뉴(글래스)와 동일한 톤으로 사이드바 메뉴를 통일
+  // (profile-dropdown-glass: 항상 다크 글래스 스타일)
+  const sidebarBgClass = "profile-dropdown-glass";
+  const sidebarTextClass = "text-white";
+  const buttonDefaultTextClass = "text-white";
+  const buttonDefaultHoverClass = "hover:bg-white/10";
+  const selectedButtonClass = "bg-black/40 text-white";
+  const textSecondaryClass = "text-gray-200";
+  const textMutedClass = "text-gray-400";
+  const dividerClass = "border-white/10";
+  const profileAvatarBgClass = "bg-white/10";
+  const profileAvatarTextClass = "text-white";
+  const dropdownBgClass = "profile-dropdown-glass";
+  const dropdownBorderClass = "border-white/10";
+  const tooltipBgClass = "profile-dropdown-glass";
+  const tooltipTextClass = "text-white";
+  const tooltipBorderClass = "";
   const inputRadiusClass = "rounded-lg";
 
   const handleMenuSelect = useCallback(
@@ -321,14 +337,14 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
       <button
         type="button"
         onClick={() => handleMenuSelect(menu)}
-        className={`mx-[6px] ${commonStyles.buttonBase} relative group/button ${
+        className={`mx-1.5 ${commonStyles.buttonBase} relative group/button ${
           isSelected
             ? selectedButtonClass
             : `${buttonDefaultTextClass} ${buttonDefaultHoverClass}`
         } justify-start px-3 py-2`}
       >
-        <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
-          <MenuItemIcon type={menu} className="w-[20px] h-[20px]" />
+        <div className="size-5 flex items-center justify-center shrink-0 overflow-hidden">
+          <MenuItemIcon type={menu} className="size-5" />
         </div>
         <div className={`ml-3 flex items-center min-w-0 overflow-hidden whitespace-nowrap flex-1 transition-opacity duration-300 ${
           isCollapsed ? "opacity-0 w-0 ml-0" : "opacity-100"
@@ -347,7 +363,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
     const hasActions = isTeacher && !isCollapsed && (onEditLecture || onDeleteLecture);
 
     return (
-      <div key={lecture.lectureId} className="relative group/button mx-[6px]">
+      <div key={lecture.lectureId} className="relative group/button mx-1.5">
         <button
           type="button"
           onClick={() => onSelectLecture?.(lecture.lectureId)}
@@ -356,8 +372,8 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
           }`}
         >
           <div className="flex items-center min-w-0 flex-1">
-            <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
-              <LectureIcon className="w-[20px] h-[20px]" />
+            <div className="size-5 flex items-center justify-center shrink-0 overflow-hidden">
+              <LectureIcon className="size-5" />
             </div>
             <span className="ml-3 text-sm font-semibold truncate">{lecture.title}</span>
           </div>
@@ -518,6 +534,43 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
       {menus.map((menu) => (
         <MenuButton key={menu} menu={menu} label={menuLabels[menu]} />
       ))}
+      {(isTeacher || user?.role === "STUDENT") && (
+        <button
+          type="button"
+          onClick={() => {
+            if (isTeacher) {
+              window.dispatchEvent(new Event("open-course-modal"));
+            } else {
+              window.dispatchEvent(new Event("open-join-modal"));
+            }
+          }}
+          className={`mx-1.5 ${commonStyles.buttonBase} ${buttonDefaultTextClass} ${buttonDefaultHoverClass} justify-start px-3 py-2`}
+          aria-label={isTeacher ? "강의실 만들기" : "강의실 참여"}
+          title={
+            isTeacher
+              ? "강의실 만들기"
+              : "초대 코드로 강의실 참여"
+          }
+        >
+          <div className="size-5 flex items-center justify-center shrink-0 overflow-hidden">
+            <PlusIcon className="size-5" />
+          </div>
+          <div
+            className={`ml-3 flex items-center min-w-0 overflow-hidden whitespace-nowrap flex-1 transition-opacity duration-300 ${
+              isCollapsed ? "opacity-0 w-0 ml-0" : "opacity-100"
+            }`}
+          >
+            <span className="text-sm font-medium truncate">
+              {isTeacher ? "강의실 만들기" : "강의실 참여"}
+            </span>
+          </div>
+          {isCollapsed && (
+            <span className="sr-only">
+              {isTeacher ? "강의실 만들기" : "강의실 참여"}
+            </span>
+          )}
+        </button>
+      )}
     </div>
   );
 
@@ -534,10 +587,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
         {/* 상단 헤더 */}
         <div id="sidebar-header">
           <div className={isCollapsed ? "touch:px-1.5 px-0" : "touch:px-1.5"}>
-            <div className="h-[50px] flex items-center justify-between" style={{ overflow: "visible" }}>
+            <div className="h-12.5 flex items-center justify-between" style={{ overflow: "visible" }}>
               {isCollapsed ? (
                 <div 
-                  className="relative flex items-center justify-start mx-[6px]" 
+                  className="relative flex items-center justify-start mx-1.5" 
                   style={{ overflow: "visible" }}
                   onMouseEnter={() => setIsHomeHovered(true)}
                   onMouseLeave={() => setIsHomeHovered(false)}
@@ -547,13 +600,13 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                       aria-label="홈"
                       type="button"
                       onClick={handleHomeClick}
-                      className={`${commonStyles.buttonBase} relative group/button justify-start px-3 py-2 min-w-[44px] min-h-[36px] rounded-lg cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass} ${isHomeHovered ? 'opacity-0 pointer-events-none invisible' : 'opacity-100 pointer-events-auto visible'}`}
+                      className={`${commonStyles.buttonBase} relative group/button justify-start px-3 py-2 min-w-11 min-h-9 rounded-lg cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass} ${isHomeHovered ? 'opacity-0 pointer-events-none invisible' : 'opacity-100 pointer-events-auto visible'}`}
                       style={{ zIndex: isHomeHovered ? 0 : 10 }}
                     >
-                      <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
+                      <div className="size-5 flex items-center justify-center shrink-0 overflow-hidden">
                         <MenuItemIcon
                           type="lectures"
-                          className="w-[20px] h-[20px]"
+                          className="size-5"
                         />
                       </div>
                       <span className="sr-only">홈</span>
@@ -562,11 +615,11 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                       aria-label="사이드바 펼치기"
                       type="button"
                       onClick={onToggleCollapse}
-                      className={`absolute inset-0 ${commonStyles.buttonBase} group/button justify-start px-3 py-2 min-w-[44px] rounded-lg cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass} ${isHomeHovered ? 'opacity-100 pointer-events-auto visible' : 'opacity-0 pointer-events-none invisible'}`}
+                      className={`absolute inset-0 ${commonStyles.buttonBase} group/button justify-start px-3 py-2 min-w-11 rounded-lg cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass} ${isHomeHovered ? 'opacity-100 pointer-events-auto visible' : 'opacity-0 pointer-events-none invisible'}`}
                       style={{ zIndex: isHomeHovered ? 10 : 0 }}
                     >
-                      <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
-                        <SidebarToggleIcon className="w-[20px] h-[20px]" />
+                      <div className="size-5 flex items-center justify-center shrink-0 overflow-hidden">
+                        <SidebarToggleIcon className="size-5" />
                       </div>
                     </button>
                   </div>
@@ -577,12 +630,12 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     aria-label="홈"
                     type="button"
                     onClick={handleHomeClick}
-                    className={`ml-[6px] ${commonStyles.buttonBase} justify-start px-3 py-2 min-w-[44px] rounded-lg cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass}`}
+                    className={`ml-1.5 ${commonStyles.buttonBase} justify-start px-3 py-2 min-w-11 rounded-lg cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass}`}
                   >
-                    <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
+                    <div className="size-5 flex items-center justify-center shrink-0 overflow-hidden">
                       <MenuItemIcon
                         type="lectures"
-                        className="w-[20px] h-[20px]"
+                        className="size-5"
                       />
                     </div>
                     <span className="sr-only">홈</span>
@@ -591,10 +644,10 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     aria-label="사이드바 접기"
                     type="button"
                     onClick={onToggleCollapse}
-                    className={`mr-[6px] ${commonStyles.buttonBase} justify-start px-3 py-2 min-w-[44px] rounded-lg relative group/button cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass}`}
+                    className={`mr-1.5 ${commonStyles.buttonBase} justify-start px-3 py-2 min-w-11 rounded-lg relative group/button cursor-pointer ${buttonDefaultTextClass} ${buttonDefaultHoverClass}`}
                   >
-                    <div className="w-[20px] h-[20px] flex items-center justify-center shrink-0 overflow-hidden">
-                      <SidebarToggleIcon className="w-[20px] h-[20px]" />
+                    <div className="size-5 flex items-center justify-center shrink-0 overflow-hidden">
+                      <SidebarToggleIcon className="size-5" />
                     </div>
                   </button>
                 </>
@@ -619,7 +672,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
         {/* 프로필 영역 */}
         <div id="sidebar-profile" className="mt-auto relative" style={{ overflow: "visible" }}>
           <div className={`border-t ${dividerClass}`} />
-          <div className="mx-[6px] py-2">
+          <div className="mx-1.5 py-2">
             <div
               className={`group/profile relative w-full rounded-lg transition-colors`}
               ref={profileDropdownRef}
@@ -633,11 +686,11 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                   isProfileDropdownOpen
                     ? selectedButtonClass
                     : `${buttonDefaultTextClass} ${buttonDefaultHoverClass}`
-                } justify-start px-3 py-2 min-w-[44px] min-h-[36px]`}
+                } justify-start px-3 py-2 min-w-11 min-h-9`}
                 style={{ overflow: "visible" }}
               >
                 <div
-                  className={`w-[20px] h-[20px] rounded-full flex items-center justify-center text-xs font-semibold shrink-0 overflow-hidden ${profileAvatarBgClass} ${profileAvatarTextClass}`}
+                  className={`size-5 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 overflow-hidden ${profileAvatarBgClass} ${profileAvatarTextClass}`}
                 >
                   {user?.fullName?.charAt(0)?.toUpperCase() ?? "?"}
                 </div>
@@ -688,7 +741,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                       top: `${dropdownPosition.top}px`,
                       left: `${dropdownLeft}px`,
                       width: `${dropdownWidth}px`,
-                      transform: "translateY(calc(-100% - 10px))", // 드롭다운을 위로 이동 (10px margin)
+                      transform: "translateY(calc(-100% - 0.625rem))", // 드롭다운을 위로 이동
                       zIndex: 9999,
                     }}
                   >
@@ -705,7 +758,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                           className="theme-switch"
                           onClick={(e) => e.stopPropagation()}
                           style={
-                            { "--toggle-size": "8px" } as React.CSSProperties
+                            { "--toggle-size": "0.5rem" } as React.CSSProperties
                           }
                         >
                           <input
@@ -832,7 +885,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     <p className="text-xs font-semibold whitespace-nowrap">
                       {user?.fullName ?? "Guest"}
                     </p>
-                    <p className="text-[11px] opacity-70">
+                    <p className="text-xs opacity-70">
                       {user?.role === "TEACHER"
                         ? "선생님"
                         : user?.role === "STUDENT"
@@ -850,7 +903,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 className={`${commonStyles.rounded} px-3 py-1.5 shadow-lg ${tooltipBgClass} ${tooltipTextClass} ${tooltipBorderClass}`}
               >
                 <p className="text-xs font-semibold whitespace-nowrap">프로필</p>
-                <p className="text-[11px] opacity-70">로그아웃, 설정</p>
+                <p className="text-xs opacity-70">로그아웃, 설정</p>
               </div>
             </div>
           )}
