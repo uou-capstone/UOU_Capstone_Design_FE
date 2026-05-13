@@ -18,11 +18,15 @@ import {
   type Course,
   type CourseDetail,
   type PageResponse,
+  type MyCourseJoinRequestListItem,
+  type CourseJoinRequestStatus,
   type LectureResponseDto,
   type AssessmentSimpleDto,
   type StudentReportDetailResponse,
   type StudentReportListItem,
   type StudentReportStatusFilter,
+  type ClassroomReportResponse,
+  type StudentReportAiContextResponse,
   type ExamSessionDetailResponse,
   type ExamUserProfile,
   type CourseContentsResponse,
@@ -32,6 +36,14 @@ import {
 import { TeacherStudentManagementPanel } from "@/features/courses/TeacherStudentManagementPanel";
 import { CourseMaterialsMetaCard } from "@/features/courses/CourseMaterialsMetaCard";
 import RightSidebar, { type RightSidebarExamProps } from "./RightSidebar";
+
+function reportInsightPrimaryText(row: Record<string, unknown>): string {
+  for (const k of ["title", "headline", "label", "name", "summary", "text", "description"]) {
+    const v = row[k];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return "항목";
+}
 
 /** PDF 미리보기 분할 뷰: 학생은 시험 UI 없이 강의 학습·통합학습 탭만 쓸 때 사용하는 고정 스텁 */
 const STUDENT_PDF_SIDEBAR_EXAM_PROPS: RightSidebarExamProps = {
@@ -65,6 +77,7 @@ import UpdatesPage from "@/pages/dashboard/UpdatesPage";
 import PdfViewer, { type PdfViewerHandle } from "../common/PdfViewer";
 import {
   ChartBarIcon,
+  CheckIcon,
   CloseIcon,
   EditIcon,
   SparklesIcon,
@@ -100,6 +113,22 @@ type CenterItem = {
   /** 시험만: 출제 기준 AI 생성 문서 세션 ID */
   sourceGenerationSessionId?: number;
 };
+
+function formatIsoInstantForKo(iso: string | undefined): string {
+  if (iso == null || String(iso).trim() === "") return "—";
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return iso;
+  return new Date(t).toLocaleString("ko-KR");
+}
+
+function joinRequestStatusLabel(status: CourseJoinRequestStatus | string): string {
+  const s = String(status ?? "").toUpperCase();
+  if (s === "PENDING") return "대기";
+  if (s === "APPROVED") return "승인";
+  if (s === "REJECTED") return "거절";
+  if (s === "BLOCKED") return "차단";
+  return s || "—";
+}
 
 const MAX_COURSE_TITLE_LEN = 100;
 const MAX_COURSE_DESCRIPTION_LEN = 500;
@@ -1015,6 +1044,12 @@ const MainContent: React.FC<MainContentProps> = ({
   const [joinError, setJoinError] = React.useState<string | null>(null);
   const [joinSuccess, setJoinSuccess] = React.useState<string | null>(null);
   const [isJoining, setIsJoining] = React.useState(false);
+  const [myJoinRequestsOpen, setMyJoinRequestsOpen] = React.useState(false);
+  const [myJoinRequestsPage, setMyJoinRequestsPage] = React.useState(0);
+  const [myJoinRequestsTotalPages, setMyJoinRequestsTotalPages] = React.useState(1);
+  const [myJoinRequestsLoading, setMyJoinRequestsLoading] = React.useState(false);
+  const [myJoinRequestsError, setMyJoinRequestsError] = React.useState<string | null>(null);
+  const [myJoinRequests, setMyJoinRequests] = React.useState<MyCourseJoinRequestListItem[]>([]);
   const [previewFileUrl, setPreviewFileUrl] = React.useState<string | null>(
     null,
   );
@@ -1209,6 +1244,28 @@ const MainContent: React.FC<MainContentProps> = ({
     React.useState(false);
   const [studentReportDetailError, setStudentReportDetailError] =
     React.useState<string | null>(null);
+  const [studentReportModalTab, setStudentReportModalTab] = React.useState<
+    "students" | "classroom"
+  >("students");
+  const [classroomReport, setClassroomReport] = React.useState<
+    ClassroomReportResponse | null | undefined
+  >(undefined);
+  const [classroomReportLoading, setClassroomReportLoading] = React.useState(false);
+  const [classroomReportError, setClassroomReportError] = React.useState<string | null>(null);
+  const [classroomAnalyzeSyncLoading, setClassroomAnalyzeSyncLoading] =
+    React.useState(false);
+  const [classroomAnalyzeStreaming, setClassroomAnalyzeStreaming] = React.useState(false);
+  const [classroomStreamBuffer, setClassroomStreamBuffer] = React.useState("");
+  const [studentAiContext, setStudentAiContext] =
+    React.useState<StudentReportAiContextResponse | null>(null);
+  const [studentAiContextLoading, setStudentAiContextLoading] = React.useState(false);
+  const [studentAiContextError, setStudentAiContextError] = React.useState<string | null>(null);
+  const [reportChatMessages, setReportChatMessages] = React.useState<
+    { id: string; role: "user" | "assistant"; text: string }[]
+  >([]);
+  const [reportChatInput, setReportChatInput] = React.useState("");
+  const [reportChatSending, setReportChatSending] = React.useState(false);
+  const reportChatAbortRef = React.useRef<AbortController | null>(null);
 
   React.useLayoutEffect(() => {
     const isResourceDocPreview =
@@ -1274,6 +1331,7 @@ const MainContent: React.FC<MainContentProps> = ({
   }, [courses, courseListSortOrder]);
   const loadStudentReportList = React.useCallback(async () => {
     if (!studentReportModalOpen || courseDetail?.courseId == null) return;
+    if (studentReportModalTab !== "students") return;
     setStudentReportListLoading(true);
     setStudentReportListError(null);
     try {
@@ -1310,6 +1368,7 @@ const MainContent: React.FC<MainContentProps> = ({
     studentReportPage,
     studentReportQuery,
     studentReportStatus,
+    studentReportModalTab,
   ]);
 
   React.useEffect(() => {
@@ -1317,9 +1376,16 @@ const MainContent: React.FC<MainContentProps> = ({
   }, [loadStudentReportList]);
 
   React.useEffect(() => {
-    if (!studentReportModalOpen || courseDetail?.courseId == null || selectedStudentReportId == null) {
+    if (
+      !studentReportModalOpen ||
+      courseDetail?.courseId == null ||
+      selectedStudentReportId == null
+    ) {
       setStudentReportDetail(null);
       setStudentReportDetailError(null);
+      return;
+    }
+    if (studentReportModalTab !== "students") {
       return;
     }
 
@@ -1350,7 +1416,98 @@ const MainContent: React.FC<MainContentProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [courseDetail?.courseId, selectedStudentReportId, studentReportModalOpen]);
+  }, [
+    courseDetail?.courseId,
+    selectedStudentReportId,
+    studentReportModalOpen,
+    studentReportModalTab,
+  ]);
+
+  React.useEffect(() => {
+    if (!studentReportModalOpen || courseDetail?.courseId == null) return;
+    if (studentReportModalTab !== "classroom") return;
+    let cancelled = false;
+    setClassroomReportLoading(true);
+    setClassroomReportError(null);
+    void studentReportApi
+      .getClassroomReport(courseDetail.courseId)
+      .then((r) => {
+        if (!cancelled) setClassroomReport(r);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setClassroomReportError(e instanceof Error ? e.message : "강의실 리포트를 불러오지 못했습니다.");
+          setClassroomReport(undefined);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setClassroomReportLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [studentReportModalOpen, courseDetail?.courseId, studentReportModalTab]);
+
+  React.useEffect(() => {
+    if (!studentReportModalOpen || courseDetail?.courseId == null) return;
+    if (studentReportModalTab !== "students" || selectedStudentReportId == null) {
+      setStudentAiContext(null);
+      setStudentAiContextError(null);
+      setStudentAiContextLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setStudentAiContextLoading(true);
+    setStudentAiContextError(null);
+    void studentReportApi
+      .getStudentAiContext(courseDetail.courseId, selectedStudentReportId)
+      .then((ctx) => {
+        if (!cancelled) setStudentAiContext(ctx);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setStudentAiContext(null);
+          setStudentAiContextError(
+            e instanceof Error ? e.message : "AI 분석용 컨텍스트를 불러오지 못했습니다.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setStudentAiContextLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    studentReportModalOpen,
+    courseDetail?.courseId,
+    studentReportModalTab,
+    selectedStudentReportId,
+  ]);
+
+  React.useEffect(() => {
+    setReportChatMessages([]);
+    setReportChatInput("");
+    reportChatAbortRef.current?.abort();
+    reportChatAbortRef.current = null;
+  }, [selectedStudentReportId]);
+
+  React.useEffect(() => {
+    if (studentReportModalOpen) return;
+    setStudentReportModalTab("students");
+    setClassroomReport(undefined);
+    setClassroomReportError(null);
+    setClassroomStreamBuffer("");
+    setClassroomAnalyzeStreaming(false);
+    setClassroomAnalyzeSyncLoading(false);
+    setStudentAiContext(null);
+    setStudentAiContextError(null);
+    setReportChatMessages([]);
+    setReportChatInput("");
+    reportChatAbortRef.current?.abort();
+    reportChatAbortRef.current = null;
+  }, [studentReportModalOpen]);
+
   const [examRecoverOpen, setExamRecoverOpen] = React.useState(false);
   const [examRecoverSelectedId, setExamRecoverSelectedId] = React.useState("");
   const [examEditMode, setExamEditMode] = React.useState(false);
@@ -3946,6 +4103,10 @@ const MainContent: React.FC<MainContentProps> = ({
     try {
       await courseApi.requestJoinByInvitationCode(trimmedCode);
       setJoinSuccess("요청이 전송되었습니다. 교사 승인 후 입장됩니다.");
+      // 성공 시 내 신청 목록도 즉시 갱신
+      if (myJoinRequestsOpen) {
+        setMyJoinRequestsPage(0);
+      }
     } catch (error) {
       const raw =
         error instanceof Error ? error.message : "가입 요청 전송에 실패했습니다.";
@@ -3955,6 +4116,34 @@ const MainContent: React.FC<MainContentProps> = ({
       setIsJoining(false);
     }
   };
+
+  const loadMyJoinRequests = React.useCallback(async () => {
+    if (!isStudent || !isJoinModalOpen || !myJoinRequestsOpen) return;
+    setMyJoinRequestsLoading(true);
+    setMyJoinRequestsError(null);
+    try {
+      const res = await courseApi.getMyCourseJoinRequests({
+        page: myJoinRequestsPage,
+        size: 10,
+        sort: "createdAt,desc",
+      });
+      const content = Array.isArray(res.content) ? res.content : [];
+      setMyJoinRequests(content);
+      setMyJoinRequestsTotalPages(Math.max(res.totalPages ?? 1, 1));
+    } catch (e) {
+      setMyJoinRequestsError(
+        e instanceof Error ? e.message : "내 가입 신청 목록을 불러오지 못했습니다.",
+      );
+      setMyJoinRequests([]);
+      setMyJoinRequestsTotalPages(1);
+    } finally {
+      setMyJoinRequestsLoading(false);
+    }
+  }, [isStudent, isJoinModalOpen, myJoinRequestsOpen, myJoinRequestsPage]);
+
+  React.useEffect(() => {
+    void loadMyJoinRequests();
+  }, [loadMyJoinRequests]);
 
   const handleAddLectureSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -4121,11 +4310,72 @@ const MainContent: React.FC<MainContentProps> = ({
               : "카드에서 강의실을 수정하거나 삭제합니다"
           }
           onClick={() => setCourseListEditMode((v) => !v)}
-          className={`flex h-9 w-full items-center justify-center rounded-full text-xs font-semibold cursor-pointer transition-colors ${courseListEditToggleClasses}`}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full cursor-pointer transition-colors ${courseListEditToggleClasses}`}
         >
-          {courseListEditMode ? "편집 완료" : "강의실 편집"}
+          <span className="sr-only">
+            {courseListEditMode ? "편집 완료" : "강의실 편집"}
+          </span>
+          {courseListEditMode ? (
+            <CheckIcon className="h-3.5 w-3.5" />
+          ) : (
+            <EditIcon className="h-3.5 w-3.5" />
+          )}
         </button>
       );
+
+    const renderCourseListSortButton = () => (
+      <button
+        type="button"
+        onClick={() => {
+          const next = courseListSortOrder === "recent" ? "name" : "recent";
+          onCourseListSortOrderChange?.(next);
+        }}
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
+          isDarkMode
+            ? "bg-white/10 text-gray-200 hover:bg-white/15 hover:text-white"
+            : "bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-900"
+        }`}
+        aria-label={
+          courseListSortOrder === "recent" ? "이름순으로 정렬" : "최신순으로 정렬"
+        }
+        title={
+          courseListSortOrder === "recent" ? "이름순으로 정렬" : "최신순으로 정렬"
+        }
+      >
+        {courseListSortOrder === "recent" ? (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-3.5 w-3.5"
+            aria-hidden="true"
+          >
+            <path d="M4 6h9" />
+            <path d="M4 10h7" />
+            <path d="M4 14h5" />
+            <path d="M17 6v12" />
+            <path d="M14 15l3 3 3-3" />
+          </svg>
+        ) : (
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-3.5 w-3.5"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+        )}
+      </button>
+    );
 
     return (
       <div className="flex flex-col gap-1.5 h-full">
@@ -4166,7 +4416,10 @@ const MainContent: React.FC<MainContentProps> = ({
                   </section>
                 )}
                 {isTeacher ? (
-                  <section>{renderCourseListEditToggleButton()}</section>
+                  <section className="flex items-center justify-end gap-2">
+                    {renderCourseListEditToggleButton()}
+                    {renderCourseListSortButton()}
+                  </section>
                 ) : null}
                 {isStudent ? (
                   <section>
@@ -4182,65 +4435,12 @@ const MainContent: React.FC<MainContentProps> = ({
                   </section>
                 ) : null}
                 <section className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex-1" />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next =
-                          courseListSortOrder === "recent" ? "name" : "recent";
-                        onCourseListSortOrderChange?.(next);
-                      }}
-                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
-                        isDarkMode
-                          ? "bg-white/10 text-gray-200 hover:bg-white/15 hover:text-white"
-                          : "bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-900"
-                      }`}
-                      aria-label={
-                        courseListSortOrder === "recent"
-                          ? "이름순으로 정렬"
-                          : "최신순으로 정렬"
-                      }
-                      title={
-                        courseListSortOrder === "recent"
-                          ? "이름순으로 정렬"
-                          : "최신순으로 정렬"
-                      }
-                    >
-                      {courseListSortOrder === "recent" ? (
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="h-3.5 w-3.5"
-                          aria-hidden="true"
-                        >
-                          <path d="M4 6h9" />
-                          <path d="M4 10h7" />
-                          <path d="M4 14h5" />
-                          <path d="M17 6v12" />
-                          <path d="M14 15l3 3 3-3" />
-                        </svg>
-                      ) : (
-                        <svg
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          className="h-3.5 w-3.5"
-                          aria-hidden="true"
-                        >
-                          <circle cx="12" cy="12" r="9" />
-                          <path d="M12 7v5l3 2" />
-                        </svg>
-                      )}
-                    </button>
-                  </div>
+                  {!isTeacher ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex-1" />
+                      {renderCourseListSortButton()}
+                    </div>
+                  ) : null}
                   {coursesPage && coursesPage.totalPages > 1 && (
                     <div className="flex items-center gap-2 pt-1">
                       <button
@@ -4289,8 +4489,9 @@ const MainContent: React.FC<MainContentProps> = ({
               }`}
             >
               {isTeacher ? (
-                <div className="mb-3 md:hidden">
+                <div className="mb-3 md:hidden flex items-center justify-end gap-2">
                   {renderCourseListEditToggleButton()}
+                  {renderCourseListSortButton()}
                 </div>
               ) : isStudent ? (
                 <div className="mb-3 md:hidden">
@@ -4314,7 +4515,7 @@ const MainContent: React.FC<MainContentProps> = ({
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p
-                      className={`text-[20px] font-semibold truncate ${
+                      className={`text-xl font-semibold truncate xl:text-2xl 2xl:text-3xl ${
                         isDarkMode ? "text-gray-100" : "text-gray-900"
                       }`}
                     >
@@ -4322,7 +4523,7 @@ const MainContent: React.FC<MainContentProps> = ({
                         ` ${isTeacher ? "선생님" : "학생"}, 반갑습니다.`}
                     </p>
                     <p
-                      className={`mt-1 text-xs ${
+                      className={`mt-1 text-sm xl:text-base ${
                         isDarkMode ? "text-gray-400" : "text-gray-600"
                       }`}
                     >
@@ -4331,7 +4532,7 @@ const MainContent: React.FC<MainContentProps> = ({
                   </div>
                   <div className="shrink-0 text-right">
                     <p
-                      className={`text-[11px] ${
+                      className={`text-xs xl:text-sm ${
                         isDarkMode ? "text-gray-400" : "text-gray-500"
                       }`}
                     >
@@ -4582,6 +4783,14 @@ const MainContent: React.FC<MainContentProps> = ({
       if (b === 0) return 1;
       return a - b;
     });
+
+    const lectureBulkEditToggleClasses = bulkEditMode
+      ? isDarkMode
+        ? "bg-emerald-600/90 text-white hover:bg-emerald-600"
+        : "bg-emerald-600 text-white hover:bg-emerald-700"
+      : isDarkMode
+        ? "bg-white/10 text-gray-200 hover:bg-white/15"
+        : "bg-gray-100 text-gray-800 hover:bg-gray-200";
 
     // 업로드한 자료 미리보기 (좌: 미리보기 | 우: 채팅) — fileUrl 또는 materialId로 표시
     if (previewFileUrl || previewMaterialId != null || examDetailSessionId) {
@@ -6049,7 +6258,7 @@ const MainContent: React.FC<MainContentProps> = ({
                     return (
                       <div
                         key={week}
-                        className={`flex h-9 shrink-0 items-center gap-0.5 rounded-full pl-2 pr-1 text-xs font-medium transition-colors ${chipBaseInEdit}`}
+                        className={`flex h-9 shrink-0 items-center gap-0.5 rounded-full pl-2 pr-1 text-xs font-medium transition-colors xl:text-sm ${chipBaseInEdit}`}
                       >
                         <button
                           type="button"
@@ -6072,7 +6281,7 @@ const MainContent: React.FC<MainContentProps> = ({
                               e.stopPropagation();
                               onEditLecture?.(lec);
                             }}
-                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors ${
+                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
                               isDarkMode
                                 ? "text-white bg-black/35 hover:bg-black/50"
                                 : "text-gray-800 bg-white/85 hover:bg-white"
@@ -6089,7 +6298,7 @@ const MainContent: React.FC<MainContentProps> = ({
                               e.stopPropagation();
                               void onDeleteLecture?.(lec.lectureId);
                             }}
-                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors ${
+                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
                               isDarkMode
                                 ? "text-[#ff824d] bg-black/35 hover:bg-black/50"
                                 : "text-[#ff824d] bg-white/85 hover:bg-white"
@@ -6117,7 +6326,7 @@ const MainContent: React.FC<MainContentProps> = ({
                           }
                         }
                       }}
-                      className={`inline-flex h-9 shrink-0 items-center px-3 rounded-full text-xs font-medium whitespace-nowrap cursor-pointer transition-colors ${
+                      className={`inline-flex h-9 shrink-0 items-center px-3 rounded-full text-xs font-medium whitespace-nowrap cursor-pointer transition-colors xl:text-sm ${
                         isActiveChip
                           ? isDarkMode
                             ? "bg-[#FFFFFF] text-[#141414]"
@@ -6133,7 +6342,7 @@ const MainContent: React.FC<MainContentProps> = ({
                 })}
                 {!weekNumbers.length && (
                   <span
-                    className={`text-xs ${
+                    className={`text-xs xl:text-sm ${
                       isDarkMode ? "text-gray-500" : "text-gray-400"
                     }`}
                   >
@@ -6142,7 +6351,7 @@ const MainContent: React.FC<MainContentProps> = ({
                 )}
               </div>
               {lectureResourcesLoading ? (
-                <span className="shrink-0 whitespace-nowrap text-xs opacity-70">
+                <span className="shrink-0 whitespace-nowrap text-xs xl:text-sm opacity-70">
                   불러오는 중...
                 </span>
               ) : null}
@@ -6172,7 +6381,7 @@ const MainContent: React.FC<MainContentProps> = ({
                       type="button"
                       onClick={() => setLectureAddMenuOpen((o) => !o)}
                       aria-expanded={lectureAddMenuOpen}
-                      className={`flex h-9 w-full items-center justify-center rounded-full text-xs font-semibold cursor-pointer transition-opacity hover:opacity-90 ${
+                      className={`flex h-9 w-full items-center justify-center rounded-full text-xs font-semibold cursor-pointer transition-opacity hover:opacity-90 xl:text-sm ${
                         isDarkMode
                           ? "bg-[#FFFFFF] text-[#141414]"
                           : "bg-[#141414] text-white"
@@ -6192,7 +6401,7 @@ const MainContent: React.FC<MainContentProps> = ({
                             );
                             setLectureAddMenuOpen(false);
                           }}
-                          className={`w-full flex h-9 items-center justify-start gap-2 rounded-full px-3 text-xs font-semibold transition-colors ${
+                          className={`w-full flex h-9 items-center justify-start gap-2 rounded-full px-3 text-xs font-semibold transition-colors xl:text-sm ${
                             isDarkMode
                               ? "bg-white/10 text-gray-100 hover:bg-white/15"
                               : "bg-gray-100 text-gray-800 hover:bg-gray-200"
@@ -6211,7 +6420,7 @@ const MainContent: React.FC<MainContentProps> = ({
                             );
                             setLectureAddMenuOpen(false);
                           }}
-                          className={`w-full flex h-9 items-center justify-start gap-2 rounded-full px-3 text-xs font-semibold transition-colors ${
+                          className={`w-full flex h-9 items-center justify-start gap-2 rounded-full px-3 text-xs font-semibold transition-colors xl:text-sm ${
                             isDarkMode
                               ? "bg-white/10 text-gray-100 hover:bg-white/15"
                               : "bg-gray-100 text-gray-800 hover:bg-gray-200"
@@ -6229,7 +6438,7 @@ const MainContent: React.FC<MainContentProps> = ({
                     <button
                       type="button"
                       onClick={() => setStudentReportModalOpen(true)}
-                      className={`w-full flex h-9 items-center justify-start gap-2 rounded-full px-3 text-xs font-semibold transition-colors ${
+                      className={`w-full flex h-9 items-center justify-start gap-2 rounded-full px-3 text-xs font-semibold transition-colors xl:text-sm ${
                         isDarkMode
                           ? "bg-white/10 text-gray-100 hover:bg-white/15"
                           : "bg-gray-100 text-gray-800 hover:bg-gray-200"
@@ -6238,7 +6447,7 @@ const MainContent: React.FC<MainContentProps> = ({
                       <ChartBarIcon
                         className={`w-4 h-4 shrink-0 ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}
                       />
-                      <span>학생 리포트</span>
+                      <span>강의실 리포트</span>
                     </button>
                   </section>
                   <section>
@@ -6251,7 +6460,7 @@ const MainContent: React.FC<MainContentProps> = ({
                             : "studentManagement",
                         )
                       }
-                      className={`w-full flex h-9 items-center justify-start gap-2 rounded-full px-3 text-xs font-semibold transition-colors ${
+                      className={`w-full flex h-9 items-center justify-start gap-2 rounded-full px-3 text-xs font-semibold transition-colors xl:text-sm ${
                         teacherMainPanel === "studentManagement"
                           ? isDarkMode
                             ? "bg-[#FFFFFF] text-[#141414]"
@@ -6278,74 +6487,32 @@ const MainContent: React.FC<MainContentProps> = ({
                       <span>학생 관리</span>
                     </button>
                   </section>
-                  <section className="space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <h4
-                        className={`text-sm font-semibold ${
-                          isDarkMode ? "text-gray-200" : "text-gray-800"
-                        }`}
-                      >
-                        <span className="inline-flex items-center gap-2">
-                          <EditIcon className={`w-4 h-4 ${isDarkMode ? "text-gray-300" : "text-gray-500"}`} />
-                          <span>수정</span>
-                        </span>
-                      </h4>
-                      <div
-                        className={`relative flex items-center rounded-full p-0.5 shrink-0 ${
-                          isDarkMode ? "bg-white/10" : "bg-gray-100"
-                        }`}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div
-                          aria-hidden="true"
-                          className={`absolute top-0.5 left-0.5 h-8 w-8 rounded-full transform-gpu will-change-transform transition-transform duration-300 ease-[cubic-bezier(0.2,0.8,0.2,1)] ${
-                            isDarkMode ? "bg-black/40" : "bg-white shadow-sm"
-                          } ${bulkEditMode ? "translate-x-8" : "translate-x-0"}`}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setBulkEditMode(false);
-                          }}
-                          className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors duration-200 ${
-                            !bulkEditMode
-                              ? isDarkMode
-                                ? "text-white"
-                                : "text-gray-900"
-                              : isDarkMode
-                                ? "text-gray-400 hover:text-gray-300"
-                                : "text-gray-500 hover:text-gray-700"
-                          }`}
-                          aria-label="일반 모드"
-                          title="일반 모드"
-                        >
-                          <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                            <path d="M4 6h16" />
-                            <path d="M4 12h16" />
-                            <path d="M4 18h16" />
-                          </svg>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setBulkEditMode(true);
-                          }}
-                          className={`relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors duration-200 ${
-                            bulkEditMode
-                              ? isDarkMode
-                                ? "text-white"
-                                : "text-gray-900"
-                              : isDarkMode
-                                ? "text-gray-400 hover:text-gray-300"
-                                : "text-gray-500 hover:text-gray-700"
-                          }`}
-                          aria-label="수정/삭제 모드"
-                          title="수정/삭제 모드"
-                        >
-                          <EditIcon className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    </div>
+                  <section className="flex items-center justify-end">
+                    <button
+                      type="button"
+                      aria-pressed={bulkEditMode}
+                      aria-label={
+                        bulkEditMode
+                          ? "강의·자료 편집 모드 종료"
+                          : "강의·자료 수정/삭제 모드"
+                      }
+                      title={
+                        bulkEditMode
+                          ? "일반 보기로 돌아갑니다"
+                          : "주차·자료를 수정하거나 삭제합니다"
+                      }
+                      onClick={() => setBulkEditMode((v) => !v)}
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full cursor-pointer transition-colors ${lectureBulkEditToggleClasses}`}
+                    >
+                      <span className="sr-only">
+                        {bulkEditMode ? "편집 완료" : "수정 모드"}
+                      </span>
+                      {bulkEditMode ? (
+                        <CheckIcon className="h-3.5 w-3.5" />
+                      ) : (
+                        <EditIcon className="h-3.5 w-3.5" />
+                      )}
+                    </button>
                   </section>
                 </div>
               ) : null}
@@ -6380,7 +6547,7 @@ const MainContent: React.FC<MainContentProps> = ({
                     return (
                       <div
                         key={week}
-                        className={`flex h-9 w-full items-center gap-1 rounded-full pl-3 pr-1 text-xs font-medium transition-colors ${
+                        className={`flex h-9 w-full items-center gap-1 rounded-full pl-3 pr-1 text-xs font-medium transition-colors xl:text-sm ${
                           isActiveWeek ? rowActive : rowInactive
                         }`}
                       >
@@ -6401,7 +6568,7 @@ const MainContent: React.FC<MainContentProps> = ({
                               e.stopPropagation();
                               onEditLecture?.(lec);
                             }}
-                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors ${
+                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
                               isDarkMode
                                 ? "text-white bg-black/35 hover:bg-black/50"
                                 : "text-gray-800 bg-white/80 hover:bg-white"
@@ -6418,7 +6585,7 @@ const MainContent: React.FC<MainContentProps> = ({
                               e.stopPropagation();
                               void onDeleteLecture?.(lec.lectureId);
                             }}
-                            className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full transition-colors ${
+                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
                               isDarkMode
                                 ? "text-[#ff824d] bg-black/35 hover:bg-black/50"
                                 : "text-[#ff824d] bg-white/80 hover:bg-white"
@@ -6446,7 +6613,7 @@ const MainContent: React.FC<MainContentProps> = ({
                           }
                         }
                       }}
-                      className={`flex h-9 w-full items-center px-3 rounded-full text-left text-xs font-medium cursor-pointer transition-colors ${
+                      className={`flex h-9 w-full items-center px-3 rounded-full text-left text-xs font-medium cursor-pointer transition-colors xl:text-sm ${
                         isActiveChip
                           ? isDarkMode
                             ? "bg-[#FFFFFF] text-[#141414]"
@@ -6460,7 +6627,7 @@ const MainContent: React.FC<MainContentProps> = ({
                 })}
                 {!weekNumbers.length && (
                   <p
-                    className={`text-xs px-2 ${
+                    className={`text-xs xl:text-sm px-2 ${
                       isDarkMode ? "text-gray-500" : "text-gray-400"
                     }`}
                   >
@@ -6518,7 +6685,7 @@ const MainContent: React.FC<MainContentProps> = ({
                             : "border-gray-200 bg-gray-50"
                         }`}
                       >
-                        <div className="text-xs font-medium">
+                        <div className="text-xs font-medium xl:text-sm">
                           선택됨:{" "}
                           {
                             sortedItems.filter(
@@ -6537,7 +6704,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                 canSelectCenterItemForDelete(it),
                             ).length === 0
                           }
-                          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                          className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors xl:text-sm ${
                             isDarkMode
                               ? "bg-red-500/15 text-red-200 hover:bg-red-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
                               : "bg-red-50 text-red-700 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -6774,7 +6941,7 @@ const MainContent: React.FC<MainContentProps> = ({
           onClick={() => setIsCourseModalOpen(false)}
         >
           <div
-            className={`w-full max-w-md rounded-lg shadow-lg border ${
+            className={`w-full max-w-2xl rounded-lg shadow-lg border ${
               isDarkMode
                 ? "bg-zinc-900 border-zinc-700 text-gray-100"
                 : "bg-white border-gray-200 text-gray-900"
@@ -6843,8 +7010,8 @@ const MainContent: React.FC<MainContentProps> = ({
                   value={courseModalDescription}
                   onChange={(e) => setCourseModalDescription(e.target.value)}
                   placeholder="강의실에 대한 설명을 입력하세요"
-                  rows={3}
-                  className={`w-full px-3 py-2 text-sm rounded border resize-none ${
+                  rows={7}
+                  className={`w-full min-h-[10.5rem] px-3 py-2 text-sm rounded border resize-y ${
                     isDarkMode
                       ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
@@ -7268,6 +7435,141 @@ const MainContent: React.FC<MainContentProps> = ({
                 >
                   선생님이 알려준 초대 코드를 입력하세요.
                 </p>
+              </div>
+
+              <div className={`rounded-lg border ${isDarkMode ? "border-zinc-700 bg-zinc-900/40" : "border-gray-200 bg-gray-50"}`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMyJoinRequestsOpen((p) => !p);
+                    setMyJoinRequestsPage(0);
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 text-sm font-semibold cursor-pointer ${
+                    isDarkMode ? "text-gray-100 hover:bg-white/5" : "text-gray-800 hover:bg-gray-100"
+                  }`}
+                  aria-expanded={myJoinRequestsOpen}
+                >
+                  <span>내 신청</span>
+                  <span className={`text-xs font-medium ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                    {myJoinRequestsOpen ? "접기" : "펼치기"}
+                  </span>
+                </button>
+                {myJoinRequestsOpen && (
+                  <div className="px-3 pb-3">
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+                        내 강의실 가입 신청 목록
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void loadMyJoinRequests()}
+                        disabled={myJoinRequestsLoading}
+                        className={`text-xs font-semibold px-2 py-1 rounded-lg ${
+                          myJoinRequestsLoading
+                            ? "opacity-40 cursor-not-allowed"
+                            : isDarkMode
+                              ? "bg-white/10 hover:bg-white/15 text-gray-100"
+                              : "bg-white hover:bg-gray-100 text-gray-700 border border-gray-200"
+                        }`}
+                      >
+                        새로고침
+                      </button>
+                    </div>
+
+                    {myJoinRequestsLoading ? (
+                      <div className="py-6 text-center text-xs opacity-70">불러오는 중…</div>
+                    ) : myJoinRequestsError ? (
+                      <div className={`py-2 text-xs ${isDarkMode ? "text-red-300" : "text-red-600"}`}>
+                        {myJoinRequestsError}
+                      </div>
+                    ) : myJoinRequests.length === 0 ? (
+                      <div className="py-6 text-center text-xs opacity-70">내 신청이 없습니다.</div>
+                    ) : (
+                      <ul className="space-y-2">
+                        {myJoinRequests.map((r) => {
+                          const s = String(r.status ?? "").toUpperCase();
+                          const badge =
+                            s === "APPROVED"
+                              ? isDarkMode
+                                ? "bg-emerald-500/15 text-emerald-200"
+                                : "bg-emerald-100 text-emerald-800"
+                              : s === "PENDING"
+                                ? isDarkMode
+                                  ? "bg-amber-500/15 text-amber-200"
+                                  : "bg-amber-100 text-amber-800"
+                                : s === "BLOCKED"
+                                  ? isDarkMode
+                                    ? "bg-red-500/15 text-red-200"
+                                    : "bg-red-100 text-red-800"
+                                  : isDarkMode
+                                    ? "bg-zinc-700 text-gray-200"
+                                    : "bg-gray-200 text-gray-700";
+                          return (
+                            <li
+                              key={r.requestId}
+                              className={`rounded-lg border px-3 py-2 ${
+                                isDarkMode ? "border-zinc-700 bg-zinc-900/20" : "border-gray-200 bg-white"
+                              }`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <div className="text-sm font-semibold truncate">{r.courseTitle || `courseId ${r.courseId}`}</div>
+                                  <div className={`text-[11px] mt-1 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                                    요청: {formatIsoInstantForKo(r.requestedAt)}{" "}
+                                    {r.updatedAt ? `· 변경: ${formatIsoInstantForKo(r.updatedAt)}` : ""}
+                                  </div>
+                                </div>
+                                <span className={`shrink-0 text-[11px] px-2 py-1 rounded-full ${badge}`}>
+                                  {joinRequestStatusLabel(r.status)}
+                                </span>
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+
+                    {myJoinRequestsOpen && myJoinRequestsTotalPages > 1 && (
+                      <div className="mt-3 flex items-center justify-between">
+                        <button
+                          type="button"
+                          disabled={myJoinRequestsPage <= 0 || myJoinRequestsLoading}
+                          onClick={() => setMyJoinRequestsPage((p) => Math.max(0, p - 1))}
+                          className={`text-xs font-semibold px-2 py-1 rounded-lg ${
+                            myJoinRequestsPage <= 0 || myJoinRequestsLoading
+                              ? "opacity-40 cursor-not-allowed"
+                              : isDarkMode
+                                ? "bg-white/10 hover:bg-white/15 text-gray-100"
+                                : "bg-white hover:bg-gray-100 text-gray-700 border border-gray-200"
+                          }`}
+                        >
+                          이전
+                        </button>
+                        <span className="text-[11px] opacity-70">
+                          {myJoinRequestsPage + 1} / {myJoinRequestsTotalPages}
+                        </span>
+                        <button
+                          type="button"
+                          disabled={myJoinRequestsPage >= myJoinRequestsTotalPages - 1 || myJoinRequestsLoading}
+                          onClick={() =>
+                            setMyJoinRequestsPage((p) =>
+                              Math.min(myJoinRequestsTotalPages - 1, p + 1),
+                            )
+                          }
+                          className={`text-xs font-semibold px-2 py-1 rounded-lg ${
+                            myJoinRequestsPage >= myJoinRequestsTotalPages - 1 || myJoinRequestsLoading
+                              ? "opacity-40 cursor-not-allowed"
+                              : isDarkMode
+                                ? "bg-white/10 hover:bg-white/15 text-gray-100"
+                                : "bg-white hover:bg-gray-100 text-gray-700 border border-gray-200"
+                          }`}
+                        >
+                          다음
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
@@ -9413,26 +9715,242 @@ const MainContent: React.FC<MainContentProps> = ({
             }`}
           >
             <div
-              className={`px-5 py-4 border-b flex items-center justify-between ${
+              className={`px-5 py-4 border-b flex items-start justify-between gap-4 ${
                 isDarkMode ? "border-zinc-700" : "border-gray-200"
               }`}
             >
-              <div>
-                <h2 className="text-lg font-semibold">학생 리포트</h2>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-lg font-semibold">강의실 리포트</h2>
                 <p className={`text-xs mt-1 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                  teacher 전용 강의실 상세 리포트
+                  teacher 전용 강의실 상세·종합 리포트
                 </p>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => setStudentReportModalTab("students")}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-colors ${
+                      studentReportModalTab === "students"
+                        ? "bg-[#ff824d] text-white"
+                        : isDarkMode
+                          ? "bg-zinc-800 text-gray-300 hover:bg-zinc-700"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    학생별
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStudentReportModalTab("classroom")}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-full transition-colors ${
+                      studentReportModalTab === "classroom"
+                        ? "bg-[#ff824d] text-white"
+                        : isDarkMode
+                          ? "bg-zinc-800 text-gray-300 hover:bg-zinc-700"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    강의실 종합
+                  </button>
+                </div>
               </div>
               <button
                 type="button"
                 onClick={() => setStudentReportModalOpen(false)}
-                className={`px-3 py-1.5 text-sm rounded-lg ${
+                className={`shrink-0 px-3 py-1.5 text-sm rounded-lg ${
                   isDarkMode ? "bg-zinc-800 text-gray-200" : "bg-gray-100 text-gray-700"
                 }`}
               >
                 닫기
               </button>
             </div>
+            {studentReportModalTab === "classroom" ? (
+              <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-4">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={classroomReportLoading || classroomAnalyzeSyncLoading || classroomAnalyzeStreaming}
+                    onClick={() => {
+                      if (courseDetail?.courseId == null) return;
+                      setClassroomReportLoading(true);
+                      setClassroomReportError(null);
+                      void studentReportApi
+                        .getClassroomReport(courseDetail.courseId)
+                        .then((r) => setClassroomReport(r))
+                        .catch((e) => {
+                          setClassroomReportError(
+                            e instanceof Error ? e.message : "강의실 리포트를 불러오지 못했습니다.",
+                          );
+                          setClassroomReport(undefined);
+                        })
+                        .finally(() => setClassroomReportLoading(false));
+                    }}
+                    className={`px-3 py-2 text-xs font-semibold rounded-lg ${
+                      isDarkMode ? "bg-zinc-800 text-gray-200" : "bg-gray-100 text-gray-800"
+                    } disabled:opacity-50`}
+                  >
+                    새로고침
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      classroomAnalyzeSyncLoading ||
+                      classroomAnalyzeStreaming ||
+                      classroomReportLoading
+                    }
+                    onClick={() => {
+                      if (courseDetail?.courseId == null) return;
+                      setClassroomAnalyzeSyncLoading(true);
+                      setClassroomReportError(null);
+                      void (async () => {
+                        try {
+                          await studentReportApi.analyzeClassroomSync(courseDetail.courseId);
+                          const r = await studentReportApi.getClassroomReport(courseDetail.courseId);
+                          setClassroomReport(r);
+                        } catch (e) {
+                          setClassroomReportError(
+                            e instanceof Error ? e.message : "동기 분석에 실패했습니다.",
+                          );
+                        } finally {
+                          setClassroomAnalyzeSyncLoading(false);
+                        }
+                      })();
+                    }}
+                    className="px-3 py-2 text-xs font-semibold rounded-lg bg-emerald-600 text-white disabled:opacity-50"
+                  >
+                    {classroomAnalyzeSyncLoading ? "분석 중…" : "종합 분석 (동기)"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      classroomAnalyzeStreaming ||
+                      classroomAnalyzeSyncLoading ||
+                      classroomReportLoading
+                    }
+                    onClick={() => {
+                      if (courseDetail?.courseId == null) return;
+                      setClassroomAnalyzeStreaming(true);
+                      setClassroomStreamBuffer("");
+                      setClassroomReportError(null);
+                      void (async () => {
+                        try {
+                          await studentReportApi.streamClassroomAnalyze(courseDetail.courseId, {
+                            onDelta: (c) => setClassroomStreamBuffer((p) => p + c),
+                          });
+                          const r = await studentReportApi.getClassroomReport(courseDetail.courseId);
+                          setClassroomReport(r);
+                        } catch (e) {
+                          setClassroomReportError(
+                            e instanceof Error ? e.message : "스트림 분석에 실패했습니다.",
+                          );
+                        } finally {
+                          setClassroomAnalyzeStreaming(false);
+                        }
+                      })();
+                    }}
+                    className="px-3 py-2 text-xs font-semibold rounded-lg bg-[#ff824d] text-white disabled:opacity-50"
+                  >
+                    {classroomAnalyzeStreaming ? "스트림 수신 중…" : "종합 분석 (스트림)"}
+                  </button>
+                </div>
+                {classroomReportError ? (
+                  <p className={`text-sm ${isDarkMode ? "text-red-300" : "text-red-600"}`}>
+                    {classroomReportError}
+                  </p>
+                ) : null}
+                {classroomReportLoading ? (
+                  <div className="text-sm opacity-70 py-8 text-center">불러오는 중…</div>
+                ) : classroomReport === null ? (
+                  <div className={`rounded-lg border p-6 text-sm ${isDarkMode ? "border-zinc-700 bg-zinc-900/40" : "border-gray-200 bg-gray-50"}`}>
+                    아직 생성된 강의실 종합 리포트가 없습니다. 위에서 분석을 실행해 보세요.
+                  </div>
+                ) : classroomReport ? (
+                  <div className="space-y-5">
+                    <div className={`flex flex-wrap gap-3 text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+                      {classroomReport.generatedAt ? (
+                        <span>생성: {classroomReport.generatedAt}</span>
+                      ) : null}
+                      {classroomReport.confidence ? (
+                        <span>신뢰도: {classroomReport.confidence}</span>
+                      ) : null}
+                      {classroomReport.source ? <span>출처: {classroomReport.source}</span> : null}
+                      {classroomReport.fallbackUsed ? <span>폴백 사용</span> : null}
+                    </div>
+                    {classroomReport.reason ? (
+                      <p className={`text-xs ${isDarkMode ? "text-amber-200/90" : "text-amber-800"}`}>
+                        {classroomReport.reason}
+                      </p>
+                    ) : null}
+                    <section className="space-y-2">
+                      <h3 className="text-sm font-semibold">요약</h3>
+                      <div
+                        className={`rounded-lg border p-4 text-sm prose prose-sm max-w-none dark:prose-invert ${isDarkMode ? "border-zinc-700 bg-zinc-900/40" : "border-gray-200 bg-gray-50"}`}
+                      >
+                        {classroomReport.summaryMarkdown.trim() ? (
+                          <MarkdownContent>{classroomReport.summaryMarkdown}</MarkdownContent>
+                        ) : (
+                          <span className="opacity-70">요약 본문이 없습니다.</span>
+                        )}
+                      </div>
+                    </section>
+                    {classroomReport.highlights.length > 0 ? (
+                      <section className="space-y-2">
+                        <h3 className="text-sm font-semibold">하이라이트</h3>
+                        <ul className="space-y-2">
+                          {classroomReport.highlights.map((row, i) => (
+                            <li
+                              key={`h-${i}`}
+                              className={`rounded-lg border px-3 py-2 text-sm ${isDarkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-white"}`}
+                            >
+                              {reportInsightPrimaryText(row)}
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    ) : null}
+                    {classroomReport.risks.length > 0 ? (
+                      <section className="space-y-2">
+                        <h3 className="text-sm font-semibold">리스크</h3>
+                        <ul className="space-y-2">
+                          {classroomReport.risks.map((row, i) => (
+                            <li
+                              key={`r-${i}`}
+                              className={`rounded-lg border px-3 py-2 text-sm ${isDarkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-white"}`}
+                            >
+                              {reportInsightPrimaryText(row)}
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    ) : null}
+                    {classroomReport.coachingPriorities.length > 0 ? (
+                      <section className="space-y-2">
+                        <h3 className="text-sm font-semibold">코칭 우선순위</h3>
+                        <ul className="space-y-2">
+                          {classroomReport.coachingPriorities.map((row, i) => (
+                            <li
+                              key={`c-${i}`}
+                              className={`rounded-lg border px-3 py-2 text-sm ${isDarkMode ? "border-zinc-700 bg-zinc-900/30" : "border-gray-200 bg-white"}`}
+                            >
+                              {reportInsightPrimaryText(row)}
+                            </li>
+                          ))}
+                        </ul>
+                      </section>
+                    ) : null}
+                  </div>
+                ) : null}
+                {classroomStreamBuffer.trim() ? (
+                  <details
+                    className={`rounded-lg border text-sm ${isDarkMode ? "border-zinc-700 bg-zinc-900/20" : "border-gray-200 bg-gray-50"}`}
+                  >
+                    <summary className="cursor-pointer px-3 py-2 font-medium">스트림 로그</summary>
+                    <pre className="px-3 pb-3 text-xs whitespace-pre-wrap overflow-x-auto opacity-90">
+                      {classroomStreamBuffer}
+                    </pre>
+                  </details>
+                ) : null}
+              </div>
+            ) : (
             <div className="flex-1 min-h-0 flex">
               <div
                 className={`w-[22.5rem] shrink-0 border-r flex flex-col ${
@@ -9529,7 +10047,23 @@ const MainContent: React.FC<MainContentProps> = ({
                             </div>
                             <p className={`text-xs mt-2 ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
                               평균 점수 {item.averageScorePercent != null ? `${item.averageScorePercent}%` : "-"}
+                              {(item.examAttemptCount != null || item.submissionCount != null) && (
+                                <span className="ml-2">
+                                  시험 {item.examAttemptCount ?? "-"}회 / 제출 {item.submissionCount ?? "-"}
+                                </span>
+                              )}
                             </p>
+                            {(item.topStrengthLabel || item.topImprovementLabel) && (
+                              <p className={`text-xs mt-1 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                                {item.topStrengthLabel ? (
+                                  <span>강점: {item.topStrengthLabel}</span>
+                                ) : null}
+                                {item.topStrengthLabel && item.topImprovementLabel ? " · " : null}
+                                {item.topImprovementLabel ? (
+                                  <span>개선: {item.topImprovementLabel}</span>
+                                ) : null}
+                              </p>
+                            )}
                           </button>
                         );
                       })}
@@ -9580,7 +10114,8 @@ const MainContent: React.FC<MainContentProps> = ({
                   </div>
                 )}
               </div>
-              <div className="flex-1 min-w-0 overflow-y-auto p-5">
+              <div className="flex-1 min-w-0 flex flex-col min-h-0">
+                <div className="flex-1 min-h-0 overflow-y-auto p-5">
                 {studentReportDetailLoading ? (
                   <div className="h-full flex items-center justify-center text-sm opacity-70">
                     상세 불러오는 중...
@@ -9656,10 +10191,305 @@ const MainContent: React.FC<MainContentProps> = ({
                         )}
                       </div>
                     </section>
+                    <section className="space-y-2">
+                      <h4 className="text-sm font-semibold">AI 분석용 컨텍스트</h4>
+                      {studentAiContextLoading ? (
+                        <p className="text-sm opacity-70">컨텍스트 불러오는 중…</p>
+                      ) : studentAiContextError ? (
+                        <p className={`text-sm ${isDarkMode ? "text-red-300" : "text-red-600"}`}>
+                          {studentAiContextError}
+                        </p>
+                      ) : studentAiContext ? (
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {(studentAiContext.course?.courseName || studentAiContext.course?.courseId != null) && (
+                              <div
+                                className={`rounded-lg border p-3 text-xs ${isDarkMode ? "border-zinc-700 bg-zinc-900/40" : "border-gray-200 bg-white"}`}
+                              >
+                                <p className="opacity-70">강의</p>
+                                <p className="font-medium mt-1">
+                                  {studentAiContext.course?.courseName || `courseId ${studentAiContext.course?.courseId ?? ""}`}
+                                </p>
+                              </div>
+                            )}
+                            {(studentAiContext.student?.studentName ||
+                              studentAiContext.student?.studentId != null) && (
+                              <div
+                                className={`rounded-lg border p-3 text-xs ${isDarkMode ? "border-zinc-700 bg-zinc-900/40" : "border-gray-200 bg-white"}`}
+                              >
+                                <p className="opacity-70">학생</p>
+                                <p className="font-medium mt-1">
+                                  {studentAiContext.student?.studentName || ""}
+                                  {studentAiContext.student?.enrollmentStatus
+                                    ? ` (${studentAiContext.student.enrollmentStatus})`
+                                    : ""}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                          {studentAiContext.activitySummary && (
+                            <div
+                              className={`rounded-lg border p-3 text-xs space-y-1 ${isDarkMode ? "border-zinc-700 bg-zinc-900/40" : "border-gray-200 bg-white"}`}
+                            >
+                              <p className="font-semibold">활동</p>
+                              <p>
+                                과제·평가 {studentAiContext.activitySummary.totalAssessments ?? "-"} · 제출{" "}
+                                {studentAiContext.activitySummary.submittedCount ?? "-"} · 미제출{" "}
+                                {studentAiContext.activitySummary.missingCount ?? "-"}
+                              </p>
+                              {studentAiContext.activitySummary.latestSubmittedAt ? (
+                                <p className="opacity-80">
+                                  최근 제출: {studentAiContext.activitySummary.latestSubmittedAt}
+                                </p>
+                              ) : null}
+                            </div>
+                          )}
+                          {studentAiContext.scoreSummary && (
+                            <div
+                              className={`rounded-lg border p-3 text-xs space-y-1 ${isDarkMode ? "border-zinc-700 bg-zinc-900/40" : "border-gray-200 bg-white"}`}
+                            >
+                              <p className="font-semibold">점수</p>
+                              <p>
+                                평균 {studentAiContext.scoreSummary.averageScore ?? studentAiContext.scoreSummary.averageScoreRatio ?? "-"}
+                                {studentAiContext.scoreSummary.highestScore != null ||
+                                studentAiContext.scoreSummary.lowestScore != null
+                                  ? ` (최고 ${studentAiContext.scoreSummary.highestScore ?? "-"} / 최저 ${studentAiContext.scoreSummary.lowestScore ?? "-"})`
+                                  : null}
+                              </p>
+                              {studentAiContext.scoreSummary.trend ? (
+                                <p>추세: {studentAiContext.scoreSummary.trend}</p>
+                              ) : null}
+                              {studentAiContext.scoreSummary.recentTrend &&
+                              studentAiContext.scoreSummary.recentTrend.length > 0 ? (
+                                <p className="opacity-80 font-mono">
+                                  최근: [{studentAiContext.scoreSummary.recentTrend.join(", ")}]
+                                </p>
+                              ) : null}
+                            </div>
+                          )}
+                          <details
+                            className={`rounded-lg border text-xs ${isDarkMode ? "border-zinc-700 bg-zinc-900/20" : "border-gray-200 bg-gray-50"}`}
+                          >
+                            <summary className="cursor-pointer px-3 py-2 font-medium">원본 JSON</summary>
+                            <pre className="px-3 pb-3 max-h-48 overflow-auto whitespace-pre-wrap opacity-90">
+                              {JSON.stringify(studentAiContext, null, 2)}
+                            </pre>
+                          </details>
+                        </div>
+                      ) : (
+                        <p className="text-sm opacity-70">컨텍스트가 없습니다.</p>
+                      )}
+                    </section>
                   </div>
                 )}
+                </div>
+                {studentReportDetail && courseDetail?.courseId != null && selectedStudentReportId != null ? (
+                  <div
+                    className={`shrink-0 border-t p-3 flex flex-col gap-2 max-h-[40%] min-h-0 ${isDarkMode ? "border-zinc-700 bg-[#0c0c0c]" : "border-gray-200 bg-gray-50"}`}
+                  >
+                    <p className="text-xs font-semibold opacity-80">리포트 팔로업 질문</p>
+                    <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1">
+                      {reportChatMessages.length === 0 ? (
+                        <p className={`text-xs ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}>
+                          학생 리포트에 대해 추가 질문을 입력하세요.
+                        </p>
+                      ) : (
+                        reportChatMessages.map((m) => (
+                          <div
+                            key={m.id}
+                            className={`text-xs rounded-lg px-2 py-1.5 whitespace-pre-wrap ${
+                              m.role === "user"
+                                ? isDarkMode
+                                  ? "bg-zinc-800 ml-4"
+                                  : "bg-white border border-gray-200 ml-4"
+                                : isDarkMode
+                                  ? "bg-zinc-900/80 mr-4 text-gray-200"
+                                  : "bg-white border border-gray-200 mr-4"
+                            }`}
+                          >
+                            <span className="font-semibold opacity-70">
+                              {m.role === "user" ? "나" : "AI"}
+                            </span>
+                            <div className="mt-0.5">{m.text || (m.role === "assistant" ? "…" : "")}</div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                    <div className="flex gap-2 shrink-0">
+                      <input
+                        type="text"
+                        value={reportChatInput}
+                        onChange={(e) => setReportChatInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && !e.shiftKey) {
+                            e.preventDefault();
+                            void (async () => {
+                              const q = reportChatInput.trim();
+                              if (
+                                !q ||
+                                courseDetail?.courseId == null ||
+                                selectedStudentReportId == null ||
+                                reportChatSending
+                              )
+                                return;
+                              const uid =
+                                typeof crypto !== "undefined" && "randomUUID" in crypto
+                                  ? crypto.randomUUID()
+                                  : `u-${Date.now()}`;
+                              const aid =
+                                typeof crypto !== "undefined" && "randomUUID" in crypto
+                                  ? crypto.randomUUID()
+                                  : `a-${Date.now()}`;
+                              const historyPayload = reportChatMessages.map((m) =>
+                                m.role === "user"
+                                  ? { role: "user", content: m.text }
+                                  : { role: "assistant", content: m.text },
+                              );
+                              setReportChatInput("");
+                              setReportChatMessages((prev) => [
+                                ...prev,
+                                { id: uid, role: "user", text: q },
+                                { id: aid, role: "assistant", text: "" },
+                              ]);
+                              setReportChatSending(true);
+                              const ac = new AbortController();
+                              reportChatAbortRef.current = ac;
+                              try {
+                                const finalText = await studentReportApi.streamStudentReportChat(
+                                  courseDetail.courseId,
+                                  selectedStudentReportId,
+                                  {
+                                    question: q,
+                                    messages:
+                                      historyPayload.length > 0 ? historyPayload : undefined,
+                                  },
+                                  {
+                                    signal: ac.signal,
+                                    onDelta: (chunk) => {
+                                      setReportChatMessages((prev) =>
+                                        prev.map((row) =>
+                                          row.id === aid ? { ...row, text: row.text + chunk } : row,
+                                        ),
+                                      );
+                                    },
+                                  },
+                                );
+                                setReportChatMessages((prev) =>
+                                  prev.map((row) =>
+                                    row.id === aid
+                                      ? { ...row, text: finalText.trim() ? finalText : row.text }
+                                      : row,
+                                  ),
+                                );
+                              } catch (err) {
+                                const msg =
+                                  err instanceof Error ? err.message : "챗봇 응답을 받지 못했습니다.";
+                                setReportChatMessages((prev) =>
+                                  prev.map((row) =>
+                                    row.id === aid ? { ...row, text: `오류: ${msg}` } : row,
+                                  ),
+                                );
+                              } finally {
+                                setReportChatSending(false);
+                                reportChatAbortRef.current = null;
+                              }
+                            })();
+                          }
+                        }}
+                        placeholder="질문 입력 후 Enter"
+                        disabled={reportChatSending}
+                        className={`flex-1 min-w-0 px-2 py-1.5 text-xs rounded-lg border ${
+                          isDarkMode
+                            ? "bg-zinc-800 border-zinc-600 text-white"
+                            : "bg-white border-gray-300 text-gray-900"
+                        } disabled:opacity-50`}
+                      />
+                      <button
+                        type="button"
+                        disabled={reportChatSending || !reportChatInput.trim()}
+                        onClick={() => {
+                          void (async () => {
+                            const q = reportChatInput.trim();
+                            if (
+                              !q ||
+                              courseDetail?.courseId == null ||
+                              selectedStudentReportId == null ||
+                              reportChatSending
+                            )
+                              return;
+                            const uid =
+                              typeof crypto !== "undefined" && "randomUUID" in crypto
+                                ? crypto.randomUUID()
+                                : `u-${Date.now()}`;
+                            const aid =
+                              typeof crypto !== "undefined" && "randomUUID" in crypto
+                                ? crypto.randomUUID()
+                                : `a-${Date.now()}`;
+                            const historyPayload = reportChatMessages.map((m) =>
+                              m.role === "user"
+                                ? { role: "user", content: m.text }
+                                : { role: "assistant", content: m.text },
+                            );
+                            setReportChatInput("");
+                            setReportChatMessages((prev) => [
+                              ...prev,
+                              { id: uid, role: "user", text: q },
+                              { id: aid, role: "assistant", text: "" },
+                            ]);
+                            setReportChatSending(true);
+                            const ac = new AbortController();
+                            reportChatAbortRef.current = ac;
+                            try {
+                              const finalText = await studentReportApi.streamStudentReportChat(
+                                courseDetail.courseId,
+                                selectedStudentReportId,
+                                {
+                                  question: q,
+                                  messages:
+                                    historyPayload.length > 0 ? historyPayload : undefined,
+                                },
+                                {
+                                  signal: ac.signal,
+                                  onDelta: (chunk) => {
+                                    setReportChatMessages((prev) =>
+                                      prev.map((row) =>
+                                        row.id === aid ? { ...row, text: row.text + chunk } : row,
+                                      ),
+                                    );
+                                  },
+                                },
+                              );
+                              setReportChatMessages((prev) =>
+                                prev.map((row) =>
+                                  row.id === aid
+                                    ? { ...row, text: finalText.trim() ? finalText : row.text }
+                                    : row,
+                                ),
+                              );
+                            } catch (err) {
+                              const msg =
+                                err instanceof Error ? err.message : "챗봇 응답을 받지 못했습니다.";
+                              setReportChatMessages((prev) =>
+                                prev.map((row) =>
+                                  row.id === aid ? { ...row, text: `오류: ${msg}` } : row,
+                                ),
+                              );
+                            } finally {
+                              setReportChatSending(false);
+                              reportChatAbortRef.current = null;
+                            }
+                          })();
+                        }}
+                        className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-[#ff824d] text-white disabled:opacity-50 shrink-0"
+                      >
+                        전송
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
+            )}
           </div>
         </div>
       )}

@@ -375,11 +375,13 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
             <div className="size-5 flex items-center justify-center shrink-0 overflow-hidden">
               <LectureIcon className="size-5" />
             </div>
-            <span className="ml-3 text-sm font-semibold truncate">{lecture.title}</span>
+            <span className="ml-3 text-sm font-semibold truncate xl:text-base">
+              {lecture.title}
+            </span>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <span
-              className={`text-xs font-semibold whitespace-nowrap transition-opacity duration-200 ${
+              className={`text-xs font-semibold whitespace-nowrap transition-opacity duration-200 xl:text-sm ${
                 isCollapsed ? "opacity-0" : "opacity-100"
               } ${isSelected ? "text-white" : textMutedClass} ${hasActions ? (onEditLecture && onDeleteLecture ? "mr-14" : "mr-10") : ""}`}
             >
@@ -560,7 +562,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
               isCollapsed ? "opacity-0 w-0 ml-0" : "opacity-100"
             }`}
           >
-            <span className="text-sm font-medium truncate">
+            <span className="text-sm font-medium truncate xl:text-base">
               {isTeacher ? "강의실 만들기" : "강의실 참여"}
             </span>
           </div>

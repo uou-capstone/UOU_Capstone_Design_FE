@@ -4,6 +4,7 @@ import {
   type CourseJoinRequestListItem,
   type CourseJoinRequestStatus,
 } from "@/services/api";
+import { EnrolledStudentsPanel } from "@/features/courses/EnrolledStudentsPanel";
 
 function formatJoinRequestInstant(iso: string | undefined): string {
   if (iso == null || String(iso).trim() === "") return "—";
@@ -48,6 +49,13 @@ export const TeacherStudentManagementPanel: React.FC<
   const [actingId, setActingId] = useState<number | null>(null);
 
   const loadList = useCallback(async () => {
+    if (tab === "enrolled") {
+      setLoading(false);
+      setError(null);
+      setRows([]);
+      setTotalPages(1);
+      return;
+    }
     setLoading(true);
     setError(null);
     const status = LIST_STATUS[tab];
@@ -153,7 +161,9 @@ export const TeacherStudentManagementPanel: React.FC<
         </button>
       </div>
 
-      {loading ? (
+      {tab === "enrolled" ? (
+        <EnrolledStudentsPanel courseId={courseId} isDarkMode={isDarkMode} />
+      ) : loading ? (
         <div className="text-sm opacity-70 py-12 text-center">
           불러오는 중…
         </div>

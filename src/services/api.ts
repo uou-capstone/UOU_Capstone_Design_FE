@@ -34,6 +34,21 @@ export interface PageQueryParams {
   sort?: string;
 }
 
+export interface NotificationItem {
+  notificationId: number;
+  type: string;
+  title: string;
+  body: string;
+  resourceType?: string;
+  resourceId?: number;
+  read: boolean;
+  createdAt: string;
+}
+
+export interface UnreadCountResponse {
+  count: number;
+}
+
 export interface User {
   userId: number;
   email: string;
@@ -76,6 +91,10 @@ export interface StudentReportListItem {
   reportStatus: StudentReportStatusFilter | string;
   latestActivityAt?: string;
   courseProgressPercent?: number;
+  examAttemptCount?: number;
+  submissionCount?: number;
+  topStrengthLabel?: string;
+  topImprovementLabel?: string;
 }
 
 export interface StudentReportCompetency {
@@ -96,6 +115,99 @@ export interface StudentReportDetailResponse {
   narrativeReport?: string;
   competencies: StudentReportCompetency[];
   latestActivityAt?: string;
+}
+
+/** GET /api/courses/{courseId}/reports/classroom */
+export interface ClassroomReportResponse {
+  courseId: number;
+  summaryMarkdown: string;
+  highlights: Record<string, unknown>[];
+  risks: Record<string, unknown>[];
+  coachingPriorities: Record<string, unknown>[];
+  source?: string;
+  fallbackUsed?: boolean;
+  reason?: string;
+  confidence?: string;
+  generatedAt?: string;
+}
+
+/** GET …/reports/students/{studentId}/ai-context */
+export interface StudentReportAiContextCourse {
+  courseId?: number;
+  courseName?: string;
+  teacherId?: number;
+}
+
+export interface StudentReportAiContextStudentInfo {
+  studentId?: number;
+  studentName?: string;
+  enrollmentStatus?: string;
+}
+
+export interface StudentReportAiContextActivity {
+  totalAssessments?: number;
+  submittedCount?: number;
+  missingCount?: number;
+  latestSubmittedAt?: string;
+}
+
+export interface StudentReportAiContextScore {
+  averageScoreRatio?: number;
+  averageScore?: number;
+  highestScore?: number;
+  lowestScore?: number;
+  recentTrend?: number[];
+  trend?: string;
+}
+
+export interface StudentReportAiContextResponse {
+  course?: StudentReportAiContextCourse;
+  student?: StudentReportAiContextStudentInfo;
+  activitySummary?: StudentReportAiContextActivity;
+  scoreSummary?: StudentReportAiContextScore;
+}
+
+function normalizeNotificationItem(raw: Record<string, unknown>): NotificationItem {
+  const n = (v: unknown): number | undefined => {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)))
+      return Number(v);
+    return undefined;
+  };
+
+  const id = n(raw.notificationId ?? raw.notification_id) ?? 0;
+  const type = String(raw.type ?? raw.notificationType ?? raw.notification_type ?? "");
+  const title = String(raw.title ?? "");
+  const body = String(raw.body ?? raw.message ?? raw.content ?? "");
+  const resourceType =
+    typeof raw.resourceType === "string"
+      ? raw.resourceType
+      : typeof raw.resource_type === "string"
+        ? (raw.resource_type as string)
+        : undefined;
+  const resourceId = n(raw.resourceId ?? raw.resource_id);
+  const read =
+    typeof raw.read === "boolean"
+      ? raw.read
+      : typeof raw.isRead === "boolean"
+        ? (raw.isRead as boolean)
+        : typeof raw.readAt === "string"
+          ? String(raw.readAt).trim() !== ""
+          : typeof raw.read_at === "string"
+            ? String(raw.read_at).trim() !== ""
+            : false;
+  const createdAt = String(raw.createdAt ?? raw.created_at ?? "");
+
+  return {
+    notificationId: id,
+    type,
+    title,
+    body,
+    resourceType,
+    resourceId,
+    read,
+    createdAt,
+  };
 }
 
 function normalizeStudentReportListItem(
@@ -178,6 +290,30 @@ function normalizeStudentReportListItem(
         ? latestActivityAt
         : undefined,
     courseProgressPercent: n(raw.courseProgressPercent ?? raw.course_progress_percent),
+    examAttemptCount: n(
+      raw.examAttemptCount ??
+        raw.exam_attempt_count ??
+        activityObj?.examAttemptCount ??
+        activityObj?.exam_attempt_count,
+    ),
+    submissionCount: n(
+      raw.submissionCount ??
+        raw.submission_count ??
+        activityObj?.submissionCount ??
+        activityObj?.submission_count,
+    ),
+    topStrengthLabel:
+      typeof raw.topStrengthLabel === "string" && raw.topStrengthLabel.trim() !== ""
+        ? raw.topStrengthLabel
+        : typeof raw.top_strength_label === "string" && raw.top_strength_label.trim() !== ""
+          ? raw.top_strength_label
+          : undefined,
+    topImprovementLabel:
+      typeof raw.topImprovementLabel === "string" && raw.topImprovementLabel.trim() !== ""
+        ? raw.topImprovementLabel
+        : typeof raw.top_improvement_label === "string" && raw.top_improvement_label.trim() !== ""
+          ? raw.top_improvement_label
+          : undefined,
   };
 }
 
@@ -305,6 +441,121 @@ function normalizeStudentReportDetail(
   };
 }
 
+function asInsightRecordArray(v: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((x) => x != null && typeof x === "object" && !Array.isArray(x))
+    .map((x) => x as Record<string, unknown>);
+}
+
+function normalizeClassroomReport(raw: Record<string, unknown>): ClassroomReportResponse {
+  return {
+    courseId: Number(raw.courseId ?? raw.course_id ?? 0),
+    summaryMarkdown: String(raw.summaryMarkdown ?? raw.summary_markdown ?? ""),
+    highlights: asInsightRecordArray(raw.highlights),
+    risks: asInsightRecordArray(raw.risks),
+    coachingPriorities: asInsightRecordArray(raw.coachingPriorities ?? raw.coaching_priorities),
+    source: typeof raw.source === "string" ? raw.source : undefined,
+    fallbackUsed:
+      typeof raw.fallbackUsed === "boolean"
+        ? raw.fallbackUsed
+        : typeof raw.fallback_used === "boolean"
+          ? raw.fallback_used
+          : undefined,
+    reason: typeof raw.reason === "string" ? raw.reason : undefined,
+    confidence: typeof raw.confidence === "string" ? raw.confidence : undefined,
+    generatedAt:
+      typeof raw.generatedAt === "string"
+        ? raw.generatedAt
+        : typeof raw.generated_at === "string"
+          ? raw.generated_at
+          : undefined,
+  };
+}
+
+function normalizeStudentReportAiContext(raw: Record<string, unknown>): StudentReportAiContextResponse {
+  const n = (v: unknown): number | undefined => {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v);
+    return undefined;
+  };
+
+  const courseRaw = raw.course;
+  let course: StudentReportAiContextCourse | undefined;
+  if (courseRaw != null && typeof courseRaw === "object" && !Array.isArray(courseRaw)) {
+    const c = courseRaw as Record<string, unknown>;
+    const courseName = String(c.courseName ?? c.course_name ?? "").trim();
+    course = {
+      courseId: n(c.courseId ?? c.course_id),
+      courseName: courseName || undefined,
+      teacherId: n(c.teacherId ?? c.teacher_id),
+    };
+    if (course.courseId == null && !course.courseName && course.teacherId == null) course = undefined;
+  }
+
+  const studentRaw = raw.student;
+  let student: StudentReportAiContextStudentInfo | undefined;
+  if (studentRaw != null && typeof studentRaw === "object" && !Array.isArray(studentRaw)) {
+    const s = studentRaw as Record<string, unknown>;
+    const studentName = String(s.studentName ?? s.student_name ?? "").trim();
+    student = {
+      studentId: n(s.studentId ?? s.student_id),
+      studentName: studentName || undefined,
+      enrollmentStatus:
+        typeof s.enrollmentStatus === "string"
+          ? s.enrollmentStatus
+          : typeof s.enrollment_status === "string"
+            ? s.enrollment_status
+            : undefined,
+    };
+    if (student.studentId == null && !student.studentName && !student.enrollmentStatus) student = undefined;
+  }
+
+  const actRaw = raw.activitySummary ?? raw.activity_summary;
+  let activitySummary: StudentReportAiContextActivity | undefined;
+  if (actRaw != null && typeof actRaw === "object" && !Array.isArray(actRaw)) {
+    const a = actRaw as Record<string, unknown>;
+    activitySummary = {
+      totalAssessments: n(a.totalAssessments ?? a.total_assessments),
+      submittedCount: n(a.submittedCount ?? a.submitted_count),
+      missingCount: n(a.missingCount ?? a.missing_count),
+      latestSubmittedAt:
+        typeof a.latestSubmittedAt === "string"
+          ? a.latestSubmittedAt
+          : typeof a.latest_submitted_at === "string"
+            ? a.latest_submitted_at
+            : undefined,
+    };
+  }
+
+  const scoreRaw = raw.scoreSummary ?? raw.score_summary;
+  let scoreSummary: StudentReportAiContextScore | undefined;
+  if (scoreRaw != null && typeof scoreRaw === "object" && !Array.isArray(scoreRaw)) {
+    const s = scoreRaw as Record<string, unknown>;
+    const trendArr = s.recentTrend ?? s.recent_trend;
+    const recentTrend = Array.isArray(trendArr)
+      ? trendArr
+          .map((x) => (typeof x === "number" ? x : Number(x)))
+          .filter((x) => Number.isFinite(x))
+      : undefined;
+    scoreSummary = {
+      averageScoreRatio: n(s.averageScoreRatio ?? s.average_score_ratio),
+      averageScore: n(s.averageScore ?? s.average_score),
+      highestScore: n(s.highestScore ?? s.highest_score),
+      lowestScore: n(s.lowestScore ?? s.lowest_score),
+      recentTrend: recentTrend && recentTrend.length > 0 ? recentTrend : undefined,
+      trend:
+        typeof s.trend === "string" && s.trend.trim() !== ""
+          ? s.trend
+          : typeof s.scoreTrend === "string"
+            ? s.scoreTrend
+            : undefined,
+    };
+  }
+
+  return { course, student, activitySummary, scoreSummary };
+}
+
 export interface CourseDetail extends Course {
   lectures?: Lecture[];
   invitationCode?: string;
@@ -331,6 +582,23 @@ export interface CourseJoinRequestListItem {
   studentEmail: string;
   status: CourseJoinRequestStatus;
   requestedAt: string;
+}
+
+export interface CourseStudentListItem {
+  enrollmentId: number;
+  studentId: number;
+  studentName: string;
+  studentEmail: string;
+  enrolledAt: string;
+}
+
+export interface MyCourseJoinRequestListItem {
+  requestId: number;
+  courseId: number;
+  courseTitle: string;
+  status: CourseJoinRequestStatus;
+  requestedAt: string;
+  updatedAt?: string;
 }
 
 export interface CourseJoinRequestListQueryParams extends PageQueryParams {
@@ -382,6 +650,36 @@ function normalizeCourseJoinRequestListItem(
       "requestedTime",
       "requested_time",
     ]),
+  };
+}
+
+function normalizeMyCourseJoinRequestListItem(
+  raw: Record<string, unknown>,
+): MyCourseJoinRequestListItem {
+  return {
+    requestId: Number(raw.requestId ?? raw.request_id ?? 0),
+    courseId: Number(raw.courseId ?? raw.course_id ?? 0),
+    courseTitle: String(raw.courseTitle ?? raw.course_title ?? ""),
+    status: String(raw.status ?? "PENDING") as CourseJoinRequestStatus,
+    requestedAt: pickFirstNonEmptyString(raw, [
+      "requestedAt",
+      "requested_at",
+      "createdAt",
+      "created_at",
+    ]),
+    updatedAt: pickFirstNonEmptyString(raw, ["updatedAt", "updated_at"]) || undefined,
+  };
+}
+
+function normalizeCourseStudentListItem(
+  raw: Record<string, unknown>,
+): CourseStudentListItem {
+  return {
+    enrollmentId: Number(raw.enrollmentId ?? raw.enrollment_id ?? 0),
+    studentId: Number(raw.studentId ?? raw.student_id ?? 0),
+    studentName: String(raw.studentName ?? raw.student_name ?? ""),
+    studentEmail: String(raw.studentEmail ?? raw.student_email ?? ""),
+    enrolledAt: pickFirstNonEmptyString(raw, ["enrolledAt", "enrolled_at", "createdAt", "created_at"]),
   };
 }
 
@@ -1232,6 +1530,123 @@ export const userApi = {
   },
 };
 
+export const notificationsApi = {
+  getNotifications: async (params?: PageQueryParams): Promise<PageResponse<NotificationItem>> => {
+    const searchParams = new URLSearchParams();
+    searchParams.set("page", String(params?.page ?? 0));
+    searchParams.set("size", String(Math.min(params?.size ?? 20, 100)));
+    searchParams.set("sort", params?.sort ?? "createdAt,desc");
+    const res = await apiRequest<PageResponse<Record<string, unknown>>>(
+      `/api/notifications?${searchParams.toString()}`,
+    );
+    const content = Array.isArray(res.content)
+      ? res.content.map((it) => normalizeNotificationItem(it))
+      : [];
+    return { ...(res as unknown as PageResponse<NotificationItem>), content };
+  },
+
+  getUnreadCount: async (): Promise<number> => {
+    const res = await apiRequest<UnreadCountResponse>(`/api/notifications/unread-count`, {
+      method: "GET",
+    });
+    const c =
+      res && typeof res === "object" && typeof (res as any).count === "number"
+        ? (res as any).count
+        : 0;
+    return Number.isFinite(c) ? c : 0;
+  },
+
+  markRead: async (notificationId: number): Promise<void> => {
+    await apiRequest<void>(
+      `/api/notifications/${encodeURIComponent(notificationId)}/read`,
+      { method: "POST" },
+    );
+  },
+
+  markReadAll: async (): Promise<void> => {
+    await apiRequest<void>(`/api/notifications/read-all`, { method: "POST" });
+  },
+
+  subscribeNotificationsStream: (callbacks: {
+    signal?: AbortSignal;
+    onMessage?: (item: NotificationItem) => void;
+    onError?: (err: Error) => void;
+  }): (() => void) => {
+    const endpoint = `/api/notifications/stream`;
+    let cancelled = false;
+    const abortController = new AbortController();
+
+    const connect = async (attemptIndex: number): Promise<void> => {
+      const token = getAuthToken();
+      if (!token) {
+        callbacks.onError?.(new Error("로그인이 필요합니다."));
+        return;
+      }
+
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${token}`,
+        Accept: "text/event-stream",
+      };
+
+      try {
+        const res = await fetch(resolveApiEndpointUrl(endpoint), {
+          method: "GET",
+          headers,
+          mode: "cors",
+          credentials: "omit",
+          signal: abortController.signal,
+        });
+        if (!res.ok) {
+          throw new Error(`알림 스트림 요청 실패: ${res.status}`);
+        }
+        const contentType = (res.headers.get("Content-Type") || "").toLowerCase();
+        if (!contentType.includes("text/event-stream")) {
+          throw new Error("알림 스트림 응답이 SSE가 아닙니다.");
+        }
+
+        for await (const eventData of iterateSseDataPayloadsFromResponse(res, {
+          signal: abortController.signal,
+        })) {
+          if (cancelled || callbacks.signal?.aborted) return;
+          const text = (eventData ?? "").trim();
+          if (!text) continue;
+          try {
+            const parsed = JSON.parse(text) as Record<string, unknown>;
+            if (parsed && typeof parsed === "object" && Object.keys(parsed).length === 0) {
+              continue; // heartbeat {}
+            }
+            callbacks.onMessage?.(normalizeNotificationItem(parsed));
+          } catch {
+            // non-json line ignore
+          }
+        }
+      } catch (e) {
+        if (cancelled || callbacks.signal?.aborted) return;
+        const err = e instanceof Error ? e : new Error(String(e));
+        if (isRecoverableTransportError(err) && attemptIndex < SSE_RECONNECT_DELAYS_MS.length) {
+          await sleep(SSE_RECONNECT_DELAYS_MS[attemptIndex]);
+          await connect(attemptIndex + 1);
+          return;
+        }
+        callbacks.onError?.(err);
+        return;
+      }
+
+      if (!cancelled && !callbacks.signal?.aborted && attemptIndex < SSE_RECONNECT_DELAYS_MS.length) {
+        await sleep(SSE_RECONNECT_DELAYS_MS[attemptIndex]);
+        await connect(attemptIndex + 1);
+      }
+    };
+
+    void connect(0);
+
+    return () => {
+      cancelled = true;
+      abortController.abort();
+    };
+  },
+};
+
 // 강의실 API
 export const courseApi = {
   // 강의실 생성 (선생님 전용)
@@ -1301,6 +1716,60 @@ export const courseApi = {
     });
   },
 
+  // 학생: 내 강의실 가입 요청 목록
+  getMyCourseJoinRequests: async (
+    params?: PageQueryParams,
+  ): Promise<PageResponse<MyCourseJoinRequestListItem>> => {
+    const searchParams = new URLSearchParams();
+    searchParams.set("page", String(params?.page ?? 0));
+    searchParams.set("size", String(Math.min(params?.size ?? 20, 100)));
+    // Swagger: 정렬 허용 필드 createdAt/updatedAt. 응답에는 requestedAt이 내려옴.
+    searchParams.set("sort", params?.sort ?? "createdAt,desc");
+    const res = await apiRequest<PageResponse<Record<string, unknown>>>(
+      `/api/courses/join-requests/me?${searchParams.toString()}`,
+    );
+    const content = Array.isArray(res.content)
+      ? res.content.map((item) =>
+          normalizeMyCourseJoinRequestListItem(item as Record<string, unknown>),
+        )
+      : [];
+    return { ...(res as unknown as PageResponse<MyCourseJoinRequestListItem>), content };
+  },
+
+  // 교사: 강의실 수강 학생 목록
+  getCourseStudents: async (
+    courseId: number,
+    params?: PageQueryParams,
+  ): Promise<PageResponse<CourseStudentListItem>> => {
+    const searchParams = new URLSearchParams();
+    searchParams.set("page", String(params?.page ?? 0));
+    searchParams.set("size", String(Math.min(params?.size ?? 20, 100)));
+    searchParams.set("sort", params?.sort ?? "createdAt,desc");
+    const res = await apiRequest<PageResponse<Record<string, unknown>>>(
+      `/api/courses/${encodeURIComponent(courseId)}/students?${searchParams.toString()}`,
+    );
+    const content = Array.isArray(res.content)
+      ? res.content.map((it) => normalizeCourseStudentListItem(it))
+      : [];
+    return { ...(res as unknown as PageResponse<CourseStudentListItem>), content };
+  },
+
+  // 교사: 수강 학생 제거
+  removeCourseStudent: async (courseId: number, studentId: number): Promise<void> => {
+    await apiRequest<void>(
+      `/api/courses/${encodeURIComponent(courseId)}/students/${encodeURIComponent(studentId)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  // 교사: 수강 학생 차단(수강관계 제거 + 재가입 차단)
+  blockCourseStudent: async (courseId: number, studentId: number): Promise<void> => {
+    await apiRequest<void>(
+      `/api/courses/${encodeURIComponent(courseId)}/students/${encodeURIComponent(studentId)}/block`,
+      { method: "POST" },
+    );
+  },
+
   // 교사 가입 요청 목록 조회
   getCourseJoinRequests: async (
     courseId: number,
@@ -1346,6 +1815,14 @@ export const courseApi = {
   },
 };
 
+function extractReportSseDoneText(payload: Record<string, unknown>): string | undefined {
+  for (const k of ["content", "text", "message", "answer", "markdown", "summaryMarkdown"]) {
+    const v = payload[k];
+    if (typeof v === "string" && v.trim() !== "") return v;
+  }
+  return undefined;
+}
+
 export const studentReportApi = {
   getStudentReports: async (
     courseId: number,
@@ -1376,6 +1853,142 @@ export const studentReportApi = {
       `/api/courses/${encodeURIComponent(courseId)}/reports/students/${encodeURIComponent(studentId)}`,
     );
     return normalizeStudentReportDetail(raw);
+  },
+
+  /** 저장된 강의실 종합 리포트. 미생성 시 204 → `null` */
+  getClassroomReport: async (courseId: number): Promise<ClassroomReportResponse | null> => {
+    const url = resolveApiEndpointUrl(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/classroom`,
+    );
+    const token = getAuthToken();
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(url, { method: "GET", headers, mode: "cors", credentials: "omit" });
+    if (res.status === 204) return null;
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(t.trim() || `강의실 리포트 조회 실패 (${res.status})`);
+    }
+    const json = (await res.json()) as Record<string, unknown>;
+    return normalizeClassroomReport(json);
+  },
+
+  analyzeClassroomSync: async (courseId: number): Promise<Record<string, unknown>> => {
+    return apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/classroom/analyze`,
+      { method: "POST", body: "{}" },
+    );
+  },
+
+  streamClassroomAnalyze: async (
+    courseId: number,
+    options?: {
+      signal?: AbortSignal;
+      onDelta?: (chunk: string) => void;
+      onDone?: (payload: Record<string, unknown>) => void;
+    },
+  ): Promise<void> => {
+    const url = resolveApiEndpointUrl(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/classroom/analyze/stream`,
+    );
+    const token = getAuthToken();
+    const headers: Record<string, string> = {
+      Accept: "text/event-stream",
+      "Content-Type": "application/json",
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: "{}",
+      mode: "cors",
+      credentials: "omit",
+      signal: options?.signal,
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(t.trim() || `강의실 분석 스트림 실패 (${res.status})`);
+    }
+    for await (const ev of iterateLegacyLectureNextSse(res, { signal: options?.signal })) {
+      if (ev.kind === "delta" || ev.kind === "thought_delta") {
+        if (ev.text) options?.onDelta?.(ev.text);
+      } else if (ev.kind === "done") {
+        options?.onDone?.(ev.payload);
+        return;
+      } else if (ev.kind === "error") {
+        throw new Error(ev.message);
+      }
+    }
+  },
+
+  getStudentAiContext: async (
+    courseId: number,
+    studentId: number,
+  ): Promise<StudentReportAiContextResponse> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/students/${encodeURIComponent(studentId)}/ai-context`,
+    );
+    return normalizeStudentReportAiContext(raw);
+  },
+
+  /**
+   * 학생 리포트 팔로업 챗봇(SSE). `model`은 전송하지 않음(백엔드 기본 LLM).
+   */
+  streamStudentReportChat: async (
+    courseId: number,
+    studentId: number,
+    payload: { question: string; messages?: Array<Record<string, unknown>> },
+    options?: {
+      signal?: AbortSignal;
+      onDelta?: (chunk: string) => void;
+    },
+  ): Promise<string> => {
+    const url = resolveApiEndpointUrl(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/students/${encodeURIComponent(studentId)}/chat/stream`,
+    );
+    const token = getAuthToken();
+    const headers: Record<string, string> = {
+      Accept: "text/event-stream",
+      "Content-Type": "application/json",
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const bodyObj: Record<string, unknown> = { question: payload.question };
+    if (payload.messages != null && payload.messages.length > 0) {
+      bodyObj.messages = payload.messages;
+    }
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(bodyObj),
+      mode: "cors",
+      credentials: "omit",
+      signal: options?.signal,
+    });
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(t.trim() || `리포트 챗봇 요청 실패 (${res.status})`);
+    }
+    let accumulated = "";
+    let lastDone: Record<string, unknown> | null = null;
+    for await (const ev of iterateLegacyLectureNextSse(res, { signal: options?.signal })) {
+      if (ev.kind === "delta" || ev.kind === "thought_delta") {
+        if (ev.text) {
+          accumulated += ev.text;
+          options?.onDelta?.(ev.text);
+        }
+      } else if (ev.kind === "done") {
+        lastDone = ev.payload;
+        break;
+      } else if (ev.kind === "error") {
+        throw new Error(ev.message);
+      }
+    }
+    const fromDone = lastDone ? extractReportSseDoneText(lastDone) : undefined;
+    if (!accumulated.trim() && fromDone) {
+      accumulated = fromDone;
+      options?.onDelta?.(fromDone);
+    }
+    return accumulated;
   },
 };
 

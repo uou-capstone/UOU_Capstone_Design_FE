@@ -2,6 +2,8 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
+import { BellIcon } from "@/components/common/Icons";
+import { notificationsApi, type NotificationItem } from "@/services/api";
 
 function SettingsIcon({ className }: { className?: string }) {
   return (
@@ -67,6 +69,14 @@ const TopNav: React.FC<TopNavProps> = ({
   const navigate = useNavigate();
   const [isUserMenuOpen, setIsUserMenuOpen] = React.useState(false);
   const userMenuRef = React.useRef<HTMLDivElement | null>(null);
+  const [notifOpen, setNotifOpen] = React.useState(false);
+  const notifRef = React.useRef<HTMLDivElement | null>(null);
+  const [unreadCount, setUnreadCount] = React.useState(0);
+  const [notifPage, setNotifPage] = React.useState(0);
+  const [notifTotalPages, setNotifTotalPages] = React.useState(1);
+  const [notifItems, setNotifItems] = React.useState<NotificationItem[]>([]);
+  const [notifLoading, setNotifLoading] = React.useState(false);
+  const [notifError, setNotifError] = React.useState<string | null>(null);
 
   const handleLogout = () => {
     setIsUserMenuOpen(false);
@@ -125,6 +135,123 @@ const TopNav: React.FC<TopNavProps> = ({
     };
   }, [isUserMenuOpen]);
 
+  React.useEffect(() => {
+    if (!user) {
+      setUnreadCount(0);
+      return;
+    }
+    let cancelled = false;
+    void notificationsApi
+      .getUnreadCount()
+      .then((c) => {
+        if (!cancelled) setUnreadCount(Math.max(0, c));
+      })
+      .catch(() => {
+        // ignore
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  React.useEffect(() => {
+    if (!user) return;
+    const stop = notificationsApi.subscribeNotificationsStream({
+      onMessage: (item) => {
+        setNotifItems((prev) => {
+          if (prev.some((x) => x.notificationId === item.notificationId)) return prev;
+          return [item, ...prev].slice(0, 50);
+        });
+        if (!item.read) setUnreadCount((c) => c + 1);
+      },
+    });
+    return () => stop();
+  }, [user]);
+
+  const loadNotifications = React.useCallback(async (page: number) => {
+    setNotifLoading(true);
+    setNotifError(null);
+    try {
+      const res = await notificationsApi.getNotifications({
+        page,
+        size: 20,
+        sort: "createdAt,desc",
+      });
+      setNotifItems(res.content ?? []);
+      setNotifTotalPages(Math.max(res.totalPages ?? 1, 1));
+    } catch (e) {
+      setNotifError(e instanceof Error ? e.message : "알림을 불러오지 못했습니다.");
+      setNotifItems([]);
+      setNotifTotalPages(1);
+    } finally {
+      setNotifLoading(false);
+    }
+  }, []);
+
+  const getNotificationNavigatePath = React.useCallback(
+    (item: NotificationItem): string | null => {
+      const t = String(item.resourceType ?? "").trim().toUpperCase();
+      const id = item.resourceId;
+      if (!id || !Number.isFinite(id)) return null;
+      if (t === "COURSE") return `/courses/${id}`;
+      return null;
+    },
+    [],
+  );
+
+  const handleNotificationClick = React.useCallback(
+    async (item: NotificationItem) => {
+      try {
+        if (!item.read) {
+          await notificationsApi.markRead(item.notificationId);
+          setNotifItems((prev) =>
+            prev.map((x) =>
+              x.notificationId === item.notificationId ? { ...x, read: true } : x,
+            ),
+          );
+          setUnreadCount((c) => Math.max(0, c - 1));
+        }
+      } catch (e) {
+        // 읽음 처리 실패해도 이동은 막지 않음
+        console.warn(e);
+      }
+
+      const target = getNotificationNavigatePath(item);
+      if (target) {
+        setNotifOpen(false);
+        navigate(target);
+      }
+    },
+    [getNotificationNavigatePath, navigate],
+  );
+
+  React.useEffect(() => {
+    if (!notifOpen) return;
+    void loadNotifications(notifPage);
+  }, [notifOpen, notifPage, loadNotifications]);
+
+  React.useEffect(() => {
+    if (!notifOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        notifRef.current &&
+        event.target instanceof Node &&
+        !notifRef.current.contains(event.target)
+      ) {
+        setNotifOpen(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setNotifOpen(false);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [notifOpen]);
+
   const isPreviewMode = !!previewFileName;
 
   return (
@@ -137,7 +264,7 @@ const TopNav: React.FC<TopNavProps> = ({
         <button
           type="button"
           onClick={handleNavigateHome}
-          className={`truncate text-lg font-semibold flex items-center ${isDarkMode ? "text-white" : "text-gray-900"}`}
+          className={`truncate text-lg font-semibold flex items-center xl:text-xl 2xl:text-2xl ${isDarkMode ? "text-white" : "text-gray-900"}`}
         >
           AI Tutor LMS
         </button>
@@ -162,7 +289,136 @@ const TopNav: React.FC<TopNavProps> = ({
           </button>
         )}
         {user ? (
-          <div className="relative" ref={userMenuRef}>
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="relative" ref={notifRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setNotifOpen((p) => !p);
+                  setNotifPage(0);
+                }}
+                className={`relative p-2 rounded-lg cursor-pointer transition-colors ${
+                  isDarkMode ? "hover:bg-white/10 text-gray-200" : "hover:bg-gray-100 text-gray-700"
+                }`}
+                aria-label="알림"
+                aria-haspopup="true"
+                aria-expanded={notifOpen}
+              >
+                <BellIcon className="w-5 h-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-[11px] leading-5 text-center">
+                    {unreadCount > 99 ? "99+" : String(unreadCount)}
+                  </span>
+                )}
+              </button>
+              {notifOpen && (
+                <div
+                  className={`absolute right-0 mt-2 w-[22rem] max-w-[80vw] rounded-2xl border shadow-xl overflow-hidden z-30 ${
+                    isDarkMode ? "bg-zinc-900 border-zinc-700 text-gray-100" : "bg-white border-gray-200 text-gray-900"
+                  }`}
+                >
+                  <div className={`flex items-center justify-between px-4 py-3 border-b ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                    <div className="text-sm font-semibold">알림</div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          await notificationsApi.markReadAll();
+                          setNotifItems((prev) => prev.map((x) => ({ ...x, read: true })));
+                          setUnreadCount(0);
+                        } catch (e) {
+                          window.alert(e instanceof Error ? e.message : "처리에 실패했습니다.");
+                        }
+                      }}
+                      className={`text-xs font-semibold px-2 py-1 rounded-lg ${
+                        isDarkMode ? "bg-white/10 hover:bg-white/15 text-gray-100" : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                      }`}
+                    >
+                      모두 읽음
+                    </button>
+                  </div>
+                  <div className="max-h-[28rem] overflow-y-auto">
+                    {notifLoading ? (
+                      <div className="px-4 py-10 text-sm opacity-70 text-center">불러오는 중…</div>
+                    ) : notifError ? (
+                      <div className={`px-4 py-6 text-sm ${isDarkMode ? "text-red-300" : "text-red-600"}`}>{notifError}</div>
+                    ) : notifItems.length === 0 ? (
+                      <div className="px-4 py-10 text-sm opacity-70 text-center">알림이 없습니다.</div>
+                    ) : (
+                      <ul className="divide-y divide-black/5 dark:divide-white/10">
+                        {notifItems.map((n) => (
+                          <li key={n.notificationId}>
+                            <button
+                              type="button"
+                              onClick={() => void handleNotificationClick(n)}
+                              className={`w-full text-left px-4 py-3 transition-colors ${
+                                n.read
+                                  ? isDarkMode
+                                    ? "hover:bg-white/5"
+                                    : "hover:bg-gray-50"
+                                  : isDarkMode
+                                    ? "bg-emerald-500/10 hover:bg-emerald-500/15"
+                                    : "bg-emerald-50 hover:bg-emerald-100/60"
+                              }`}
+                            >
+                              <div className="flex items-start gap-2">
+                                {!n.read && <span className="mt-1.5 h-2 w-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />}
+                                <div className="min-w-0">
+                                  <div className="text-sm font-semibold truncate">{n.title || n.type}</div>
+                                  <div className={`text-xs mt-1 whitespace-pre-wrap break-words ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
+                                    {n.body}
+                                  </div>
+                                  <div className={`text-[11px] mt-2 opacity-70 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                                    {n.createdAt}
+                                  </div>
+                                </div>
+                              </div>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  {notifTotalPages > 1 && (
+                    <div className={`flex items-center justify-between px-4 py-2 border-t ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                      <button
+                        type="button"
+                        disabled={notifPage <= 0 || notifLoading}
+                        onClick={() => setNotifPage((p) => Math.max(0, p - 1))}
+                        className={`text-xs font-semibold px-2 py-1 rounded-lg ${
+                          notifPage <= 0 || notifLoading
+                            ? "opacity-40 cursor-not-allowed"
+                            : isDarkMode
+                              ? "bg-white/10 hover:bg-white/15 text-gray-100"
+                              : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                        }`}
+                      >
+                        이전
+                      </button>
+                      <span className="text-[11px] opacity-70">
+                        {notifPage + 1} / {notifTotalPages}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={notifPage >= notifTotalPages - 1 || notifLoading}
+                        onClick={() => setNotifPage((p) => Math.min(notifTotalPages - 1, p + 1))}
+                        className={`text-xs font-semibold px-2 py-1 rounded-lg ${
+                          notifPage >= notifTotalPages - 1 || notifLoading
+                            ? "opacity-40 cursor-not-allowed"
+                            : isDarkMode
+                              ? "bg-white/10 hover:bg-white/15 text-gray-100"
+                              : "bg-gray-100 hover:bg-gray-200 text-gray-700"
+                        }`}
+                      >
+                        다음
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="relative" ref={userMenuRef}>
             <button
               type="button"
               onClick={toggleUserMenu}
@@ -291,6 +547,7 @@ const TopNav: React.FC<TopNavProps> = ({
                 </div>
               </div>
             )}
+            </div>
           </div>
         ) : (
           <button

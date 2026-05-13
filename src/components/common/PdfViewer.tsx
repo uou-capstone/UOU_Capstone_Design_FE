@@ -15,9 +15,6 @@ import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 // pdfjs worker 설정 (Vite 권장: ?url import 사용)
 pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
-// #region agent log
-fetch('http://127.0.0.1:7438/ingest/1d69742f-e23a-4107-bc62-2937b5322746',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b316ea'},body:JSON.stringify({sessionId:'b316ea',runId:'pre-fix',hypothesisId:'H1_workerUrl',location:'PdfViewer.tsx:workerSrc',message:'pdfjs workerSrc set',data:{workerSrc:pdfWorkerSrc},timestamp:Date.now()})}).catch(()=>{});
-// #endregion
 
 const MIN_ZOOM = 0.5;
 /** 사용자가 확대할 수 있는 절대 최대 배율 (기본은 뷰포트 fit 최대, 여기서 더 확대 가능) */
@@ -132,9 +129,6 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
     lastFileUrlRef.current = fileUrl;
 
     const fitZoomToView = async () => {
-      // #region agent log
-      fetch('http://127.0.0.1:7438/ingest/1d69742f-e23a-4107-bc62-2937b5322746',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b316ea'},body:JSON.stringify({sessionId:'b316ea',runId:'pre-fix',hypothesisId:'H2_fitZoom_blobFetch',location:'PdfViewer.tsx:fitZoomToView:start',message:'fitZoomToView start',data:{fileUrlPrefix:String(fileUrl).slice(0,32),isBlob:String(fileUrl).startsWith('blob:'),numPages,baseWidth},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       // blob: URL은 pdf.js 내부 네트워크 레이어에서 재요청될 때 브라우저/환경에 따라 실패할 수 있어,
       // 자동 fit 계산에서는 getDocument(fileUrl) 호출을 피합니다.
       const scrollEl = scrollRef.current;
@@ -263,9 +257,6 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
     const root = scrollRef.current;
     if (!root) return;
 
-    // #region agent log
-    fetch('http://127.0.0.1:7438/ingest/1d69742f-e23a-4107-bc62-2937b5322746',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'b316ea'},body:JSON.stringify({sessionId:'b316ea',runId:'pre-fix',hypothesisId:'H3_rootMargin',location:'PdfViewer.tsx:IntersectionObserver:init',message:'creating IntersectionObserver',data:{rootMargin:'0 -20% 0 -20%',thresholdCount:5},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     const observer = new IntersectionObserver(
       (entries) => {
         if (scrollProgrammaticRef.current) return;

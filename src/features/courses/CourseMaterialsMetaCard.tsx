@@ -65,38 +65,41 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
         isDarkMode ? "border-zinc-600 bg-zinc-900/40" : "border-gray-200 bg-gray-50"
       }`}
     >
-      <div className="flex min-w-0 flex-row gap-3 items-start justify-between">
-        <div className="min-w-0 flex-1 space-y-1">
-          <h1
-            className={`text-xl font-semibold leading-tight tracking-tight sm:text-2xl truncate text-balance ${
-              isDarkMode ? "text-gray-50" : "text-gray-900"
-            }`}
-          >
-            {title}
-          </h1>
-          <p
-            className={`text-xs leading-snug ${
-              isDarkMode ? "text-gray-400" : "text-gray-600"
-            }`}
-          >
-            {desc ? desc : "등록된 설명이 없습니다."}
-          </p>
-          <p
-            className={`text-xs leading-snug ${
-              isDarkMode ? "text-gray-500" : "text-gray-500"
-            }`}
-          >
-            {dateMent}
-          </p>
-        </div>
+      <div className="flex min-w-0 flex-col gap-2">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex min-w-0 items-start gap-2">
+              <h1
+                className={`min-w-0 flex-1 text-xl font-semibold leading-tight tracking-tight sm:text-2xl xl:text-2xl 2xl:text-3xl truncate text-balance ${
+                  isDarkMode ? "text-gray-50" : "text-gray-900"
+                }`}
+              >
+                {title}
+              </h1>
+              {onEditCourseMeta ? (
+                <button
+                  type="button"
+                  onClick={onEditCourseMeta}
+                  className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                    isDarkMode
+                      ? "border-zinc-700 text-gray-200 hover:bg-white/10"
+                      : "border-gray-200 text-gray-700 hover:bg-gray-100"
+                  }`}
+                  aria-label="강의실 정보 수정"
+                  title="강의실 정보 수정"
+                >
+                  <EditIcon className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </div>
+          </div>
 
-        {isTeacher ? (
-          <div className="flex shrink-0 flex-col items-end gap-1 self-start pt-0.5 text-right">
-            {invitationCode ? (
-              <>
-                <div className="flex max-w-[min(100vw-8rem,12rem)] items-center gap-1.5 sm:max-w-none">
+          {isTeacher ? (
+            <div className="flex shrink-0 flex-col items-end gap-1 self-start pt-0.5 text-right">
+              {invitationCode ? (
+                <div className="flex max-w-[min(100vw-10rem,12rem)] items-center gap-1.5 sm:max-w-none">
                   <code
-                    className={`truncate rounded-md px-2 py-1 font-mono text-xs tabular-nums ${
+                    className={`truncate rounded-md px-2 py-1 font-mono text-xs tabular-nums xl:text-sm ${
                       isDarkMode ? "bg-black/35 text-emerald-200" : "bg-white text-gray-900"
                     }`}
                     title={invitationCode}
@@ -121,34 +124,35 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
                     )}
                   </button>
                 </div>
-                {onEditCourseMeta ? (
-                  <button
-                    type="button"
-                    onClick={onEditCourseMeta}
-                    className={`mt-1 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
-                      isDarkMode
-                        ? "border border-zinc-700 text-gray-200 hover:bg-white/10"
-                        : "border border-gray-200 text-gray-700 hover:bg-gray-100"
-                    }`}
-                    aria-label="강의실 정보 수정"
-                    title="강의실 정보 수정"
-                  >
-                    <EditIcon className="h-3.5 w-3.5" />
-                    수정
-                  </button>
-                ) : null}
-              </>
-            ) : (
-              <span
-                className={`max-w-[10rem] text-right text-[10px] leading-tight sm:max-w-xs ${
-                  isDarkMode ? "text-gray-500" : "text-gray-500"
-                }`}
-              >
-                참여 코드가 없습니다.
-              </span>
-            )}
-          </div>
-        ) : null}
+              ) : (
+                <span
+                  className={`max-w-[10rem] text-right text-[10px] leading-tight sm:max-w-xs ${
+                    isDarkMode ? "text-gray-500" : "text-gray-500"
+                  }`}
+                >
+                  참여 코드가 없습니다.
+                </span>
+              )}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="space-y-1">
+          <p
+            className={`text-xs leading-snug xl:text-sm ${
+              isDarkMode ? "text-gray-400" : "text-gray-600"
+            }`}
+          >
+            {desc ? desc : "등록된 설명이 없습니다."}
+          </p>
+          <p
+            className={`text-xs leading-snug xl:text-sm ${
+              isDarkMode ? "text-gray-500" : "text-gray-500"
+            }`}
+          >
+            {dateMent}
+          </p>
+        </div>
       </div>
     </div>
   );
