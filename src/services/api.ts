@@ -1877,7 +1877,7 @@ export const checkServerStatus = async (): Promise<{ online: boolean; message?: 
   const timeoutId = setTimeout(() => controller.abort(), 5000);
 
   try {
-    const paths = ['/api/health', '/actuator/health', '/'];
+    const paths = ['/api/health'];
     for (const path of paths) {
       const response = await tryFetch(baseUrl, path, controller.signal);
       clearTimeout(timeoutId);
