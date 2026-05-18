@@ -1770,7 +1770,7 @@ const MainContent: React.FC<MainContentProps> = ({
       typeof window !== "undefined" && window.location.origin === apiOrigin;
     let fetchUrl: string;
     try {
-      const baseForParse = API_BASE_URL || "https://uouaitutor.duckdns.org";
+      const baseForParse = API_BASE_URL || "https://dev.uouaitutor.duckdns.org";
       const u = previewFileUrl.startsWith("http")
         ? new URL(previewFileUrl)
         : new URL(previewFileUrl, baseForParse);

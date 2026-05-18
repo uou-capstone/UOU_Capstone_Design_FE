@@ -1,6 +1,6 @@
 import { sanitizePostLoginNext } from "../utils/sanitizePostLoginNext";
 
-const BACKEND_URL = 'https://uouaitutor.duckdns.org';
+const BACKEND_URL = 'https://dev.uouaitutor.duckdns.org';
 // 일부 TS 설정에서는 import.meta.env 타입 선언이 없어 오류가 나므로 any 캐스트로 우회한다.
 const META_ENV = (import.meta as any)?.env ?? {};
 export const API_BASE_URL = META_ENV.VITE_API_URL || BACKEND_URL;
