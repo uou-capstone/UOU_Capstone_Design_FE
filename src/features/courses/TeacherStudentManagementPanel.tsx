@@ -47,6 +47,7 @@ export const TeacherStudentManagementPanel: React.FC<
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actingId, setActingId] = useState<number | null>(null);
+  const [selectedRequestIds, setSelectedRequestIds] = useState<Record<number, boolean>>({});
 
   const loadList = useCallback(async () => {
     if (tab === "enrolled") {
@@ -54,6 +55,7 @@ export const TeacherStudentManagementPanel: React.FC<
       setError(null);
       setRows([]);
       setTotalPages(1);
+      setSelectedRequestIds({});
       return;
     }
     setLoading(true);
@@ -68,11 +70,13 @@ export const TeacherStudentManagementPanel: React.FC<
       });
       setRows(pageRes.content ?? []);
       setTotalPages(Math.max(pageRes.totalPages ?? 1, 1));
+      setSelectedRequestIds({});
     } catch (e) {
       const raw =
         e instanceof Error ? e.message : "가입 요청 목록을 불러오지 못했습니다.";
       setError(raw);
       setRows([]);
+      setSelectedRequestIds({});
     } finally {
       setLoading(false);
     }
@@ -108,6 +112,11 @@ export const TeacherStudentManagementPanel: React.FC<
           await courseApi.blockJoinRequest(courseId, row.requestId);
         }
         setRows((prev) => prev.filter((it) => it.requestId !== row.requestId));
+        setSelectedRequestIds((prev) => {
+          const next = { ...prev };
+          delete next[row.requestId];
+          return next;
+        });
       } catch (e) {
         const raw = e instanceof Error ? e.message : `${actionLabel} 처리에 실패했습니다.`;
         const code = extractJoinRequestErrorCode(raw);
@@ -122,6 +131,33 @@ export const TeacherStudentManagementPanel: React.FC<
       }
     },
     [courseId, loadList],
+  );
+
+  const selectedIds = rows
+    .filter((row) => selectedRequestIds[row.requestId])
+    .map((row) => row.requestId);
+
+  const handleBulkJoinAction = useCallback(
+    async (action: "approve" | "reject") => {
+      if (selectedIds.length === 0) return;
+      const label = action === "approve" ? "승인" : "거절";
+      const ok = window.confirm(`선택한 가입 요청 ${selectedIds.length}건을 ${label}할까요?`);
+      if (!ok) return;
+      setActingId(-1);
+      try {
+        const result =
+          action === "approve"
+            ? await courseApi.approveJoinRequestsBulk(courseId, selectedIds)
+            : await courseApi.rejectJoinRequestsBulk(courseId, selectedIds);
+        window.alert(`${label} 완료: 성공 ${result.successCount ?? 0}건, 실패 ${result.failureCount ?? 0}건`);
+        await loadList();
+      } catch (e) {
+        window.alert(e instanceof Error ? e.message : `일괄 ${label}에 실패했습니다.`);
+      } finally {
+        setActingId(null);
+      }
+    },
+    [courseId, loadList, selectedIds],
   );
 
   return (
@@ -159,6 +195,26 @@ export const TeacherStudentManagementPanel: React.FC<
         >
           새로고침
         </button>
+        {tab === "pending" ? (
+          <>
+            <button
+              type="button"
+              disabled={selectedIds.length === 0 || actingId != null}
+              onClick={() => void handleBulkJoinAction("approve")}
+              className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              선택 승인
+            </button>
+            <button
+              type="button"
+              disabled={selectedIds.length === 0 || actingId != null}
+              onClick={() => void handleBulkJoinAction("reject")}
+              className="rounded-full bg-zinc-500 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+            >
+              선택 거절
+            </button>
+          </>
+        ) : null}
       </div>
 
       {tab === "enrolled" ? (
@@ -182,6 +238,22 @@ export const TeacherStudentManagementPanel: React.FC<
                 isDarkMode ? "border-zinc-600 bg-zinc-800/60" : "border-gray-200 bg-white"
               }`}
             >
+              {tab === "pending" ? (
+                <label className="mb-2 inline-flex items-center gap-2 text-xs font-medium">
+                  <input
+                    type="checkbox"
+                    checked={!!selectedRequestIds[row.requestId]}
+                    onChange={(e) =>
+                      setSelectedRequestIds((prev) => ({
+                        ...prev,
+                        [row.requestId]: e.target.checked,
+                      }))
+                    }
+                    disabled={actingId != null}
+                  />
+                  선택
+                </label>
+              ) : null}
               <div className="text-sm font-medium">{row.studentName}</div>
               <div className={`text-xs mt-0.5 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
                 {row.studentEmail}

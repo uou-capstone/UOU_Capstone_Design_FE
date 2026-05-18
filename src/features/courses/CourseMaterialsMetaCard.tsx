@@ -61,16 +61,16 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
 
   return (
     <div
-      className={`mb-3 shrink-0 rounded-xl border px-3 py-2.5 ${
-        isDarkMode ? "border-zinc-600 bg-zinc-900/40" : "border-gray-200 bg-gray-50"
+      className={`mb-6 shrink-0 rounded-2xl border px-6 py-6 shadow-[0_18px_50px_rgba(0,0,0,0.16)] sm:px-8 ${
+        isDarkMode ? "border-zinc-800 bg-[#171b20]" : "border-gray-200 bg-white"
       }`}
     >
-      <div className="flex min-w-0 flex-col gap-2">
-        <div className="flex min-w-0 items-start justify-between gap-3">
+      <div className="flex min-w-0 flex-col gap-5">
+        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-start gap-2">
+            <div className="flex min-w-0 items-start gap-3">
               <h1
-                className={`min-w-0 flex-1 text-xl font-semibold leading-tight tracking-tight sm:text-2xl xl:text-2xl 2xl:text-3xl truncate text-balance ${
+                className={`min-w-0 flex-1 truncate text-2xl font-semibold leading-tight tracking-tight sm:text-3xl ${
                   isDarkMode ? "text-gray-50" : "text-gray-900"
                 }`}
               >
@@ -80,7 +80,7 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
                 <button
                   type="button"
                   onClick={onEditCourseMeta}
-                  className={`mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                  className={`mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-colors ${
                     isDarkMode
                       ? "border-zinc-700 text-gray-200 hover:bg-white/10"
                       : "border-gray-200 text-gray-700 hover:bg-gray-100"
@@ -88,19 +88,21 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
                   aria-label="강의실 정보 수정"
                   title="강의실 정보 수정"
                 >
-                  <EditIcon className="h-3.5 w-3.5" />
+                  <EditIcon className="h-4 w-4" />
                 </button>
               ) : null}
             </div>
           </div>
 
           {isTeacher ? (
-            <div className="flex shrink-0 flex-col items-end gap-1 self-start pt-0.5 text-right">
+            <div className="flex shrink-0 flex-col items-end gap-1 self-start text-right">
               {invitationCode ? (
-                <div className="flex max-w-[min(100vw-10rem,12rem)] items-center gap-1.5 sm:max-w-none">
+                <div className="flex max-w-[min(100vw-10rem,18rem)] items-center gap-2 sm:max-w-none">
                   <code
-                    className={`truncate rounded-md px-2 py-1 font-mono text-xs tabular-nums xl:text-sm ${
-                      isDarkMode ? "bg-black/35 text-emerald-200" : "bg-white text-gray-900"
+                    className={`truncate rounded-full border px-3 py-2 font-mono text-xs tabular-nums xl:text-sm ${
+                      isDarkMode
+                        ? "border-zinc-700 bg-black/25 text-emerald-200"
+                        : "border-gray-200 bg-gray-50 text-gray-900"
                     }`}
                     title={invitationCode}
                   >
@@ -109,10 +111,10 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
                   <button
                     type="button"
                     onClick={() => void handleCopy()}
-                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-colors ${
                       isDarkMode
-                        ? "text-gray-300 hover:bg-white/10 hover:text-white"
-                        : "text-gray-600 hover:bg-gray-200 hover:text-gray-900"
+                        ? "border-zinc-700 text-gray-300 hover:bg-white/10 hover:text-white"
+                        : "border-gray-200 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
                     }`}
                     aria-label={copied ? "복사됨" : "초대 코드 복사"}
                     title={copied ? "복사됨" : "코드 복사"}
@@ -137,9 +139,9 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
           ) : null}
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-2">
           <p
-            className={`text-xs leading-snug xl:text-sm ${
+            className={`text-sm leading-6 xl:text-base ${
               isDarkMode ? "text-gray-400" : "text-gray-600"
             }`}
           >

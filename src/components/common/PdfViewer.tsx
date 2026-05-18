@@ -71,6 +71,11 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
   const scrollProgrammaticRef = useRef(false);
   const observerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFileUrlRef = useRef<string>("");
+  const viewerBackground = isDarkMode ? "#141414" : "#FFFFFF";
+  const viewerSurface = isDarkMode ? "#141414" : "#FFFFFF";
+  const viewerElevatedSurface = isDarkMode ? "#20242b" : "#FFFFFF";
+  const viewerBorder = isDarkMode ? "#27272a" : "#e5e7eb";
+  const viewerMutedBorder = isDarkMode ? "#3f3f46" : "#d8dde5";
 
   // Page는 고정 baseWidth로 렌더, CSS transform scale(zoom)으로 확대/축소 → 캔버스 재렌더 없이 부드럽게
   const pageWidth = Math.min(
@@ -358,17 +363,17 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
     <div
       ref={containerRef}
       className={`flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden ${className}`}
-      style={{ backgroundColor: isDarkMode ? "#141414" : "#FFFFFF" }}
+      style={{ backgroundColor: viewerBackground }}
       aria-label={title || "PDF 미리보기"}
     >
       {/* 상단 툴바 - 라이트: bg #FFFFFF / 메뉴 #141414, 다크: bg #141414 / 메뉴 #FFFFFF (ThemeContext 기준) */}
       {numPages != null && (
         <div
-          className="shrink-0 h-10 min-h-10 max-h-10 flex items-center justify-center gap-2 px-3 border-b box-border"
+          className="shrink-0 h-12 min-h-12 max-h-12 flex items-center justify-center gap-2 px-4 border-b box-border"
           style={{
-            backgroundColor: isDarkMode ? "#141414" : "#FFFFFF",
+            backgroundColor: viewerSurface,
             color: isDarkMode ? "#FFFFFF" : "#141414",
-            borderColor: isDarkMode ? "#404040" : "#e5e7eb",
+            borderColor: viewerBorder,
           }}
         >
           <button
@@ -388,11 +393,11 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
               value={pageInput}
               onChange={(e) => setPageInput(e.target.value)}
               onBlur={() => setPageInput(String(currentPage))}
-              className="w-8 h-7 px-2 py-1 text-center text-sm rounded border focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-9 h-8 px-2 py-1 text-center text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#ff824d]/40"
               style={{
-                backgroundColor: isDarkMode ? "#27272a" : "#ffffff",
+                backgroundColor: viewerElevatedSurface,
                 color: isDarkMode ? "#FFFFFF" : "#141414",
-                borderColor: isDarkMode ? "#52525b" : "#d1d5db",
+                borderColor: viewerMutedBorder,
               }}
               aria-label="페이지 번호"
             />
@@ -411,7 +416,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
           </button>
           <div
             className="w-px h-5"
-            style={{ backgroundColor: isDarkMode ? "#52525b" : "#d1d5db" }}
+            style={{ backgroundColor: viewerMutedBorder }}
           />
           <div className="flex items-center gap-0.5">
             <button
@@ -434,11 +439,11 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
                 onChange={(e) => setZoomInputValue(e.target.value)}
                 onBlur={applyZoomInput}
                 onKeyDown={handleZoomInputKeyDown}
-                className="w-10 min-w-10 px-0 py-0.5 text-center text-sm rounded border focus:outline-none"
+                className="w-11 min-w-11 px-0 py-1 text-center text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#ff824d]/40"
                 style={{
-                  backgroundColor: isDarkMode ? "#27272a" : "#ffffff",
+                  backgroundColor: viewerElevatedSurface,
                   color: isDarkMode ? "#FFFFFF" : "#141414",
-                  borderColor: "#FFFFFF",
+                  borderColor: viewerMutedBorder,
                 }}
                 aria-label="배율 입력"
               />
@@ -446,8 +451,8 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
               <button
                 type="button"
                 onClick={openZoomInput}
-                className="w-10 min-w-10 py-0.5 text-center text-sm rounded border hover:opacity-80 transition-opacity cursor-pointer focus:outline-none"
-                style={{ borderColor: "#FFFFFF" }}
+                className="w-11 min-w-11 py-1 text-center text-sm rounded-lg border hover:opacity-80 transition-opacity cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#ff824d]/40"
+                style={{ borderColor: viewerMutedBorder }}
                 title="클릭하여 배율 직접 입력"
               >
                 {Math.round(zoom * 100)}%
@@ -468,7 +473,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
           </div>
           <div
             className="w-px h-5"
-            style={{ backgroundColor: isDarkMode ? "#52525b" : "#d1d5db" }}
+            style={{ backgroundColor: viewerMutedBorder }}
           />
           <button
             type="button"
@@ -498,8 +503,8 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
             className={`p-1.5 rounded transition-colors cursor-pointer ${
               isPageListOpen
                 ? isDarkMode
-                  ? "bg-zinc-700 text-white"
-                  : "bg-gray-200 text-[#141414]"
+                  ? "bg-[#ff824d] text-white"
+                  : "bg-[#141414] text-white"
                 : "hover:opacity-80"
             }`}
             title="페이지 목록"
@@ -531,21 +536,23 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
         <div className="h-full min-h-0 min-w-0 flex overflow-hidden">
           {isPageListOpen && numPages != null && (
             <aside
-              className={`w-56 min-w-56 max-w-60 min-h-0 border-r flex flex-col overflow-hidden ${
-                isDarkMode ? "border-zinc-700 bg-[#141414]" : "border-gray-200 bg-white"
-              }`}
+              className="w-56 min-w-56 max-w-60 min-h-0 border-r flex flex-col overflow-hidden"
+              style={{
+                backgroundColor: viewerSurface,
+                borderColor: viewerBorder,
+              }}
             >
-              <div className="p-2 border-b" style={{ borderColor: isDarkMode ? "#404040" : "#e5e7eb" }}>
+              <div className="p-3 border-b" style={{ borderColor: viewerBorder }}>
                 <input
                   type="text"
                   value={pageSearchQuery}
                   onChange={(e) => setPageSearchQuery(e.target.value.replace(/[^\d]/g, ""))}
                   placeholder="페이지 번호 검색"
-                  className="w-full h-8 px-2 text-sm rounded border focus:outline-none focus:ring-2 focus:ring-emerald-500/40"
+                  className="w-full h-9 px-3 text-sm rounded-xl border focus:outline-none focus:ring-2 focus:ring-[#ff824d]/40"
                   style={{
-                    backgroundColor: isDarkMode ? "#27272a" : "#ffffff",
+                    backgroundColor: viewerElevatedSurface,
                     color: isDarkMode ? "#FFFFFF" : "#141414",
-                    borderColor: isDarkMode ? "#52525b" : "#d1d5db",
+                    borderColor: viewerMutedBorder,
                   }}
                 />
               </div>
@@ -553,7 +560,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
                 className="page-list-scroll flex-1 min-h-0 overflow-y-scroll overflow-x-hidden pl-1.5 pr-3 py-1.5 space-y-1"
                 style={{
                   scrollbarWidth: "thin",
-                  scrollbarColor: isDarkMode ? "#52525b #141414" : "#cbd5e0 #ffffff",
+                  scrollbarColor: isDarkMode ? "#52525b #101113" : "#cbd5e0 #f6f7fb",
                   scrollbarGutter: "stable both-edges",
                 }}
               >
@@ -569,7 +576,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
                       onClick={() => scrollToPage(pageNum, "user")}
                     className={`w-full text-left p-2 rounded text-sm transition-colors cursor-pointer border ${
                         currentPage === pageNum
-                        ? "bg-emerald-600/20 border-emerald-400/60 text-emerald-500 ring-1 ring-emerald-500/80"
+                        ? "bg-[#ff824d]/15 border-[#ff824d]/70 text-[#ff824d] ring-1 ring-[#ff824d]/60"
                           : isDarkMode
                           ? "border-zinc-700 text-gray-200 hover:bg-zinc-800"
                           : "border-gray-200 text-gray-700 hover:bg-gray-100"
@@ -577,8 +584,8 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
                     >
                       <div className="flex flex-col items-center">
                         <div
-                          className={`overflow-hidden rounded shadow-sm ${
-                            isDarkMode ? "bg-zinc-900" : "bg-white"
+                          className={`overflow-hidden rounded-lg shadow-sm ${
+                            isDarkMode ? "bg-[#101113]" : "bg-white"
                           }`}
                         >
                           <Page
@@ -605,10 +612,10 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
           <div
             ref={scrollRef}
             className="flex-1 min-h-0 overflow-x-auto overflow-y-auto pdf-scroll-area flex items-start snap-x snap-mandatory"
-            style={{ backgroundColor: isDarkMode ? "#141414" : "#FFFFFF" }}
+            style={{ backgroundColor: viewerBackground }}
           >
           {numPages != null && (
-            <div className="flex flex-nowrap py-3 min-h-full" style={{ gap: 0 }}>
+            <div className="flex flex-nowrap py-5 min-h-full" style={{ gap: 0 }}>
               {Array.from({ length: numPages }, (_, i) => {
                 const pageNum = i + 1;
                 return (
@@ -619,7 +626,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
                     style={{
                       width: scrollAreaWidth || 800,
                       minWidth: scrollAreaWidth || 800,
-                      backgroundColor: isDarkMode ? "#141414" : "#FFFFFF",
+                      backgroundColor: viewerBackground,
                     }}
                   >
                     <div
@@ -634,7 +641,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
                         width={pageWidth}
                         renderTextLayer
                         renderAnnotationLayer
-                        className="shadow-sm"
+                        className="shadow-[0_18px_45px_rgba(15,23,42,0.16)]"
                       />
                     </div>
                   </div>

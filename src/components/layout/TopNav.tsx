@@ -47,6 +47,15 @@ function SystemIcon({ className }: { className?: string }) {
   );
 }
 
+function BookOpenIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5.5A3.5 3.5 0 0 1 7.5 2H12v18H7.5A3.5 3.5 0 0 0 4 23.5v-18Z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 5.5A3.5 3.5 0 0 0 16.5 2H12v18h4.5a3.5 3.5 0 0 1 3.5 3.5v-18Z" />
+    </svg>
+  );
+}
+
 interface TopNavProps {
   onNavigateHome?: () => void;
   onOpenSettings?: () => void;
@@ -253,20 +262,41 @@ const TopNav: React.FC<TopNavProps> = ({
   }, [notifOpen]);
 
   const isPreviewMode = !!previewFileName;
+  const roleSuffix =
+    user?.role === "TEACHER"
+      ? "선생님"
+      : user?.role === "STUDENT"
+        ? "학생"
+        : user?.role === "ADMIN"
+          ? "관리자"
+          : "";
+  const displayUserName = user
+    ? `${user.fullName}${roleSuffix ? ` ${roleSuffix}` : ""}`
+    : "";
 
   return (
     <header
-      className={`flex shrink-0 items-center px-5 py-2.5 transition-colors ${
-        isDarkMode ? "bg-[#141414]" : "bg-[#ffffff]"
+      className={`flex h-[4.5rem] shrink-0 items-center border-b px-7 transition-colors ${
+        isDarkMode
+          ? "border-zinc-800 bg-[#141414]"
+          : "border-gray-200 bg-[#ffffff]"
       }`}
     >
       <div className="flex items-center min-w-0 flex-1">
         <button
           type="button"
           onClick={handleNavigateHome}
-          className={`truncate text-lg font-semibold flex items-center xl:text-xl 2xl:text-2xl ${isDarkMode ? "text-white" : "text-gray-900"}`}
+          className={`flex min-w-0 items-center gap-3 text-lg font-semibold xl:text-xl 2xl:text-2xl ${isDarkMode ? "text-white" : "text-gray-900"}`}
         >
-          AI Tutor LMS
+          <span
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+              isDarkMode ? "text-white" : "text-[#141414]"
+            }`}
+            aria-hidden="true"
+          >
+            <BookOpenIcon className="h-7 w-7" />
+          </span>
+          <span className="truncate">AI Tutor LMS</span>
         </button>
       </div>
       <div className="min-w-0 flex-1" aria-hidden="true" />
@@ -422,17 +452,35 @@ const TopNav: React.FC<TopNavProps> = ({
             <button
               type="button"
               onClick={toggleUserMenu}
-              className="focus:outline-none cursor-pointer"
+              className={`flex items-center gap-2 rounded-full px-2.5 py-2 transition-colors focus:outline-none cursor-pointer ${
+                isDarkMode ? "hover:bg-white/10" : "hover:bg-gray-100"
+              }`}
               aria-haspopup="true"
               aria-expanded={isUserMenuOpen}
             >
-              <div
-                className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-semibold text-sm cursor-pointer transition-colors ${
-                  isDarkMode ? "bg-gray-600 hover:bg-gray-700" : "bg-gray-500 hover:bg-gray-600"
+              <span
+                className={`hidden max-w-40 truncate text-sm font-semibold md:block ${
+                  isDarkMode ? "text-gray-100" : "text-gray-900"
                 }`}
               >
-                {user.fullName.charAt(0).toUpperCase()}
-              </div>
+                {displayUserName}
+              </span>
+              <svg
+                className={`hidden h-4 w-4 shrink-0 md:block ${
+                  isDarkMode ? "text-gray-300" : "text-gray-600"
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
             </button>
             {isUserMenuOpen && (
               <div

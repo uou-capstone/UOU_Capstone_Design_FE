@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
-import { monitoringApi, userApi } from "../../services/api";
+import { monitoringApi, notificationsApi, userApi, type TeacherNotificationPreference } from "../../services/api";
 
 const SettingsPage: React.FC = () => {
   const { isDarkMode } = useTheme();
@@ -22,6 +22,9 @@ const SettingsPage: React.FC = () => {
   const [rateLimit, setRateLimit] = useState<any | null>(null);
   const [cacheStats, setCacheStats] = useState<any | null>(null);
   const [agentStats, setAgentStats] = useState<any | null>(null);
+  const [teacherNotificationPrefs, setTeacherNotificationPrefs] =
+    useState<TeacherNotificationPreference | null>(null);
+  const [isPrefsSaving, setIsPrefsSaving] = useState(false);
   const [selectedSection, setSelectedSection] = useState<"account" | "system">("account");
 
   // 사용자 정보가 변경되면 폼 업데이트
@@ -57,10 +60,32 @@ const SettingsPage: React.FC = () => {
     }
   };
 
+  const loadTeacherNotificationPrefs = async () => {
+    if (!user || user.role !== "TEACHER") return;
+    try {
+      setTeacherNotificationPrefs(await notificationsApi.getTeacherPreferences());
+    } catch {
+      setTeacherNotificationPrefs(null);
+    }
+  };
+
+  const updateTeacherNotificationPrefs = async (
+    next: TeacherNotificationPreference,
+  ) => {
+    setIsPrefsSaving(true);
+    try {
+      const saved = await notificationsApi.updateTeacherPreferences(next);
+      setTeacherNotificationPrefs(saved);
+    } finally {
+      setIsPrefsSaving(false);
+    }
+  };
+
   useEffect(() => {
     // 선생님 계정에서만 자동 로드
     if (user?.role === "TEACHER") {
       void loadMonitoring();
+      void loadTeacherNotificationPrefs();
     }
   }, [user]);
 
@@ -552,6 +577,38 @@ const SettingsPage: React.FC = () => {
         </p>
       ) : (
         <>
+          <div
+            className={`flex flex-col gap-3 rounded-xl border p-4 ${
+              isDarkMode
+                ? "border-zinc-700 bg-zinc-900/60"
+                : "border-gray-200 bg-gray-50"
+            }`}
+          >
+            <div className="flex flex-col gap-1">
+              <span className={`text-sm font-semibold ${isDarkMode ? "text-white" : "text-gray-900"}`}>
+                교사 알림 수신 설정
+              </span>
+              <span className={`text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                자기 활동 알림 포함 여부를 설정합니다.
+              </span>
+            </div>
+            <label className="flex items-center justify-between gap-4 text-sm">
+              <span className={isDarkMode ? "text-gray-200" : "text-gray-800"}>
+                자기 활동 알림 포함
+              </span>
+              <input
+                type="checkbox"
+                checked={!!teacherNotificationPrefs?.includeSelfActionNotifications}
+                disabled={isPrefsSaving || teacherNotificationPrefs == null}
+                onChange={(event) =>
+                  void updateTeacherNotificationPrefs({
+                    includeSelfActionNotifications: event.target.checked,
+                  })
+                }
+              />
+            </label>
+          </div>
+
           <div className="flex items-center justify-between">
             <span className={`text-sm font-medium ${isDarkMode ? "text-white" : "text-gray-900"}`}>
               시스템 모니터링

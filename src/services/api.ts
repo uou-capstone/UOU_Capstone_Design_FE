@@ -561,6 +561,19 @@ export interface CourseDetail extends Course {
   invitationCode?: string;
 }
 
+export interface CourseContentsDeleteRequest {
+  materialIds: number[];
+  examSessionIds: number[];
+  generationSessionIds: number[];
+}
+
+export interface AiContentCallbackItem {
+  contentType?: string;
+  contentData?: string;
+  materialReferences?: string;
+  aiQuestionId?: string;
+}
+
 export type CourseJoinRequestStatus =
   | 'PENDING'
   | 'APPROVED'
@@ -590,6 +603,190 @@ export interface CourseStudentListItem {
   studentName: string;
   studentEmail: string;
   enrolledAt: string;
+}
+
+export interface LocalTimeDto {
+  hour: number;
+  minute: number;
+  second?: number;
+  nano?: number;
+}
+
+export interface AttendanceSession {
+  sessionId: number;
+  courseId: number;
+  lectureId?: number | null;
+  title: string;
+  sessionDate: string;
+  startTime: LocalTimeDto;
+  endTime: LocalTimeDto;
+  createdByTeacherId?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface AttendanceSessionPayload {
+  title: string;
+  sessionDate: string;
+  startTime: LocalTimeDto;
+  endTime: LocalTimeDto;
+  lectureId?: number | null;
+}
+
+export interface AttendanceSessionListQueryParams extends PageQueryParams {}
+
+export type AttendanceStatus = "PRESENT" | "LATE" | "ABSENT" | "EXCUSED";
+
+export interface AttendanceRecord {
+  recordId: number;
+  sessionId: number;
+  studentId: number;
+  studentName: string;
+  status: AttendanceStatus;
+  markedAt?: string;
+  markedByTeacherId?: number;
+  note?: string;
+}
+
+export interface AttendanceRecordUpsertItem {
+  studentId: number;
+  status: AttendanceStatus;
+  note?: string;
+}
+
+export interface AttendanceSessionHeader {
+  sessionId: number;
+  title: string;
+  sessionDate: string;
+}
+
+export interface StudentAttendanceMatrixRow {
+  studentId: number;
+  name: string;
+  records: Record<string, AttendanceStatus>;
+  presentRatio?: number;
+}
+
+export interface CourseAttendanceMatrix {
+  sessions: AttendanceSessionHeader[];
+  students: PageResponse<StudentAttendanceMatrixRow>;
+}
+
+export interface StudentAttendanceSummary {
+  courseId: number;
+  totalSessions: number;
+  presentCount: number;
+  lateCount: number;
+  absentCount: number;
+  excusedCount: number;
+  presentRatio?: number;
+  sessions: Array<{
+    sessionId: number;
+    title: string;
+    sessionDate: string;
+    status: AttendanceStatus;
+  }>;
+}
+
+export type NoticeCategory = "GENERAL" | "EXAM" | "MATERIAL" | "ASSIGNMENT";
+export type NoticePriority = "NORMAL" | "IMPORTANT";
+export type DiscussionCategory = "QUESTION" | "FREE" | "RESOURCE";
+
+export interface NoticeListItem {
+  noticeId: number;
+  authorUserId?: number;
+  authorName: string;
+  title: string;
+  category: NoticeCategory;
+  priority: NoticePriority;
+  pinned: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface NoticeDetail extends NoticeListItem {
+  courseId: number;
+  authorTeacherId?: number;
+  contentMarkdown: string;
+}
+
+export interface NoticePayload {
+  title: string;
+  contentMarkdown: string;
+  category?: NoticeCategory;
+  priority?: NoticePriority;
+  pinned?: boolean;
+}
+
+export interface NoticeComment {
+  commentId: number;
+  noticeId: number;
+  authorUserId?: number;
+  authorName: string;
+  parentCommentId?: number | null;
+  contentMarkdown: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface DiscussionListItem {
+  discussionId: number;
+  authorUserId?: number;
+  authorName: string;
+  title: string;
+  category: DiscussionCategory;
+  pinned: boolean;
+  allowComments: boolean;
+  viewCount: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface DiscussionDetail extends DiscussionListItem {
+  courseId: number;
+  contentMarkdown: string;
+}
+
+export interface DiscussionPayload {
+  title: string;
+  contentMarkdown: string;
+  category?: DiscussionCategory;
+  pinned?: boolean;
+  allowComments?: boolean;
+}
+
+export interface DiscussionComment {
+  commentId: number;
+  discussionId: number;
+  authorUserId?: number;
+  authorName: string;
+  parentCommentId?: number | null;
+  contentMarkdown: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ReportCriterion {
+  id: number;
+  label: string;
+  description?: string;
+  weight?: number;
+}
+
+export interface ReportCriterionPayload {
+  label?: string;
+  description?: string;
+  weight?: number;
+}
+
+export interface TeacherNotificationPreference {
+  includeSelfActionNotifications: boolean;
+}
+
+export interface JoinRequestBulkResult {
+  successCount: number;
+  failureCount: number;
+  results?: unknown[];
 }
 
 export interface MyCourseJoinRequestListItem {
@@ -680,6 +877,311 @@ function normalizeCourseStudentListItem(
     studentName: String(raw.studentName ?? raw.student_name ?? ""),
     studentEmail: String(raw.studentEmail ?? raw.student_email ?? ""),
     enrolledAt: pickFirstNonEmptyString(raw, ["enrolledAt", "enrolled_at", "createdAt", "created_at"]),
+  };
+}
+
+function normalizeLocalTime(raw: unknown): LocalTimeDto {
+  if (raw != null && typeof raw === "object" && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>;
+    return {
+      hour: Number(obj.hour ?? 0),
+      minute: Number(obj.minute ?? 0),
+      second: Number(obj.second ?? 0),
+      nano: Number(obj.nano ?? 0),
+    };
+  }
+  if (typeof raw === "string") {
+    const [hour = "0", minute = "0", second = "0"] = raw.split(":");
+    return {
+      hour: Number(hour) || 0,
+      minute: Number(minute) || 0,
+      second: Number(second) || 0,
+      nano: 0,
+    };
+  }
+  return { hour: 0, minute: 0, second: 0, nano: 0 };
+}
+
+function normalizeAttendanceSession(
+  raw: Record<string, unknown>,
+): AttendanceSession {
+  const lectureRaw = raw.lectureId ?? raw.lecture_id;
+  const lectureId =
+    lectureRaw == null || lectureRaw === ""
+      ? null
+      : Number(lectureRaw);
+  return {
+    sessionId: Number(raw.sessionId ?? raw.session_id ?? 0),
+    courseId: Number(raw.courseId ?? raw.course_id ?? 0),
+    lectureId:
+      typeof lectureId === "number" && Number.isFinite(lectureId)
+        ? lectureId
+        : null,
+    title: String(raw.title ?? ""),
+    sessionDate: String(raw.sessionDate ?? raw.session_date ?? ""),
+    startTime: normalizeLocalTime(raw.startTime ?? raw.start_time),
+    endTime: normalizeLocalTime(raw.endTime ?? raw.end_time),
+    createdByTeacherId:
+      raw.createdByTeacherId == null && raw.created_by_teacher_id == null
+        ? undefined
+        : Number(raw.createdByTeacherId ?? raw.created_by_teacher_id),
+    createdAt: pickFirstNonEmptyString(raw, ["createdAt", "created_at"]) || undefined,
+    updatedAt: pickFirstNonEmptyString(raw, ["updatedAt", "updated_at"]) || undefined,
+  };
+}
+
+function buildPageSearchParams(
+  params: PageQueryParams | undefined,
+  defaultSort: string,
+): URLSearchParams {
+  const searchParams = new URLSearchParams();
+  searchParams.set("page", String(params?.page ?? 0));
+  searchParams.set("size", String(Math.min(params?.size ?? 20, 100)));
+  searchParams.set("sort", params?.sort ?? defaultSort);
+  return searchParams;
+}
+
+function attendanceSessionPayloadToRequest(
+  payload: AttendanceSessionPayload,
+): Record<string, unknown> {
+  return {
+    title: payload.title,
+    sessionDate: payload.sessionDate,
+    startTime: {
+      hour: payload.startTime.hour,
+      minute: payload.startTime.minute,
+      second: payload.startTime.second ?? 0,
+      nano: payload.startTime.nano ?? 0,
+    },
+    endTime: {
+      hour: payload.endTime.hour,
+      minute: payload.endTime.minute,
+      second: payload.endTime.second ?? 0,
+      nano: payload.endTime.nano ?? 0,
+    },
+    lectureId: payload.lectureId ?? null,
+  };
+}
+
+function normalizeAttendanceStatus(raw: unknown): AttendanceStatus {
+  const value = String(raw ?? "ABSENT").toUpperCase();
+  if (value === "PRESENT" || value === "LATE" || value === "EXCUSED") return value;
+  return "ABSENT";
+}
+
+function normalizeAttendanceRecord(raw: Record<string, unknown>): AttendanceRecord {
+  return {
+    recordId: Number(raw.recordId ?? raw.record_id ?? 0),
+    sessionId: Number(raw.sessionId ?? raw.session_id ?? 0),
+    studentId: Number(raw.studentId ?? raw.student_id ?? 0),
+    studentName: String(raw.studentName ?? raw.student_name ?? raw.name ?? ""),
+    status: normalizeAttendanceStatus(raw.status),
+    markedAt: pickFirstNonEmptyString(raw, ["markedAt", "marked_at"]) || undefined,
+    markedByTeacherId:
+      raw.markedByTeacherId == null && raw.marked_by_teacher_id == null
+        ? undefined
+        : Number(raw.markedByTeacherId ?? raw.marked_by_teacher_id),
+    note:
+      typeof raw.note === "string"
+        ? raw.note
+        : typeof raw.memo === "string"
+          ? raw.memo
+          : undefined,
+  };
+}
+
+function normalizeAttendanceSessionHeader(
+  raw: Record<string, unknown>,
+): AttendanceSessionHeader {
+  return {
+    sessionId: Number(raw.sessionId ?? raw.session_id ?? 0),
+    title: String(raw.title ?? ""),
+    sessionDate: String(raw.sessionDate ?? raw.session_date ?? ""),
+  };
+}
+
+function normalizeStudentAttendanceMatrixRow(
+  raw: Record<string, unknown>,
+): StudentAttendanceMatrixRow {
+  const recordsRaw = raw.records;
+  const records: Record<string, AttendanceStatus> = {};
+  if (recordsRaw != null && typeof recordsRaw === "object" && !Array.isArray(recordsRaw)) {
+    for (const [key, value] of Object.entries(recordsRaw as Record<string, unknown>)) {
+      records[key] = normalizeAttendanceStatus(value);
+    }
+  }
+  return {
+    studentId: Number(raw.studentId ?? raw.student_id ?? 0),
+    name: String(raw.name ?? raw.studentName ?? raw.student_name ?? ""),
+    records,
+    presentRatio:
+      raw.presentRatio == null && raw.present_ratio == null
+        ? undefined
+        : Number(raw.presentRatio ?? raw.present_ratio),
+  };
+}
+
+function normalizeCourseAttendanceMatrix(
+  raw: Record<string, unknown>,
+): CourseAttendanceMatrix {
+  const studentsRaw =
+    raw.students != null && typeof raw.students === "object" && !Array.isArray(raw.students)
+      ? (raw.students as PageResponse<Record<string, unknown>>)
+      : ({
+          content: [],
+          page: 0,
+          size: 0,
+          totalElements: 0,
+          totalPages: 1,
+          first: true,
+          last: true,
+        } as PageResponse<Record<string, unknown>>);
+
+  return {
+    sessions: Array.isArray(raw.sessions)
+      ? raw.sessions.map((item) =>
+          normalizeAttendanceSessionHeader(item as Record<string, unknown>),
+        )
+      : [],
+    students: {
+      ...(studentsRaw as unknown as PageResponse<StudentAttendanceMatrixRow>),
+      content: Array.isArray(studentsRaw.content)
+        ? studentsRaw.content.map((item) => normalizeStudentAttendanceMatrixRow(item))
+        : [],
+    },
+  };
+}
+
+function normalizeStudentAttendanceSummary(
+  raw: Record<string, unknown>,
+): StudentAttendanceSummary {
+  return {
+    courseId: Number(raw.courseId ?? raw.course_id ?? 0),
+    totalSessions: Number(raw.totalSessions ?? raw.total_sessions ?? 0),
+    presentCount: Number(raw.presentCount ?? raw.present_count ?? 0),
+    lateCount: Number(raw.lateCount ?? raw.late_count ?? 0),
+    absentCount: Number(raw.absentCount ?? raw.absent_count ?? 0),
+    excusedCount: Number(raw.excusedCount ?? raw.excused_count ?? 0),
+    presentRatio:
+      raw.presentRatio == null && raw.present_ratio == null
+        ? undefined
+        : Number(raw.presentRatio ?? raw.present_ratio),
+    sessions: Array.isArray(raw.sessions)
+      ? raw.sessions.map((item) => {
+          const obj = item as Record<string, unknown>;
+          return {
+            sessionId: Number(obj.sessionId ?? obj.session_id ?? 0),
+            title: String(obj.title ?? ""),
+            sessionDate: String(obj.sessionDate ?? obj.session_date ?? ""),
+            status: normalizeAttendanceStatus(obj.status),
+          };
+        })
+      : [],
+  };
+}
+
+function normalizeNoticeListItem(raw: Record<string, unknown>): NoticeListItem {
+  return {
+    noticeId: Number(raw.noticeId ?? raw.notice_id ?? 0),
+    authorUserId:
+      raw.authorUserId == null && raw.author_user_id == null
+        ? undefined
+        : Number(raw.authorUserId ?? raw.author_user_id),
+    authorName: String(raw.authorName ?? raw.author_name ?? ""),
+    title: String(raw.title ?? ""),
+    category: String(raw.category ?? "GENERAL") as NoticeCategory,
+    priority: String(raw.priority ?? "NORMAL") as NoticePriority,
+    pinned: Boolean(raw.pinned ?? false),
+    createdAt: pickFirstNonEmptyString(raw, ["createdAt", "created_at"]) || undefined,
+    updatedAt: pickFirstNonEmptyString(raw, ["updatedAt", "updated_at"]) || undefined,
+  };
+}
+
+function normalizeNoticeDetail(raw: Record<string, unknown>): NoticeDetail {
+  return {
+    ...normalizeNoticeListItem(raw),
+    courseId: Number(raw.courseId ?? raw.course_id ?? 0),
+    authorTeacherId:
+      raw.authorTeacherId == null && raw.author_teacher_id == null
+        ? undefined
+        : Number(raw.authorTeacherId ?? raw.author_teacher_id),
+    contentMarkdown: String(raw.contentMarkdown ?? raw.content_markdown ?? ""),
+  };
+}
+
+function normalizeNoticeComment(raw: Record<string, unknown>): NoticeComment {
+  return {
+    commentId: Number(raw.commentId ?? raw.comment_id ?? 0),
+    noticeId: Number(raw.noticeId ?? raw.notice_id ?? 0),
+    authorUserId:
+      raw.authorUserId == null && raw.author_user_id == null
+        ? undefined
+        : Number(raw.authorUserId ?? raw.author_user_id),
+    authorName: String(raw.authorName ?? raw.author_name ?? ""),
+    parentCommentId:
+      raw.parentCommentId == null && raw.parent_comment_id == null
+        ? null
+        : Number(raw.parentCommentId ?? raw.parent_comment_id),
+    contentMarkdown: String(raw.contentMarkdown ?? raw.content_markdown ?? ""),
+    createdAt: pickFirstNonEmptyString(raw, ["createdAt", "created_at"]) || undefined,
+    updatedAt: pickFirstNonEmptyString(raw, ["updatedAt", "updated_at"]) || undefined,
+  };
+}
+
+function normalizeDiscussionListItem(raw: Record<string, unknown>): DiscussionListItem {
+  return {
+    discussionId: Number(raw.discussionId ?? raw.discussion_id ?? 0),
+    authorUserId:
+      raw.authorUserId == null && raw.author_user_id == null
+        ? undefined
+        : Number(raw.authorUserId ?? raw.author_user_id),
+    authorName: String(raw.authorName ?? raw.author_name ?? ""),
+    title: String(raw.title ?? ""),
+    category: String(raw.category ?? "FREE") as DiscussionCategory,
+    pinned: Boolean(raw.pinned ?? false),
+    allowComments: raw.allowComments == null ? true : Boolean(raw.allowComments),
+    viewCount: Number(raw.viewCount ?? raw.view_count ?? 0),
+    createdAt: pickFirstNonEmptyString(raw, ["createdAt", "created_at"]) || undefined,
+    updatedAt: pickFirstNonEmptyString(raw, ["updatedAt", "updated_at"]) || undefined,
+  };
+}
+
+function normalizeDiscussionDetail(raw: Record<string, unknown>): DiscussionDetail {
+  return {
+    ...normalizeDiscussionListItem(raw),
+    courseId: Number(raw.courseId ?? raw.course_id ?? 0),
+    contentMarkdown: String(raw.contentMarkdown ?? raw.content_markdown ?? ""),
+  };
+}
+
+function normalizeDiscussionComment(raw: Record<string, unknown>): DiscussionComment {
+  return {
+    commentId: Number(raw.commentId ?? raw.comment_id ?? 0),
+    discussionId: Number(raw.discussionId ?? raw.discussion_id ?? 0),
+    authorUserId:
+      raw.authorUserId == null && raw.author_user_id == null
+        ? undefined
+        : Number(raw.authorUserId ?? raw.author_user_id),
+    authorName: String(raw.authorName ?? raw.author_name ?? ""),
+    parentCommentId:
+      raw.parentCommentId == null && raw.parent_comment_id == null
+        ? null
+        : Number(raw.parentCommentId ?? raw.parent_comment_id),
+    contentMarkdown: String(raw.contentMarkdown ?? raw.content_markdown ?? ""),
+    createdAt: pickFirstNonEmptyString(raw, ["createdAt", "created_at"]) || undefined,
+    updatedAt: pickFirstNonEmptyString(raw, ["updatedAt", "updated_at"]) || undefined,
+  };
+}
+
+function normalizeReportCriterion(raw: Record<string, unknown>): ReportCriterion {
+  return {
+    id: Number(raw.id ?? raw.criterionId ?? raw.criterion_id ?? 0),
+    label: String(raw.label ?? ""),
+    description:
+      typeof raw.description === "string" && raw.description.trim() !== ""
+        ? raw.description
+        : undefined,
+    weight: raw.weight == null ? undefined : Number(raw.weight),
   };
 }
 
@@ -1567,6 +2069,24 @@ export const notificationsApi = {
     await apiRequest<void>(`/api/notifications/read-all`, { method: "POST" });
   },
 
+  getTeacherPreferences: async (): Promise<TeacherNotificationPreference> => {
+    return apiRequest<TeacherNotificationPreference>(
+      `/api/notifications/teacher-preferences`,
+    );
+  },
+
+  updateTeacherPreferences: async (
+    payload: TeacherNotificationPreference,
+  ): Promise<TeacherNotificationPreference> => {
+    return apiRequest<TeacherNotificationPreference>(
+      `/api/notifications/teacher-preferences`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
   subscribeNotificationsStream: (callbacks: {
     signal?: AbortSignal;
     onMessage?: (item: NotificationItem) => void;
@@ -1706,6 +2226,19 @@ export const courseApi = {
     });
   },
 
+  deleteCourseContents: async (
+    courseId: number,
+    payload: CourseContentsDeleteRequest,
+  ): Promise<void> => {
+    await apiRequest<void>(
+      `/api/courses/${encodeURIComponent(courseId)}/contents/delete`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
   // 학생 가입 요청 생성 (승인 대기 모델)
   requestJoinByInvitationCode: async (
     invitationCode: string,
@@ -1714,6 +2247,13 @@ export const courseApi = {
       method: 'POST',
       body: JSON.stringify({ invitationCode }),
     });
+  },
+
+  joinCourseByInvitationCodeDeprecated: async (code: string): Promise<string> => {
+    return apiRequest<string>(
+      `/api/courses/join?code=${encodeURIComponent(code)}`,
+      { method: "POST" },
+    );
   },
 
   // 학생: 내 강의실 가입 요청 목록
@@ -1811,6 +2351,527 @@ export const courseApi = {
     await apiRequest<void>(
       `/api/courses/${encodeURIComponent(courseId)}/join-requests/${encodeURIComponent(requestId)}/block`,
       { method: 'POST' },
+    );
+  },
+
+  approveJoinRequestsBulk: async (
+    courseId: number,
+    requestIds: number[],
+  ): Promise<JoinRequestBulkResult> => {
+    return apiRequest<JoinRequestBulkResult>(
+      `/api/courses/${encodeURIComponent(courseId)}/join-requests/bulk/approve`,
+      {
+        method: "POST",
+        body: JSON.stringify({ requestIds }),
+      },
+    );
+  },
+
+  rejectJoinRequestsBulk: async (
+    courseId: number,
+    requestIds: number[],
+  ): Promise<JoinRequestBulkResult> => {
+    return apiRequest<JoinRequestBulkResult>(
+      `/api/courses/${encodeURIComponent(courseId)}/join-requests/bulk/reject`,
+      {
+        method: "POST",
+        body: JSON.stringify({ requestIds }),
+      },
+    );
+  },
+
+  getAttendanceSessions: async (
+    courseId: number,
+    params?: AttendanceSessionListQueryParams,
+  ): Promise<PageResponse<AttendanceSession>> => {
+    const searchParams = new URLSearchParams();
+    searchParams.set("page", String(params?.page ?? 0));
+    searchParams.set("size", String(Math.min(params?.size ?? 20, 100)));
+    searchParams.set("sort", params?.sort ?? "sessionDate,desc");
+    const res = await apiRequest<PageResponse<Record<string, unknown>> | Record<string, unknown>[]>(
+      `/api/courses/${encodeURIComponent(courseId)}/attendance/sessions?${searchParams.toString()}`,
+    );
+
+    if (Array.isArray(res)) {
+      const content = res.map((item) => normalizeAttendanceSession(item));
+      return {
+        content,
+        page: 0,
+        size: content.length,
+        totalElements: content.length,
+        totalPages: 1,
+        first: true,
+        last: true,
+      };
+    }
+
+    const content = Array.isArray(res.content)
+      ? res.content.map((item) =>
+          normalizeAttendanceSession(item as Record<string, unknown>),
+        )
+      : [];
+    return { ...(res as unknown as PageResponse<AttendanceSession>), content };
+  },
+
+  createAttendanceSession: async (
+    courseId: number,
+    payload: AttendanceSessionPayload,
+  ): Promise<AttendanceSession> => {
+    const res = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/attendance/sessions`,
+      {
+        method: "POST",
+        body: JSON.stringify(attendanceSessionPayloadToRequest(payload)),
+      },
+    );
+    return normalizeAttendanceSession(res);
+  },
+
+  getAttendanceSession: async (
+    courseId: number,
+    sessionId: number,
+  ): Promise<AttendanceSession> => {
+    const res = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/attendance/sessions/${encodeURIComponent(sessionId)}`,
+    );
+    return normalizeAttendanceSession(res);
+  },
+
+  updateAttendanceSession: async (
+    courseId: number,
+    sessionId: number,
+    payload: AttendanceSessionPayload,
+  ): Promise<AttendanceSession> => {
+    const res = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/attendance/sessions/${encodeURIComponent(sessionId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(attendanceSessionPayloadToRequest(payload)),
+      },
+    );
+    return normalizeAttendanceSession(res);
+  },
+
+  deleteAttendanceSession: async (
+    courseId: number,
+    sessionId: number,
+  ): Promise<void> => {
+    await apiRequest<void>(
+      `/api/courses/${encodeURIComponent(courseId)}/attendance/sessions/${encodeURIComponent(sessionId)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  getAttendanceRecords: async (
+    courseId: number,
+    sessionId: number,
+  ): Promise<AttendanceRecord[]> => {
+    const res = await apiRequest<Record<string, unknown>[]>(
+      `/api/courses/${encodeURIComponent(courseId)}/attendance/sessions/${encodeURIComponent(sessionId)}/records`,
+    );
+    return Array.isArray(res)
+      ? res.map((item) => normalizeAttendanceRecord(item))
+      : [];
+  },
+
+  saveAttendanceRecords: async (
+    courseId: number,
+    sessionId: number,
+    items: AttendanceRecordUpsertItem[],
+  ): Promise<void> => {
+    await apiRequest<void>(
+      `/api/courses/${encodeURIComponent(courseId)}/attendance/sessions/${encodeURIComponent(sessionId)}/records`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ items }),
+      },
+    );
+  },
+
+  getAttendanceMatrix: async (
+    courseId: number,
+    params?: PageQueryParams,
+  ): Promise<CourseAttendanceMatrix> => {
+    const searchParams = buildPageSearchParams(params, "name,asc");
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/attendance/summary?${searchParams.toString()}`,
+    );
+    return normalizeCourseAttendanceMatrix(raw);
+  },
+
+  getMyAttendanceSummary: async (courseId: number): Promise<StudentAttendanceSummary> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/attendance/me`,
+    );
+    return normalizeStudentAttendanceSummary(raw);
+  },
+};
+
+function extractSseTextChunk(payload: Record<string, unknown>): string | undefined {
+  for (const key of ["delta", "text", "content", "chunk", "message", "draft"]) {
+    const value = payload[key];
+    if (typeof value === "string" && value !== "") return value;
+  }
+  return undefined;
+}
+
+async function postJsonSseStream(
+  endpoint: string,
+  body: Record<string, unknown>,
+  options?: {
+    signal?: AbortSignal;
+    onDelta?: (chunk: string) => void;
+    onEvent?: (payload: Record<string, unknown>) => void;
+  },
+): Promise<string> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    Accept: "text/event-stream",
+    "Content-Type": "application/json",
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(resolveApiEndpointUrl(endpoint), {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    mode: "cors",
+    credentials: "omit",
+    signal: options?.signal,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text.trim() || `스트림 요청 실패 (${res.status})`);
+  }
+
+  let accumulated = "";
+  for await (const eventData of iterateSseDataPayloadsFromResponse(res, {
+    signal: options?.signal,
+  })) {
+    const text = eventData.trim();
+    if (!text || text === "[DONE]") continue;
+    try {
+      const parsed = JSON.parse(text) as Record<string, unknown>;
+      options?.onEvent?.(parsed);
+      const chunk = extractSseTextChunk(parsed);
+      if (chunk) {
+        accumulated += chunk;
+        options?.onDelta?.(chunk);
+      }
+    } catch {
+      accumulated += text;
+      options?.onDelta?.(text);
+    }
+  }
+  return accumulated;
+}
+
+export const noticeApi = {
+  listNotices: async (
+    courseId: number,
+    params?: PageQueryParams,
+  ): Promise<PageResponse<NoticeListItem>> => {
+    const searchParams = buildPageSearchParams(params, "pinned,desc");
+    const res = await apiRequest<PageResponse<Record<string, unknown>>>(
+      `/api/courses/${encodeURIComponent(courseId)}/notices?${searchParams.toString()}`,
+    );
+    const content = Array.isArray(res.content)
+      ? res.content.map((item) => normalizeNoticeListItem(item))
+      : [];
+    return { ...(res as unknown as PageResponse<NoticeListItem>), content };
+  },
+
+  createNotice: async (
+    courseId: number,
+    payload: NoticePayload,
+  ): Promise<NoticeDetail> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/notices`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+    return normalizeNoticeDetail(raw);
+  },
+
+  getNotice: async (courseId: number, noticeId: number): Promise<NoticeDetail> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/notices/${encodeURIComponent(noticeId)}`,
+    );
+    return normalizeNoticeDetail(raw);
+  },
+
+  updateNotice: async (
+    courseId: number,
+    noticeId: number,
+    payload: Partial<NoticePayload>,
+  ): Promise<NoticeDetail> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/notices/${encodeURIComponent(noticeId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    );
+    return normalizeNoticeDetail(raw);
+  },
+
+  deleteNotice: async (courseId: number, noticeId: number): Promise<void> => {
+    await apiRequest<void>(
+      `/api/courses/${encodeURIComponent(courseId)}/notices/${encodeURIComponent(noticeId)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  listComments: async (
+    courseId: number,
+    noticeId: number,
+    params?: PageQueryParams,
+  ): Promise<PageResponse<NoticeComment>> => {
+    const searchParams = buildPageSearchParams(params, "createdAt,asc");
+    const res = await apiRequest<PageResponse<Record<string, unknown>>>(
+      `/api/courses/${encodeURIComponent(courseId)}/notices/${encodeURIComponent(noticeId)}/comments?${searchParams.toString()}`,
+    );
+    const content = Array.isArray(res.content)
+      ? res.content.map((item) => normalizeNoticeComment(item))
+      : [];
+    return { ...(res as unknown as PageResponse<NoticeComment>), content };
+  },
+
+  createComment: async (
+    courseId: number,
+    noticeId: number,
+    payload: { contentMarkdown: string; parentCommentId?: number | null },
+  ): Promise<NoticeComment> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/notices/${encodeURIComponent(noticeId)}/comments`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+    return normalizeNoticeComment(raw);
+  },
+
+  updateComment: async (
+    courseId: number,
+    noticeId: number,
+    commentId: number,
+    contentMarkdown: string,
+  ): Promise<NoticeComment> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/notices/${encodeURIComponent(noticeId)}/comments/${encodeURIComponent(commentId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ contentMarkdown }),
+      },
+    );
+    return normalizeNoticeComment(raw);
+  },
+
+  deleteComment: async (
+    courseId: number,
+    noticeId: number,
+    commentId: number,
+  ): Promise<void> => {
+    await apiRequest<void>(
+      `/api/courses/${encodeURIComponent(courseId)}/notices/${encodeURIComponent(noticeId)}/comments/${encodeURIComponent(commentId)}`,
+      { method: "DELETE" },
+    );
+  },
+};
+
+export const discussionApi = {
+  listDiscussions: async (
+    courseId: number,
+    params?: PageQueryParams,
+  ): Promise<PageResponse<DiscussionListItem>> => {
+    const searchParams = buildPageSearchParams(params, "pinned,desc");
+    const res = await apiRequest<PageResponse<Record<string, unknown>>>(
+      `/api/courses/${encodeURIComponent(courseId)}/discussions?${searchParams.toString()}`,
+    );
+    const content = Array.isArray(res.content)
+      ? res.content.map((item) => normalizeDiscussionListItem(item))
+      : [];
+    return { ...(res as unknown as PageResponse<DiscussionListItem>), content };
+  },
+
+  createDiscussion: async (
+    courseId: number,
+    payload: DiscussionPayload,
+  ): Promise<DiscussionDetail> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/discussions`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+    return normalizeDiscussionDetail(raw);
+  },
+
+  getDiscussion: async (
+    courseId: number,
+    discussionId: number,
+  ): Promise<DiscussionDetail> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/discussions/${encodeURIComponent(discussionId)}`,
+    );
+    return normalizeDiscussionDetail(raw);
+  },
+
+  updateDiscussion: async (
+    courseId: number,
+    discussionId: number,
+    payload: Partial<DiscussionPayload>,
+  ): Promise<DiscussionDetail> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/discussions/${encodeURIComponent(discussionId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    );
+    return normalizeDiscussionDetail(raw);
+  },
+
+  deleteDiscussion: async (
+    courseId: number,
+    discussionId: number,
+  ): Promise<void> => {
+    await apiRequest<void>(
+      `/api/courses/${encodeURIComponent(courseId)}/discussions/${encodeURIComponent(discussionId)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  listComments: async (
+    courseId: number,
+    discussionId: number,
+    params?: PageQueryParams,
+  ): Promise<PageResponse<DiscussionComment>> => {
+    const searchParams = buildPageSearchParams(params, "createdAt,asc");
+    const res = await apiRequest<PageResponse<Record<string, unknown>>>(
+      `/api/courses/${encodeURIComponent(courseId)}/discussions/${encodeURIComponent(discussionId)}/comments?${searchParams.toString()}`,
+    );
+    const content = Array.isArray(res.content)
+      ? res.content.map((item) => normalizeDiscussionComment(item))
+      : [];
+    return { ...(res as unknown as PageResponse<DiscussionComment>), content };
+  },
+
+  createComment: async (
+    courseId: number,
+    discussionId: number,
+    payload: { contentMarkdown: string; parentCommentId?: number | null },
+  ): Promise<DiscussionComment> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/discussions/${encodeURIComponent(discussionId)}/comments`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+    return normalizeDiscussionComment(raw);
+  },
+
+  updateComment: async (
+    courseId: number,
+    discussionId: number,
+    commentId: number,
+    contentMarkdown: string,
+  ): Promise<DiscussionComment> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/discussions/${encodeURIComponent(discussionId)}/comments/${encodeURIComponent(commentId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify({ contentMarkdown }),
+      },
+    );
+    return normalizeDiscussionComment(raw);
+  },
+
+  deleteComment: async (
+    courseId: number,
+    discussionId: number,
+    commentId: number,
+  ): Promise<void> => {
+    await apiRequest<void>(
+      `/api/courses/${encodeURIComponent(courseId)}/discussions/${encodeURIComponent(discussionId)}/comments/${encodeURIComponent(commentId)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  streamAssistant: async (
+    courseId: number,
+    payload: {
+      topic: string;
+      category?: DiscussionCategory;
+      previousDraft?: string;
+    },
+    options?: { signal?: AbortSignal; onDelta?: (chunk: string) => void },
+  ): Promise<string> => {
+    return postJsonSseStream(
+      `/api/courses/${encodeURIComponent(courseId)}/discussions/assistant/stream`,
+      payload,
+      options,
+    );
+  },
+};
+
+export const reportCriteriaApi = {
+  listCriteria: async (courseId: number): Promise<ReportCriterion[]> => {
+    const raw = await apiRequest<Record<string, unknown>[]>(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/criteria`,
+    );
+    return Array.isArray(raw) ? raw.map((item) => normalizeReportCriterion(item)) : [];
+  },
+
+  createCriterion: async (
+    courseId: number,
+    payload: ReportCriterionPayload,
+  ): Promise<ReportCriterion> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/criteria`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+    return normalizeReportCriterion(raw);
+  },
+
+  updateCriterion: async (
+    courseId: number,
+    criterionId: number,
+    payload: ReportCriterionPayload,
+  ): Promise<ReportCriterion> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/criteria/${encodeURIComponent(criterionId)}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      },
+    );
+    return normalizeReportCriterion(raw);
+  },
+
+  deleteCriterion: async (courseId: number, criterionId: number): Promise<void> => {
+    await apiRequest<void>(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/criteria/${encodeURIComponent(criterionId)}`,
+      { method: "DELETE" },
+    );
+  },
+
+  streamAssistant: async (
+    courseId: number,
+    payload?: { desiredCount?: number; language?: string },
+    options?: { signal?: AbortSignal; onDelta?: (chunk: string) => void },
+  ): Promise<string> => {
+    return postJsonSseStream(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/criteria/assistant/stream`,
+      payload ?? {},
+      options,
     );
   },
 };
@@ -4741,6 +5802,76 @@ export interface ExamSessionRecoverResponse {
   [key: string]: string;
 }
 
+export interface ExamAnswerSubmission {
+  questionId: number;
+  answerText?: string;
+  selectedOptionId?: string;
+  additionalData?: Record<string, unknown>;
+}
+
+export interface ExamSubmissionRequest {
+  examSessionId: number;
+  answers: ExamAnswerSubmission[];
+}
+
+export interface ExamSubmissionResponse {
+  examResultId: number;
+  examSessionId: number;
+  totalScore?: number;
+  maxScore?: number;
+  overallFeedback?: string;
+  gradingDetails?: Record<string, unknown>;
+}
+
+export interface DebateStartRequest {
+  examSessionId: number;
+  mode?: string;
+  topic?: string;
+}
+
+export interface DebateStartResponse {
+  examSessionId: number;
+  phase?: string;
+  topic?: string;
+  settings?: Record<string, unknown>;
+  message?: string;
+}
+
+export interface DebateRespondRequest {
+  examSessionId: number;
+  userInput: string;
+}
+
+export interface DebateRespondResponse {
+  examSessionId: number;
+  phase?: string;
+  debaterResponse?: string;
+  score?: number;
+  evaluation?: Record<string, unknown>;
+  isCompleted?: boolean;
+  message?: string;
+}
+
+export interface ExamStudioPdfContextRequest {
+  materialId: number;
+}
+
+export interface ExamStudioPdfContextResponse {
+  contextId?: string;
+  [key: string]: unknown;
+}
+
+export interface ExamStudioChatRequest {
+  contextId: string;
+  messages?: Array<Record<string, unknown>>;
+  message?: string;
+  currentDraft?: Record<string, unknown>;
+  currentKstIso?: string;
+  timeZone?: string;
+  sourceText?: string;
+  model?: string;
+}
+
 /** 단답형 Gemini 채점 요청 — 문제별 입력(JSON). BE는 lectureId/materialId로 강의자료 PDF 경로를 해석 */
 export interface ExamShortAnswerGradeProblemPayload {
   problemNumber: number;
@@ -4914,6 +6045,125 @@ export const examGenerationApi = {
         ? (obj.data as Record<string, unknown>)
         : obj;
     return normalizeExamShortAnswerGradeResponse(inner);
+  },
+
+  submitExam: async (
+    payload: ExamSubmissionRequest,
+  ): Promise<ExamSubmissionResponse> => {
+    return apiRequest<ExamSubmissionResponse>('/api/exams/submission', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  getExamResult: async (examResultId: number): Promise<ExamSubmissionResponse> => {
+    return apiRequest<ExamSubmissionResponse>(
+      `/api/exams/submission/${encodeURIComponent(examResultId)}`,
+    );
+  },
+
+  streamExamGeneration: async (
+    examSessionId: number,
+    options?: { signal?: AbortSignal; onDelta?: (chunk: string) => void },
+  ): Promise<string> => {
+    const token = getAuthToken();
+    const headers: Record<string, string> = { Accept: "text/event-stream" };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(
+      resolveApiEndpointUrl(
+        `/api/exams/generation/stream?examSessionId=${encodeURIComponent(examSessionId)}`,
+      ),
+      {
+        method: "GET",
+        headers,
+        mode: "cors",
+        credentials: "omit",
+        signal: options?.signal,
+      },
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(text.trim() || `시험 생성 스트림 요청 실패 (${res.status})`);
+    }
+    let accumulated = "";
+    for await (const eventData of iterateSseDataPayloadsFromResponse(res, {
+      signal: options?.signal,
+    })) {
+      const text = eventData.trim();
+      if (!text || text === "[DONE]") continue;
+      try {
+        const parsed = JSON.parse(text) as Record<string, unknown>;
+        const chunk = extractSseTextChunk(parsed);
+        if (chunk) {
+          accumulated += chunk;
+          options?.onDelta?.(chunk);
+        }
+      } catch {
+        accumulated += text;
+        options?.onDelta?.(text);
+      }
+    }
+    return accumulated;
+  },
+
+  startDebate: async (
+    payload: DebateStartRequest,
+  ): Promise<DebateStartResponse> => {
+    return apiRequest<DebateStartResponse>('/api/exams/debate/start', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  respondToDebate: async (
+    payload: DebateRespondRequest,
+  ): Promise<DebateRespondResponse> => {
+    return apiRequest<DebateRespondResponse>('/api/exams/debate/respond', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+};
+
+export const examStudioApi = {
+  issuePdfContext: async (
+    courseId: number,
+    payload: ExamStudioPdfContextRequest,
+  ): Promise<ExamStudioPdfContextResponse> => {
+    return apiRequest<ExamStudioPdfContextResponse>(
+      `/api/courses/${encodeURIComponent(courseId)}/exam-studio/pdf-context`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+  },
+
+  streamChat: async (
+    courseId: number,
+    payload: ExamStudioChatRequest,
+    options?: { signal?: AbortSignal; onDelta?: (chunk: string) => void },
+  ): Promise<string> => {
+    return postJsonSseStream(
+      `/api/courses/${encodeURIComponent(courseId)}/exam-studio/chat/stream`,
+      payload,
+      options,
+    );
+  },
+};
+
+export const aiCallbackApi = {
+  sendLectureGeneratedCallback: async (
+    lectureId: number,
+    payload: AiContentCallbackItem[],
+  ): Promise<string> => {
+    return apiRequest<string>(
+      `/api/ai/callback/lectures/${encodeURIComponent(lectureId)}`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
   },
 };
 
