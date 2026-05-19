@@ -61,7 +61,7 @@ const HelpPage: React.FC = () => {
                 1. 학습 시작
               </h3>
               <ul className="list-disc list-inside space-y-1 ml-2">
-                <li>파일 업로드 후 <kbd className={`px-2 py-1 rounded text-xs font-mono ${isDarkMode ? "bg-zinc-800 text-emerald-400" : "bg-gray-100 text-emerald-600"}`}>Enter</kbd>로 학습 시작</li>
+                <li>파일 업로드 후 <kbd className={`px-2 py-1 rounded text-xs font-mono ${isDarkMode ? "bg-zinc-800 text-[#ffb08b]" : "bg-gray-100 text-[#d95d26]"}`}>Enter</kbd>로 학습 시작</li>
               </ul>
             </div>
             <div>
@@ -69,8 +69,8 @@ const HelpPage: React.FC = () => {
                 2. 학습 진행
               </h3>
               <ul className="list-disc list-inside space-y-1 ml-2">
-                <li>개념 설명 후 <kbd className={`px-2 py-1 rounded text-xs font-mono ${isDarkMode ? "bg-zinc-800 text-emerald-400" : "bg-gray-100 text-emerald-600"}`}>Enter</kbd>로 다음 질문 진행</li>
-                <li>질문에 답변 입력 후 <kbd className={`px-2 py-1 rounded text-xs font-mono ${isDarkMode ? "bg-zinc-800 text-emerald-400" : "bg-gray-100 text-emerald-600"}`}>Enter</kbd>로 제출</li>
+                <li>개념 설명 후 <kbd className={`px-2 py-1 rounded text-xs font-mono ${isDarkMode ? "bg-zinc-800 text-[#ffb08b]" : "bg-gray-100 text-[#d95d26]"}`}>Enter</kbd>로 다음 질문 진행</li>
+                <li>질문에 답변 입력 후 <kbd className={`px-2 py-1 rounded text-xs font-mono ${isDarkMode ? "bg-zinc-800 text-[#ffb08b]" : "bg-gray-100 text-[#d95d26]"}`}>Enter</kbd>로 제출</li>
               </ul>
             </div>
             <div>
@@ -126,13 +126,13 @@ const HelpPage: React.FC = () => {
           </h2>
           <div className={`space-y-2 text-sm ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
             <div className="flex items-center gap-3">
-              <kbd className={`px-3 py-1.5 rounded font-mono text-xs ${isDarkMode ? "bg-zinc-800 text-emerald-400" : "bg-gray-100 text-emerald-600"}`}>
+              <kbd className={`px-3 py-1.5 rounded font-mono text-xs ${isDarkMode ? "bg-zinc-800 text-[#ffb08b]" : "bg-gray-100 text-[#d95d26]"}`}>
                 Enter
               </kbd>
               <span>학습 시작 / 다음 세그먼트 진행 / 답변 제출</span>
             </div>
             <div className="flex items-center gap-3">
-              <kbd className={`px-3 py-1.5 rounded font-mono text-xs ${isDarkMode ? "bg-zinc-800 text-emerald-400" : "bg-gray-100 text-emerald-600"}`}>
+              <kbd className={`px-3 py-1.5 rounded font-mono text-xs ${isDarkMode ? "bg-zinc-800 text-[#ffb08b]" : "bg-gray-100 text-[#d95d26]"}`}>
                 Shift + Enter
               </kbd>
               <span>채팅 입력창에서 줄바꿈</span>

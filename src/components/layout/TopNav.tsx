@@ -278,8 +278,8 @@ const TopNav: React.FC<TopNavProps> = ({
     <header
       className={`flex h-[4.5rem] shrink-0 items-center border-b px-7 transition-colors ${
         isDarkMode
-          ? "border-zinc-800 bg-[#141414]"
-          : "border-gray-200 bg-[#ffffff]"
+          ? "border-[#1b3443] bg-[#071829]"
+          : "border-[#d9d9dd] bg-[#ffffff]"
       }`}
     >
       <div className="flex items-center min-w-0 flex-1">
@@ -290,7 +290,7 @@ const TopNav: React.FC<TopNavProps> = ({
         >
           <span
             className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-              isDarkMode ? "text-white" : "text-[#141414]"
+              isDarkMode ? "text-[#ffad9b]" : "text-[#003c33]"
             }`}
             aria-hidden="true"
           >
@@ -328,7 +328,7 @@ const TopNav: React.FC<TopNavProps> = ({
                   setNotifPage(0);
                 }}
                 className={`relative p-2 rounded-lg cursor-pointer transition-colors ${
-                  isDarkMode ? "hover:bg-white/10 text-gray-200" : "hover:bg-gray-100 text-gray-700"
+                  isDarkMode ? "hover:bg-white/10 text-gray-200" : "hover:bg-[#eeece7] text-gray-700"
                 }`}
                 aria-label="알림"
                 aria-haspopup="true"
@@ -344,10 +344,10 @@ const TopNav: React.FC<TopNavProps> = ({
               {notifOpen && (
                 <div
                   className={`absolute right-0 mt-2 w-[22rem] max-w-[80vw] rounded-2xl border shadow-xl overflow-hidden z-30 ${
-                    isDarkMode ? "bg-zinc-900 border-zinc-700 text-gray-100" : "bg-white border-gray-200 text-gray-900"
+                    isDarkMode ? "bg-[#071829] border-[#1b3443] text-gray-100" : "bg-white border-[#d9d9dd] text-gray-900"
                   }`}
                 >
-                  <div className={`flex items-center justify-between px-4 py-3 border-b ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                  <div className={`flex items-center justify-between px-4 py-3 border-b ${isDarkMode ? "border-[#1b3443]" : "border-[#d9d9dd]"}`}>
                     <div className="text-sm font-semibold">알림</div>
                     <button
                       type="button"
@@ -387,12 +387,12 @@ const TopNav: React.FC<TopNavProps> = ({
                                     ? "hover:bg-white/5"
                                     : "hover:bg-gray-50"
                                   : isDarkMode
-                                    ? "bg-emerald-500/10 hover:bg-emerald-500/15"
-                                    : "bg-emerald-50 hover:bg-emerald-100/60"
+                                    ? "bg-[#ffad9b]/15 hover:bg-[#ffad9b]/20"
+                                    : "bg-[#fff2ee] hover:bg-[#ffe7df]"
                               }`}
                             >
                               <div className="flex items-start gap-2">
-                                {!n.read && <span className="mt-1.5 h-2 w-2 rounded-full bg-emerald-500 shrink-0" aria-hidden="true" />}
+                                {!n.read && <span className="mt-1.5 h-2 w-2 rounded-full bg-[#ff7759] shrink-0" aria-hidden="true" />}
                                 <div className="min-w-0">
                                   <div className="text-sm font-semibold truncate">{n.title || n.type}</div>
                                   <div className={`text-xs mt-1 whitespace-pre-wrap break-words ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
@@ -410,7 +410,7 @@ const TopNav: React.FC<TopNavProps> = ({
                     )}
                   </div>
                   {notifTotalPages > 1 && (
-                    <div className={`flex items-center justify-between px-4 py-2 border-t ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                    <div className={`flex items-center justify-between px-4 py-2 border-t ${isDarkMode ? "border-[#1b3443]" : "border-[#d9d9dd]"}`}>
                       <button
                         type="button"
                         disabled={notifPage <= 0 || notifLoading}
@@ -453,7 +453,7 @@ const TopNav: React.FC<TopNavProps> = ({
               type="button"
               onClick={toggleUserMenu}
               className={`flex items-center gap-2 rounded-full px-2.5 py-2 transition-colors focus:outline-none cursor-pointer ${
-                isDarkMode ? "hover:bg-white/10" : "hover:bg-gray-100"
+                isDarkMode ? "hover:bg-white/10" : "hover:bg-[#eeece7]"
               }`}
               aria-haspopup="true"
               aria-expanded={isUserMenuOpen}

@@ -394,19 +394,19 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
     (isTeacher || activeDetail.authorUserId === user?.userId);
 
   const surfaceClass = isDarkMode
-    ? "border-zinc-800 bg-[#171b20] text-gray-100"
-    : "border-gray-200 bg-white text-gray-900";
+    ? "border-[#1b4d44] bg-[#0b241f] text-gray-100"
+    : "border-[#d9d9dd] bg-white text-gray-900";
   const mutedClass = isDarkMode ? "text-gray-400" : "text-gray-500";
-  const inputClass = `rounded-xl border px-3 py-2 text-sm outline-none focus:border-[#ff824d] ${
+  const inputClass = `rounded-lg border px-3 py-2 text-sm outline-none focus:ring-1 ${
     isDarkMode
-      ? "border-zinc-700 bg-[#111418] text-gray-100 placeholder:text-gray-500"
-      : "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400"
+      ? "border-[#1b3443] bg-[#102a35] text-gray-100 placeholder:text-gray-500 focus:border-[#ffad9b] focus:ring-[#ffad9b]/20"
+      : "border-[#d9d9dd] bg-white text-gray-900 placeholder:text-gray-400 focus:border-[#1863dc] focus:ring-[#1863dc]/20"
   }`;
 
   return (
-    <div className="flex min-h-full flex-col gap-5 pb-8">
-      <section className={`rounded-2xl border px-5 py-5 ${surfaceClass}`}>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="flex min-h-full flex-col gap-4 pb-6">
+      <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className={`text-xs font-semibold uppercase tracking-wide ${mutedClass}`}>
               Classroom Board
@@ -435,7 +435,7 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
 
         {canCreate || editingId != null ? (
           <form
-            className="mt-5 grid gap-3"
+            className="mt-4 grid gap-3"
             onSubmit={(event) => {
               event.preventDefault();
               void submitPost();
@@ -536,7 +536,9 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                   type="button"
                   onClick={() => void runDiscussionAssistant()}
                   disabled={assistantLoading || !assistantTopic.trim()}
-                  className="rounded-xl border border-[#ff824d]/40 px-4 py-2 text-sm font-semibold text-[#ff824d] disabled:opacity-50"
+                  className={`rounded-lg border px-4 py-2 text-sm font-semibold disabled:opacity-50 ${
+                    isDarkMode ? "border-zinc-600 text-gray-100" : "border-gray-300 text-gray-900"
+                  }`}
                 >
                   {assistantLoading ? "생성 중" : "AI 초안"}
                 </button>
@@ -554,7 +556,9 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
               <button
                 type="submit"
                 disabled={saving}
-                className="rounded-xl bg-[#ff824d] px-5 py-2 text-sm font-semibold text-white disabled:opacity-50"
+                className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50 ${
+                  isDarkMode ? "bg-white text-[#141414]" : "bg-[#141414] text-white"
+                }`}
               >
                 {editingId == null ? "등록" : "수정 저장"}
               </button>
@@ -584,9 +588,9 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-        <section className={`rounded-2xl border ${surfaceClass}`}>
-          <div className="flex items-center justify-between border-b border-inherit px-5 py-4">
+      <div className="grid min-h-0 gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+        <section className={`rounded-xl border ${surfaceClass}`}>
+          <div className="flex items-center justify-between border-b border-inherit px-4 py-3">
             <h3 className="text-base font-semibold">목록</h3>
             <button
               type="button"
@@ -628,13 +632,17 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                         selected
                           ? isDarkMode
                             ? "bg-white/[0.06]"
-                            : "bg-[#ff824d]/5"
+                            : "bg-gray-100"
                           : ""
                       }`}
                     >
                       <div className="flex items-center gap-2">
                         {item.pinned ? (
-                          <span className="rounded-full bg-[#ff824d]/15 px-2 py-0.5 text-[11px] font-semibold text-[#ff824d]">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              isDarkMode ? "bg-white/10 text-gray-100" : "bg-gray-100 text-gray-900"
+                            }`}
+                          >
                             고정
                           </span>
                         ) : null}
@@ -677,7 +685,7 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
           ) : null}
         </section>
 
-        <section className={`rounded-2xl border ${surfaceClass}`}>
+        <section className={`rounded-xl border ${surfaceClass}`}>
           {activeDetail == null ? (
             <div className={`px-5 py-20 text-center text-sm ${mutedClass}`}>
               목록에서 글을 선택하세요.

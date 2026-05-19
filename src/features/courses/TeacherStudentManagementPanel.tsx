@@ -189,8 +189,8 @@ export const TeacherStudentManagementPanel: React.FC<
           onClick={() => void loadList()}
           className={`rounded-full px-3 py-1.5 text-xs font-medium border cursor-pointer disabled:opacity-50 ${
             isDarkMode
-              ? "border-zinc-600 text-zinc-200 hover:bg-zinc-800"
-              : "border-gray-300 text-gray-700 hover:bg-gray-100"
+              ? "border-[#2c5a50] text-zinc-200 hover:bg-white/10"
+              : "border-[#d9d9dd] text-gray-700 hover:bg-[#eeece7]"
           }`}
         >
           새로고침
@@ -201,7 +201,9 @@ export const TeacherStudentManagementPanel: React.FC<
               type="button"
               disabled={selectedIds.length === 0 || actingId != null}
               onClick={() => void handleBulkJoinAction("approve")}
-              className="rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                isDarkMode ? "bg-white text-[#141414]" : "bg-[#141414] text-white hover:bg-black"
+              }`}
             >
               선택 승인
             </button>
@@ -235,7 +237,7 @@ export const TeacherStudentManagementPanel: React.FC<
             <li
               key={row.requestId}
               className={`rounded-xl border px-4 py-3 ${
-                isDarkMode ? "border-zinc-600 bg-zinc-800/60" : "border-gray-200 bg-white"
+                isDarkMode ? "border-[#1b4d44] bg-[#0b241f]" : "border-[#d9d9dd] bg-white"
               }`}
             >
               {tab === "pending" ? (
@@ -267,7 +269,9 @@ export const TeacherStudentManagementPanel: React.FC<
                     type="button"
                     disabled={actingId === row.requestId}
                     onClick={() => void handleJoinRequestAction("approve", row)}
-                    className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50 cursor-pointer"
+                    className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 cursor-pointer ${
+                      isDarkMode ? "bg-white text-[#141414]" : "bg-[#141414] text-white hover:bg-black"
+                    }`}
                   >
                     승인
                   </button>

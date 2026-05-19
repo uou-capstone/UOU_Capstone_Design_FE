@@ -400,8 +400,8 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 }}
                 className={`p-1 rounded cursor-pointer ${
                   isSelected
-                    ? "hover:bg-emerald-500/30 text-white"
-                    : "hover:bg-emerald-500/10 text-emerald-400 hover:text-emerald-300"
+                    ? "hover:bg-[#ff824d]/25 text-white"
+                    : "hover:bg-[#ff824d]/10 text-[#ff824d] hover:text-[#f26f37]"
                 }`}
                 title="강의 수정"
               >
@@ -967,7 +967,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                         ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
                         : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
                     } focus:outline-none focus:ring-2 ${
-                      isDarkMode ? "focus:ring-emerald-500" : "focus:ring-emerald-500/70"
+                      isDarkMode ? "focus:ring-[#ff824d]" : "focus:ring-[#ff824d]/70"
                     }`}
                   />
                 </div>
@@ -994,7 +994,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                         ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
                         : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
                     } focus:outline-none focus:ring-2 ${
-                      isDarkMode ? "focus:ring-emerald-500" : "focus:ring-emerald-500/70"
+                      isDarkMode ? "focus:ring-[#ff824d]" : "focus:ring-[#ff824d]/70"
                     }`}
                   />
                 </div>
@@ -1017,7 +1017,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                       ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
                       : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
                   } focus:outline-none focus:ring-2 ${
-                    isDarkMode ? "focus:ring-emerald-500" : "focus:ring-emerald-500/70"
+                    isDarkMode ? "focus:ring-[#ff824d]" : "focus:ring-[#ff824d]/70"
                   }`}
                 />
               </div>
@@ -1046,9 +1046,9 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 className={`px-4 py-2 text-sm ${inputRadiusClass} font-semibold transition-colors ${
                   isCreatingLecture
                     ? isDarkMode
-                      ? "bg-emerald-600/50 text-white cursor-not-allowed"
-                      : "bg-emerald-300 text-white cursor-not-allowed"
-                    : "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                      ? "bg-[#ff824d]/50 text-white cursor-not-allowed"
+                      : "bg-[#ff824d]/55 text-white cursor-not-allowed"
+                    : "bg-[#ff824d] hover:bg-[#f26f37] text-white cursor-pointer"
                 }`}
               >
                 {isCreatingLecture ? "생성 중..." : "생성하기"}

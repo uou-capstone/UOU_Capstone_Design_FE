@@ -3574,6 +3574,7 @@ export type LearningSseStreamCallbacks = {
 const LEARNING_THOUGHT_TYPE_NAMES = new Set([
   "thought",
   "thinking",
+  "thought_delta",
   "reasoning",
   "thought_summary",
   "internal",
@@ -3582,17 +3583,39 @@ const LEARNING_THOUGHT_TYPE_NAMES = new Set([
 
 function isLearningThoughtSseEvent(ev: Record<string, unknown>): boolean {
   const t = String(ev.type ?? ev.event ?? "").toLowerCase();
+  const payload = (ev.payload as Record<string, unknown> | undefined) ?? {};
+  const hasPrimaryAnswerField = Boolean(
+    pickFirstString(ev, ["delta", "content", "message", "text", "answer", "main"]) ??
+      pickFirstString(payload, ["delta", "content", "message", "text", "answer", "main"]),
+  );
+  const hasExplicitThoughtField =
+    !hasPrimaryAnswerField &&
+    (typeof ev.thought === "string" || typeof payload.thought === "string");
   const phase = String(
-    pickFirstString(ev, ["phase", "streamPhase", "stream_phase"]) ?? "",
+    pickFirstString(ev, ["phase", "streamPhase", "stream_phase"]) ??
+      pickFirstString(payload, ["phase", "streamPhase", "stream_phase"]) ??
+      "",
   ).toLowerCase();
-  const role = String(pickFirstString(ev, ["role"]) ?? "").toLowerCase();
-  const ct = String(ev.contentType ?? ev.content_type ?? "").toUpperCase();
+  const role = String(
+    pickFirstString(ev, ["role"]) ?? pickFirstString(payload, ["role"]) ?? "",
+  ).toLowerCase();
+  const channel = String(
+    pickFirstString(ev, ["channel"]) ??
+      pickFirstString(payload, ["channel"]) ??
+      "",
+  ).toLowerCase();
+  const ct = String(
+    ev.contentType ?? ev.content_type ?? payload.contentType ?? payload.content_type ?? "",
+  ).toUpperCase();
   return (
     LEARNING_THOUGHT_TYPE_NAMES.has(t) ||
     phase === "thought" ||
     phase === "thinking" ||
     role === "thinking" ||
-    ct === "THOUGHT"
+    channel === "thought" ||
+    channel === "thinking" ||
+    ct === "THOUGHT" ||
+    hasExplicitThoughtField
   );
 }
 
@@ -4108,13 +4131,33 @@ async function* iterateLegacyLectureNextSse(
 
 const normalizeSseData = (value: unknown): Record<string, unknown> | null => {
   if (value == null) return null;
-  if (typeof value === "object") return value as Record<string, unknown>;
-  if (typeof value !== "string") return null;
-  try {
-    return JSON.parse(value) as Record<string, unknown>;
-  } catch {
+  let parsed: unknown = value;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return null;
   }
+
+  const outer = parsed as Record<string, unknown>;
+  const outerEventType = String(outer.type ?? outer.event ?? "").toLowerCase();
+  if (outerEventType === "" || outerEventType === "message") {
+    const innerRaw = outer.data;
+    const inner =
+      typeof innerRaw === "string" ||
+      (innerRaw != null && typeof innerRaw === "object" && !Array.isArray(innerRaw))
+        ? normalizeSseData(innerRaw)
+        : null;
+    if (inner && (inner.type != null || inner.event != null)) {
+      return { ...outer, ...inner };
+    }
+  }
+
+  return outer;
 };
 
 const toBool = (value: unknown): boolean | undefined => {
@@ -4546,8 +4589,11 @@ const mapLearningEventsToNextResponse = (
 
   for (const event of merged) {
     const type = String(event.type ?? "").toLowerCase();
+    if (isLearningThoughtSseEvent(event) && type !== "done" && type !== "error") {
+      continue;
+    }
     const message =
-      pickFirstString(event, ["delta", "content", "message", "text", "main", "thought"]) ??
+      pickFirstString(event, ["delta", "content", "message", "text", "main"]) ??
       pickFirstString((event.payload as Record<string, unknown>) ?? {}, ["delta", "content", "message", "text"]);
     if (message) chunks.push(message);
 
@@ -5103,6 +5149,9 @@ const mapLearningEventsToIntegratedMessages = (
   for (const event of merged) {
     const type = String(event.type ?? event.event ?? "message").toLowerCase();
     if (type === "heartbeat") continue;
+    if (isLearningThoughtSseEvent(event) && type !== "done" && type !== "error") {
+      continue;
+    }
     const payload =
       (event.payload as Record<string, unknown> | undefined) ?? {};
     const text =
@@ -5113,7 +5162,6 @@ const mapLearningEventsToIntegratedMessages = (
         "text",
         "answer",
         "main",
-        "thought",
       ]) ??
       pickFirstString(payload, [
         "delta",
@@ -5122,7 +5170,6 @@ const mapLearningEventsToIntegratedMessages = (
         "text",
         "answer",
         "main",
-        "thought",
       ]) ??
       "";
     const doneData =
@@ -5141,10 +5188,7 @@ const mapLearningEventsToIntegratedMessages = (
         : modal != null
           ? `선택 필요: ${modal}`
           : "";
-    const doneUiText =
-      widget != null
-        ? `다음 단계: ${widget}`
-        : modalDisplayText;
+    const doneUiText = widget != null ? "" : modalDisplayText;
     const quizOverlayModel =
       type === "done"
         ? parseIntegratedLearningQuizOverlayFromSseEvent(event as Record<string, unknown>)

@@ -103,7 +103,7 @@ const ReportPage: React.FC = () => {
               onChange={(e) =>
                 setCategory(e.target.value as "error" | "suggestion" | "other")
               }
-              className={`w-full px-4 py-2.5 rounded-full text-sm border focus:outline-none focus:ring-2 focus:ring-emerald-500/50 ${inputBaseClass}`}
+              className={`w-full px-4 py-2.5 rounded-full text-sm border focus:outline-none focus:ring-2 focus:ring-[#ff824d]/40 ${inputBaseClass}`}
             >
               <option value="error">오류 신고</option>
               <option value="suggestion">건의 사항</option>
@@ -122,7 +122,7 @@ const ReportPage: React.FC = () => {
               onPaste={handlePaste}
               placeholder="발생한 오류나 건의 사항을 자세히 적어주세요."
               rows={6}
-              className={`w-full px-4 py-3 rounded-2xl text-sm border focus:outline-none focus:ring-2 focus:ring-emerald-500/50 resize-y min-h-30 ${inputBaseClass}`}
+              className={`w-full px-4 py-3 rounded-2xl text-sm border focus:outline-none focus:ring-2 focus:ring-[#ff824d]/40 resize-y min-h-30 ${inputBaseClass}`}
             />
           </div>
 
@@ -206,7 +206,7 @@ const ReportPage: React.FC = () => {
               className={`px-6 py-2.5 rounded-full text-sm font-semibold cursor-pointer transition-colors ${
                 isSubmitting || !content.trim()
                   ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                  : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  : "bg-[#ff824d] hover:bg-[#f26f37] text-white"
               }`}
             >
               {isSubmitting ? "전송 중..." : "제출하기"}

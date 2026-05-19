@@ -143,7 +143,7 @@ const SettingsPage: React.FC = () => {
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="relative group focus:outline-none focus:ring-2 focus:ring-emerald-500 rounded-full cursor-pointer"
+          className="relative group focus:outline-none focus:ring-2 focus:ring-[#ff824d] rounded-full cursor-pointer"
         >
           {profileImage ? (
             <img
@@ -622,7 +622,7 @@ const SettingsPage: React.FC = () => {
                   ? isDarkMode
                     ? "bg-zinc-900 text-gray-400 cursor-not-allowed"
                     : "bg-gray-100 text-gray-400 cursor-not-allowed"
-                  : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                  : "bg-[#ff824d] hover:bg-[#f26f37] text-white"
               }`}
             >
               {isMonitoringLoading ? "새로고치는 중..." : "새로고침"}

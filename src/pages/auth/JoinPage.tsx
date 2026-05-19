@@ -175,8 +175,8 @@ const JoinPage: React.FC = () => {
               onClick={handleConfirm}
               className={`flex-1 px-4 py-2 rounded-lg font-medium transition-colors ${
                 isDarkMode
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  ? 'bg-[#ff824d] hover:bg-[#f26f37] text-white'
+                  : 'bg-[#ff824d] hover:bg-[#f26f37] text-white'
               }`}
             >
               수강 신청
@@ -202,7 +202,7 @@ const JoinPage: React.FC = () => {
                     ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-500'
                     : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
                 } focus:outline-none focus:ring-2 ${
-                  isDarkMode ? 'focus:ring-emerald-500' : 'focus:ring-emerald-500'
+                  isDarkMode ? 'focus:ring-[#ff824d]' : 'focus:ring-[#ff824d]'
                 }`}
               />
               <p className={`mt-2 text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
@@ -214,8 +214,8 @@ const JoinPage: React.FC = () => {
               type="submit"
               className={`w-full px-4 py-2 rounded-lg font-medium transition-colors ${
                 isDarkMode
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  ? 'bg-[#ff824d] hover:bg-[#f26f37] text-white'
+                  : 'bg-[#ff824d] hover:bg-[#f26f37] text-white'
               }`}
             >
               수강 신청
@@ -228,4 +228,3 @@ const JoinPage: React.FC = () => {
 };
 
 export default JoinPage;
-

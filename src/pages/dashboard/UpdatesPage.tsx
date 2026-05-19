@@ -205,7 +205,7 @@ const UpdatesPage: React.FC = () => {
                   onClick={() => setPartFilter(part.value)}
                   className={`w-16 rounded-full px-4 py-1.5 text-sm font-medium cursor-pointer text-center ${
                     selected
-                      ? "bg-emerald-600 text-white"
+                      ? "bg-[#ff824d] text-white"
                       : isDarkMode
                       ? "bg-zinc-800 text-gray-300 hover:bg-zinc-700"
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200"
@@ -268,11 +268,11 @@ const UpdatesPage: React.FC = () => {
                   onClick={() => setSelectedDate(key)}
                   className={`h-12 rounded-md border text-xs cursor-pointer ${
                     selected
-                      ? "border-emerald-500 bg-emerald-500/20 text-emerald-500"
+                      ? "border-[#ff824d] bg-[#ff824d]/15 text-[#ff824d]"
                       : hasLogs
                       ? isDarkMode
-                        ? "border-emerald-700/70 bg-emerald-900/20 text-emerald-300 hover:bg-emerald-900/30"
-                        : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                        ? "border-[#ff824d]/50 bg-[#ff824d]/10 text-[#ffb08b] hover:bg-[#ff824d]/15"
+                        : "border-[#ff824d]/25 bg-[#ff824d]/10 text-[#d95d26] hover:bg-[#ff824d]/15"
                       : isDarkMode
                       ? "border-zinc-700 hover:bg-zinc-800 text-gray-300"
                       : "border-gray-200 hover:bg-gray-50 text-gray-700"

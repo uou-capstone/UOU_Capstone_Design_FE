@@ -407,24 +407,24 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
   }, [courseId, loadMatrix, loadRecords, records, selectedSession]);
 
   const surfaceClass = isDarkMode
-    ? "border-zinc-800 bg-[#171b20] text-gray-100"
-    : "border-gray-200 bg-white text-gray-900";
+    ? "border-[#1b4d44] bg-[#0b241f] text-gray-100"
+    : "border-[#d9d9dd] bg-white text-gray-900";
   const softSurfaceClass = isDarkMode
-    ? "border-zinc-700 bg-white/[0.04]"
-    : "border-gray-200 bg-gray-50";
+    ? "border-[#1b3443] bg-white/[0.04]"
+    : "border-[#d9d9dd] bg-[#eeece7]";
   const mutedTextClass = isDarkMode ? "text-gray-400" : "text-gray-500";
-  const inputClass = `h-11 rounded-xl border px-3 text-sm outline-none transition-colors focus:border-[#ff824d] disabled:opacity-60 ${
+  const inputClass = `h-10 rounded-lg border px-3 text-sm outline-none transition-colors focus:ring-1 disabled:opacity-60 ${
     isDarkMode
-      ? "border-zinc-700 bg-[#111418] text-gray-100 placeholder:text-gray-500"
-      : "border-gray-200 bg-white text-gray-900 placeholder:text-gray-400"
+      ? "border-[#1b3443] bg-[#102a35] text-gray-100 placeholder:text-gray-500 focus:border-[#ffad9b] focus:ring-[#ffad9b]/20"
+      : "border-[#d9d9dd] bg-white text-gray-900 placeholder:text-gray-400 focus:border-[#1863dc] focus:ring-[#1863dc]/20"
   }`;
   const labelClass = `text-xs font-semibold ${mutedTextClass}`;
   const busy = loading || saving || detailLoading || deletingId != null;
 
   return (
-    <div className="flex min-h-full flex-col gap-5 pb-8">
-      <section className={`rounded-2xl border px-5 py-5 ${surfaceClass}`}>
-        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+    <div className="flex min-h-full flex-col gap-4 pb-6">
+      <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className={`text-xs font-semibold uppercase tracking-wide ${mutedTextClass}`}>
               Attendance
@@ -446,7 +446,7 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
         </div>
 
         <form
-          className="grid gap-4 lg:grid-cols-[1.2fr_0.9fr_0.7fr_0.7fr_1fr_auto]"
+          className="grid gap-3 lg:grid-cols-[1.2fr_0.9fr_0.7fr_0.7fr_1fr_auto]"
           onSubmit={(event) => {
             event.preventDefault();
             void handleSubmit();
@@ -522,7 +522,9 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
             <button
               type="submit"
               disabled={saving}
-              className="h-11 rounded-xl bg-[#ff824d] px-5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-[#f26f37] disabled:opacity-50"
+              className={`h-10 rounded-lg px-4 text-sm font-semibold transition-colors disabled:opacity-50 ${
+                isDarkMode ? "bg-white text-[#141414]" : "bg-[#141414] text-white hover:bg-black"
+              }`}
             >
               {saving
                 ? "저장 중"
@@ -535,7 +537,7 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
                 type="button"
                 onClick={resetForm}
                 disabled={saving}
-                className={`h-11 rounded-xl border px-4 text-sm font-semibold transition-colors disabled:opacity-50 ${
+                className={`h-10 rounded-lg border px-4 text-sm font-semibold transition-colors disabled:opacity-50 ${
                   isDarkMode
                     ? "border-zinc-600 text-gray-200 hover:bg-white/10"
                     : "border-gray-300 text-gray-700 hover:bg-gray-100"
@@ -564,8 +566,8 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
         </div>
       ) : null}
 
-      <section className={`rounded-2xl border ${surfaceClass}`}>
-        <div className="flex flex-col gap-2 border-b border-inherit px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <section className={`rounded-xl border ${surfaceClass}`}>
+        <div className="flex flex-col gap-2 border-b border-inherit px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h3 className="text-base font-semibold">출석 회차 목록</h3>
             <p className={`mt-1 text-xs ${mutedTextClass}`}>
@@ -593,11 +595,11 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
               return (
                 <li
                   key={session.sessionId}
-                  className={`px-5 py-4 transition-colors ${
+                  className={`px-4 py-3 transition-colors ${
                     selected
                       ? isDarkMode
                         ? "bg-white/[0.06]"
-                        : "bg-[#ff824d]/5"
+                        : "bg-gray-100"
                       : ""
                   }`}
                 >
@@ -610,7 +612,11 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
                       <div className="flex flex-wrap items-center gap-2">
                         <h4 className="truncate text-sm font-semibold">{session.title}</h4>
                         {editing ? (
-                          <span className="rounded-full bg-[#ff824d]/15 px-2 py-0.5 text-[11px] font-semibold text-[#ff824d]">
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              isDarkMode ? "bg-white/10 text-gray-100" : "bg-gray-100 text-gray-900"
+                            }`}
+                          >
                             수정 중
                           </span>
                         ) : null}
@@ -657,7 +663,7 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
         )}
 
         {totalPages > 1 ? (
-          <div className="flex items-center justify-between border-t border-inherit px-5 py-4">
+          <div className="flex items-center justify-between border-t border-inherit px-4 py-3">
             <button
               type="button"
               onClick={() => setPage((prev) => Math.max(0, prev - 1))}
@@ -690,7 +696,7 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
       </section>
 
       {selectedSession ? (
-        <section className={`rounded-2xl border px-5 py-4 ${softSurfaceClass}`}>
+        <section className={`rounded-xl border px-4 py-4 ${softSurfaceClass}`}>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p className={`text-xs font-semibold uppercase tracking-wide ${mutedTextClass}`}>
@@ -715,8 +721,8 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
       ) : null}
 
       {selectedSession ? (
-        <section className={`rounded-2xl border ${surfaceClass}`}>
-          <div className="flex flex-col gap-2 border-b border-inherit px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <section className={`rounded-xl border ${surfaceClass}`}>
+          <div className="flex flex-col gap-2 border-b border-inherit px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-base font-semibold">회차별 출석부</h3>
               <p className={`mt-1 text-xs ${mutedTextClass}`}>
@@ -738,7 +744,9 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
                 type="button"
                 onClick={() => void saveRecords()}
                 disabled={recordsSaving || recordsLoading || records.length === 0}
-                className="rounded-lg bg-[#ff824d] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${
+                  isDarkMode ? "bg-white text-[#141414]" : "bg-[#141414] text-white"
+                }`}
               >
                 {recordsSaving ? "저장 중" : "출석부 저장"}
               </button>
@@ -755,7 +763,7 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
           ) : (
             <ul className="divide-y divide-inherit">
               {records.map((record) => (
-                <li key={record.studentId} className="px-5 py-4">
+                <li key={record.studentId} className="px-4 py-3">
                   <div className="grid gap-3 lg:grid-cols-[1fr_11rem_1.4fr] lg:items-center">
                     <div>
                       <p className="text-sm font-semibold">{record.studentName}</p>
@@ -789,8 +797,8 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
         </section>
       ) : null}
 
-      <section className={`rounded-2xl border ${surfaceClass}`}>
-        <div className="flex items-center justify-between border-b border-inherit px-5 py-4">
+      <section className={`rounded-xl border ${surfaceClass}`}>
+        <div className="flex items-center justify-between border-b border-inherit px-4 py-3">
           <div>
             <h3 className="text-base font-semibold">출석 매트릭스</h3>
             <p className={`mt-1 text-xs ${mutedTextClass}`}>
@@ -817,7 +825,7 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
             표시할 출석 매트릭스가 없습니다.
           </div>
         ) : (
-          <div className="overflow-x-auto px-5 py-4">
+          <div className="overflow-x-auto px-4 py-3">
             <table className="min-w-full text-left text-xs">
               <thead className={mutedTextClass}>
                 <tr>
@@ -944,8 +952,8 @@ function StudentAttendanceSummaryPanel({
   const ratio = Math.round((summary?.presentRatio ?? 0) * 100);
 
   return (
-    <div className="flex min-h-full flex-col gap-5 pb-8">
-      <section className={`rounded-2xl border px-5 py-5 ${surfaceClass}`}>
+    <div className="flex min-h-full flex-col gap-4 pb-6">
+      <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className={`text-xs font-semibold uppercase tracking-wide ${mutedClass}`}>
@@ -973,16 +981,16 @@ function StudentAttendanceSummaryPanel({
       ) : null}
 
       {loading ? (
-        <section className={`rounded-2xl border px-5 py-16 text-center text-sm ${surfaceClass} ${mutedClass}`}>
+        <section className={`rounded-xl border px-4 py-12 text-center text-sm ${surfaceClass} ${mutedClass}`}>
           출석 요약을 불러오는 중입니다.
         </section>
       ) : summary == null ? (
-        <section className={`rounded-2xl border px-5 py-16 text-center text-sm ${surfaceClass} ${mutedClass}`}>
+        <section className={`rounded-xl border px-4 py-12 text-center text-sm ${surfaceClass} ${mutedClass}`}>
           표시할 출석 정보가 없습니다.
         </section>
       ) : (
         <>
-          <section className={`rounded-2xl border px-5 py-5 ${surfaceClass}`}>
+          <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
             <div className="grid gap-4 sm:grid-cols-5">
               <SummaryMetric label="출석률" value={`${ratio}%`} />
               <SummaryMetric label="전체" value={`${summary.totalSessions}`} />
@@ -991,18 +999,18 @@ function StudentAttendanceSummaryPanel({
               <SummaryMetric label="결석" value={`${summary.absentCount}`} />
             </div>
           </section>
-          <section className={`rounded-2xl border ${surfaceClass}`}>
-            <div className="border-b border-inherit px-5 py-4">
+          <section className={`rounded-xl border ${surfaceClass}`}>
+            <div className="border-b border-inherit px-4 py-3">
               <h3 className="text-base font-semibold">회차별 기록</h3>
             </div>
             {summary.sessions.length === 0 ? (
-              <div className={`px-5 py-12 text-center text-sm ${mutedClass}`}>
+              <div className={`px-4 py-10 text-center text-sm ${mutedClass}`}>
                 출석 회차가 없습니다.
               </div>
             ) : (
               <ul className="divide-y divide-inherit">
                 {summary.sessions.map((session) => (
-                  <li key={session.sessionId} className="flex items-center justify-between gap-3 px-5 py-4">
+                  <li key={session.sessionId} className="flex items-center justify-between gap-3 px-4 py-3">
                     <div>
                       <p className="text-sm font-semibold">{session.title}</p>
                       <p className={`mt-1 text-xs ${mutedClass}`}>{session.sessionDate}</p>

@@ -61,16 +61,16 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
 
   return (
     <div
-      className={`mb-6 shrink-0 rounded-2xl border px-6 py-6 shadow-[0_18px_50px_rgba(0,0,0,0.16)] sm:px-8 ${
-        isDarkMode ? "border-zinc-800 bg-[#171b20]" : "border-gray-200 bg-white"
+      className={`mb-4 shrink-0 rounded-xl border px-5 py-4 sm:px-6 ${
+        isDarkMode ? "border-[#1b4d44] bg-[#0b241f]" : "border-[#d9d9dd] bg-[#eeece7]"
       }`}
     >
-      <div className="flex min-w-0 flex-col gap-5">
-        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex min-w-0 flex-col gap-3">
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
             <div className="flex min-w-0 items-start gap-3">
               <h1
-                className={`min-w-0 flex-1 truncate text-2xl font-semibold leading-tight tracking-tight sm:text-3xl ${
+                className={`min-w-0 flex-1 truncate text-2xl font-semibold leading-tight tracking-tight ${
                   isDarkMode ? "text-gray-50" : "text-gray-900"
                 }`}
               >
@@ -80,10 +80,10 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
                 <button
                   type="button"
                   onClick={onEditCourseMeta}
-                  className={`mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                  className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors ${
                     isDarkMode
-                      ? "border-zinc-700 text-gray-200 hover:bg-white/10"
-                      : "border-gray-200 text-gray-700 hover:bg-gray-100"
+                      ? "border-[#2c5a50] text-gray-200 hover:bg-white/10"
+                      : "border-[#d9d9dd] text-gray-700 hover:bg-white"
                   }`}
                   aria-label="강의실 정보 수정"
                   title="강의실 정보 수정"
@@ -99,10 +99,10 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
               {invitationCode ? (
                 <div className="flex max-w-[min(100vw-10rem,18rem)] items-center gap-2 sm:max-w-none">
                   <code
-                    className={`truncate rounded-full border px-3 py-2 font-mono text-xs tabular-nums xl:text-sm ${
+                    className={`truncate rounded-lg border px-2.5 py-1.5 font-mono text-xs tabular-nums ${
                       isDarkMode
-                        ? "border-zinc-700 bg-black/25 text-emerald-200"
-                        : "border-gray-200 bg-gray-50 text-gray-900"
+                        ? "border-[#2c5a50] bg-black/20 text-[#ffad9b]"
+                        : "border-[#d9d9dd] bg-white text-[#003c33]"
                     }`}
                     title={invitationCode}
                   >
@@ -111,10 +111,10 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
                   <button
                     type="button"
                     onClick={() => void handleCopy()}
-                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border transition-colors ${
-                      isDarkMode
-                        ? "border-zinc-700 text-gray-300 hover:bg-white/10 hover:text-white"
-                        : "border-gray-200 text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                    className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition-colors ${
+                    isDarkMode
+                        ? "border-[#2c5a50] text-gray-300 hover:bg-white/10 hover:text-white"
+                        : "border-[#d9d9dd] text-gray-600 hover:bg-white hover:text-gray-900"
                     }`}
                     aria-label={copied ? "복사됨" : "초대 코드 복사"}
                     title={copied ? "복사됨" : "코드 복사"}
@@ -141,7 +141,7 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
 
         <div className="space-y-2">
           <p
-            className={`text-sm leading-6 xl:text-base ${
+            className={`text-sm leading-5 ${
               isDarkMode ? "text-gray-400" : "text-gray-600"
             }`}
           >

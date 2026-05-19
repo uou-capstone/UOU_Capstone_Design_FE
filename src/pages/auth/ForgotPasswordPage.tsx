@@ -54,8 +54,8 @@ const ForgotPasswordPage: React.FC = () => {
               to="/login"
               className={`block w-full py-3 rounded-lg font-medium text-center transition-colors ${
                 isDarkMode
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
+                  ? 'bg-[#ff824d] hover:bg-[#f26f37] text-white cursor-pointer'
+                  : 'bg-[#ff824d] hover:bg-[#f26f37] text-white cursor-pointer'
               }`}
             >
               로그인으로 돌아가기
@@ -78,7 +78,7 @@ const ForgotPasswordPage: React.FC = () => {
                   isDarkMode
                     ? 'bg-zinc-800 border-zinc-700 text-white placeholder-gray-500'
                     : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'
-                } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+                } focus:outline-none focus:ring-2 focus:ring-[#ff824d]/70`}
                 placeholder="example@email.com"
               />
             </div>
@@ -92,8 +92,8 @@ const ForgotPasswordPage: React.FC = () => {
                     ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
                     : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : isDarkMode
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
+                  ? 'bg-[#ff824d] hover:bg-[#f26f37] text-white cursor-pointer'
+                  : 'bg-[#ff824d] hover:bg-[#f26f37] text-white cursor-pointer'
               }`}
             >
               {isLoading ? '전송 중...' : '비밀번호 재설정 링크 전송'}
@@ -107,7 +107,7 @@ const ForgotPasswordPage: React.FC = () => {
           <Link
             to="/login"
             className={`font-medium hover:underline ${
-              isDarkMode ? 'text-emerald-400' : 'text-emerald-600'
+              isDarkMode ? 'text-[#ffb08b]' : 'text-[#d95d26]'
             }`}
           >
             로그인으로 돌아가기

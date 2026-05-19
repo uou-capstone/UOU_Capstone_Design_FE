@@ -71,11 +71,11 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
   const scrollProgrammaticRef = useRef(false);
   const observerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFileUrlRef = useRef<string>("");
-  const viewerBackground = isDarkMode ? "#141414" : "#FFFFFF";
-  const viewerSurface = isDarkMode ? "#141414" : "#FFFFFF";
-  const viewerElevatedSurface = isDarkMode ? "#20242b" : "#FFFFFF";
-  const viewerBorder = isDarkMode ? "#27272a" : "#e5e7eb";
-  const viewerMutedBorder = isDarkMode ? "#3f3f46" : "#d8dde5";
+  const viewerBackground = isDarkMode ? "#071829" : "#FFFFFF";
+  const viewerSurface = isDarkMode ? "#071829" : "#FFFFFF";
+  const viewerElevatedSurface = isDarkMode ? "#102a35" : "#FFFFFF";
+  const viewerBorder = isDarkMode ? "#1b3443" : "#d9d9dd";
+  const viewerMutedBorder = isDarkMode ? "#2c5a50" : "#d9d9dd";
 
   // Page는 고정 baseWidth로 렌더, CSS transform scale(zoom)으로 확대/축소 → 캔버스 재렌더 없이 부드럽게
   const pageWidth = Math.min(
@@ -372,7 +372,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
           className="shrink-0 h-12 min-h-12 max-h-12 flex items-center justify-center gap-2 px-4 border-b box-border"
           style={{
             backgroundColor: viewerSurface,
-            color: isDarkMode ? "#FFFFFF" : "#141414",
+            color: isDarkMode ? "#FFFFFF" : "#212121",
             borderColor: viewerBorder,
           }}
         >
@@ -396,7 +396,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
               className="w-9 h-8 px-2 py-1 text-center text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#ff824d]/40"
               style={{
                 backgroundColor: viewerElevatedSurface,
-                color: isDarkMode ? "#FFFFFF" : "#141414",
+                color: isDarkMode ? "#FFFFFF" : "#212121",
                 borderColor: viewerMutedBorder,
               }}
               aria-label="페이지 번호"
@@ -442,7 +442,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
                 className="w-11 min-w-11 px-0 py-1 text-center text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-[#ff824d]/40"
                 style={{
                   backgroundColor: viewerElevatedSurface,
-                  color: isDarkMode ? "#FFFFFF" : "#141414",
+                  color: isDarkMode ? "#FFFFFF" : "#212121",
                   borderColor: viewerMutedBorder,
                 }}
                 aria-label="배율 입력"
@@ -551,7 +551,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
                   className="w-full h-9 px-3 text-sm rounded-xl border focus:outline-none focus:ring-2 focus:ring-[#ff824d]/40"
                   style={{
                     backgroundColor: viewerElevatedSurface,
-                    color: isDarkMode ? "#FFFFFF" : "#141414",
+                    color: isDarkMode ? "#FFFFFF" : "#212121",
                     borderColor: viewerMutedBorder,
                   }}
                 />
@@ -560,7 +560,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
                 className="page-list-scroll flex-1 min-h-0 overflow-y-scroll overflow-x-hidden pl-1.5 pr-3 py-1.5 space-y-1"
                 style={{
                   scrollbarWidth: "thin",
-                  scrollbarColor: isDarkMode ? "#52525b #101113" : "#cbd5e0 #f6f7fb",
+                  scrollbarColor: isDarkMode ? "#2c5a50 #071829" : "#d9d9dd #ffffff",
                   scrollbarGutter: "stable both-edges",
                 }}
               >

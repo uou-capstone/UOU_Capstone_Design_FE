@@ -113,12 +113,202 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #fafafa;
-  color: #111111;
+  background-color: #ffffff;
+  color: #212121;
   margin: 0;
   min-height: 100vh;
   overflow-x: hidden;
   transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Cohere-inspired theme tokens: editorial canvas, deep product bands, coral/blue accents. */
+:root {
+  --cohere-primary: #003c33;
+  --cohere-black: #000000;
+  --cohere-ink: #212121;
+  --cohere-deep-green: #003c33;
+  --cohere-dark-navy: #071829;
+  --cohere-canvas: #ffffff;
+  --cohere-soft-stone: #eeece7;
+  --cohere-pale-green: #edfce9;
+  --cohere-pale-blue: #f1f5ff;
+  --cohere-hairline: #d9d9dd;
+  --cohere-action-blue: #1863dc;
+  --cohere-coral: #ff7759;
+  --cohere-soft-coral: #ffad9b;
+  --cohere-focus-violet: #9b60aa;
+}
+
+.bg-\[\#ff824d\] {
+  background-color: var(--cohere-primary) !important;
+}
+
+.bg-\[\#141414\] {
+  background-color: var(--cohere-deep-green) !important;
+}
+
+html.dark .bg-\[\#141414\],
+body.dark .bg-\[\#141414\] {
+  background-color: var(--cohere-dark-navy) !important;
+}
+
+.hover\:bg-black:hover {
+  background-color: var(--cohere-dark-navy) !important;
+}
+
+.text-\[\#141414\] {
+  color: var(--cohere-ink) !important;
+}
+
+html.dark .text-\[\#141414\],
+body.dark .text-\[\#141414\] {
+  color: var(--cohere-dark-navy) !important;
+}
+
+.border-\[\#141414\] {
+  border-color: var(--cohere-deep-green) !important;
+}
+
+html.dark .border-\[\#141414\],
+body.dark .border-\[\#141414\] {
+  border-color: var(--cohere-soft-coral) !important;
+}
+
+html.dark .bg-\[\#ff824d\],
+body.dark .bg-\[\#ff824d\] {
+  background-color: var(--cohere-soft-coral) !important;
+  color: var(--cohere-dark-navy) !important;
+}
+
+.hover\:bg-\[\#f26f37\]:hover,
+.hover\:bg-\[\#ff6b33\]:hover {
+  background-color: var(--cohere-black) !important;
+}
+
+html.dark .hover\:bg-\[\#f26f37\]:hover,
+html.dark .hover\:bg-\[\#ff6b33\]:hover,
+body.dark .hover\:bg-\[\#f26f37\]:hover,
+body.dark .hover\:bg-\[\#ff6b33\]:hover {
+  background-color: #ffd0c6 !important;
+  color: var(--cohere-dark-navy) !important;
+}
+
+.bg-\[\#ff824d\]\/5,
+.bg-\[\#ff824d\]\/10,
+.bg-\[\#ff824d\]\/15,
+.bg-\[\#ff824d\]\/20,
+.bg-\[\#ff824d\]\/25,
+.bg-\[\#ff824d\]\/50,
+.bg-\[\#ff824d\]\/55,
+.hover\:bg-\[\#ff824d\]\/10:hover,
+.hover\:bg-\[\#ff824d\]\/15:hover,
+.hover\:bg-\[\#ff824d\]\/25:hover {
+  background-color: rgb(255 119 89 / 0.14) !important;
+}
+
+html.dark .bg-\[\#ff824d\]\/5,
+html.dark .bg-\[\#ff824d\]\/10,
+html.dark .bg-\[\#ff824d\]\/15,
+html.dark .bg-\[\#ff824d\]\/20,
+html.dark .bg-\[\#ff824d\]\/25,
+html.dark .bg-\[\#ff824d\]\/50,
+html.dark .bg-\[\#ff824d\]\/55,
+html.dark .hover\:bg-\[\#ff824d\]\/10:hover,
+html.dark .hover\:bg-\[\#ff824d\]\/15:hover,
+html.dark .hover\:bg-\[\#ff824d\]\/25:hover,
+body.dark .bg-\[\#ff824d\]\/5,
+body.dark .bg-\[\#ff824d\]\/10,
+body.dark .bg-\[\#ff824d\]\/15,
+body.dark .bg-\[\#ff824d\]\/20,
+body.dark .bg-\[\#ff824d\]\/25,
+body.dark .bg-\[\#ff824d\]\/50,
+body.dark .bg-\[\#ff824d\]\/55,
+body.dark .hover\:bg-\[\#ff824d\]\/10:hover,
+body.dark .hover\:bg-\[\#ff824d\]\/15:hover,
+body.dark .hover\:bg-\[\#ff824d\]\/25:hover {
+  background-color: rgb(255 173 155 / 0.16) !important;
+}
+
+.text-\[\#ff824d\],
+.text-\[\#d95d26\] {
+  color: var(--cohere-coral) !important;
+}
+
+.text-\[\#ff9a70\],
+.text-\[\#ffb08b\] {
+  color: var(--cohere-action-blue) !important;
+}
+
+html.dark .text-\[\#ff824d\],
+html.dark .text-\[\#d95d26\],
+html.dark .text-\[\#ff9a70\],
+html.dark .text-\[\#ffb08b\],
+body.dark .text-\[\#ff824d\],
+body.dark .text-\[\#d95d26\],
+body.dark .text-\[\#ff9a70\],
+body.dark .text-\[\#ffb08b\] {
+  color: var(--cohere-soft-coral) !important;
+}
+
+.border-\[\#ff824d\],
+.border-\[\#ff824d\]\/25,
+.border-\[\#ff824d\]\/40,
+.border-\[\#ff824d\]\/50,
+.hover\:border-\[\#ff824d\]:hover {
+  border-color: var(--cohere-coral) !important;
+}
+
+html.dark .border-\[\#ff824d\],
+html.dark .border-\[\#ff824d\]\/25,
+html.dark .border-\[\#ff824d\]\/40,
+html.dark .border-\[\#ff824d\]\/50,
+html.dark .hover\:border-\[\#ff824d\]:hover,
+body.dark .border-\[\#ff824d\],
+body.dark .border-\[\#ff824d\]\/25,
+body.dark .border-\[\#ff824d\]\/40,
+body.dark .border-\[\#ff824d\]\/50,
+body.dark .hover\:border-\[\#ff824d\]:hover {
+  border-color: var(--cohere-soft-coral) !important;
+}
+
+.focus\:border-\[\#ff824d\]:focus {
+  border-color: var(--cohere-focus-violet) !important;
+}
+
+html.dark .focus\:border-\[\#ff824d\]:focus,
+body.dark .focus\:border-\[\#ff824d\]:focus {
+  border-color: var(--cohere-soft-coral) !important;
+}
+
+.focus\:ring-\[\#ff824d\]:focus,
+.focus\:ring-\[\#ff824d\]\/40:focus,
+.focus\:ring-\[\#ff824d\]\/60:focus,
+.focus\:ring-\[\#ff824d\]\/70:focus,
+.focus-visible\:ring-\[\#ff824d\]\/60:focus-visible {
+  --tw-ring-color: rgb(155 96 170 / 0.32) !important;
+}
+
+html.dark .focus\:ring-\[\#ff824d\]:focus,
+html.dark .focus\:ring-\[\#ff824d\]\/40:focus,
+html.dark .focus\:ring-\[\#ff824d\]\/60:focus,
+html.dark .focus\:ring-\[\#ff824d\]\/70:focus,
+html.dark .focus-visible\:ring-\[\#ff824d\]\/60:focus-visible,
+body.dark .focus\:ring-\[\#ff824d\]:focus,
+body.dark .focus\:ring-\[\#ff824d\]\/40:focus,
+body.dark .focus\:ring-\[\#ff824d\]\/60:focus,
+body.dark .focus\:ring-\[\#ff824d\]\/70:focus,
+body.dark .focus-visible\:ring-\[\#ff824d\]\/60:focus-visible {
+  --tw-ring-color: rgb(255 173 155 / 0.28) !important;
+}
+
+.bg-orange-50,
+.hover\:bg-orange-50\/70:hover,
+.bg-orange-200 {
+  background-color: #fff2ee !important;
+}
+
+.text-orange-500 {
+  color: var(--cohere-coral) !important;
 }
 
 /* 테마 변경 시 색상 전환 비활성화 - 한꺼번에 변경되도록 */
@@ -130,7 +320,7 @@ html.theme-transition-disabled [class*="transition-colors"] {
 /* 다크모드 스타일 */
 body.dark,
 html.dark body {
-  background-color: #0f172a;
+  background-color: #071829;
   color: #f1f5f9;
 }
 
@@ -408,9 +598,9 @@ body.dark .exam-select-arrow-left select {
 
 /* 글래스모피즘 (반투명) 프로필 드롭다운 - 테마 상관없이 항상 다크 스타일 */
 .profile-dropdown-glass {
-  background: rgba(30, 30, 30, 0.85);
+  background: rgba(7, 24, 41, 0.94);
   backdrop-filter: blur(0.75rem);
   -webkit-backdrop-filter: blur(0.75rem);
-  border: 0.0625rem solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.3);
+  border: 0.0625rem solid rgba(255, 173, 155, 0.18);
+  box-shadow: 0 0.75rem 2rem rgba(7, 24, 41, 0.28);
 }

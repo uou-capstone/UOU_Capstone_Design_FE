@@ -490,7 +490,7 @@ const AppLayout: React.FC = () => {
   return (
     <div
       className={`h-screen w-full max-w-full flex flex-col transition-colors overflow-hidden ${
-        isDarkMode ? "bg-[#141414] text-gray-100" : "bg-white text-gray-900"
+        isDarkMode ? "bg-[#071829] text-gray-100" : "bg-white text-[#212121]"
       }`}
     >
       <TopNav

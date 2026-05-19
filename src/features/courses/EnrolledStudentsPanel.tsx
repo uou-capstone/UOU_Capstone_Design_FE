@@ -143,8 +143,8 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
             disabled={busy}
             className={`rounded-full px-3 py-1.5 text-xs font-medium border cursor-pointer disabled:opacity-50 ${
               isDarkMode
-                ? "border-zinc-600 text-zinc-200 hover:bg-zinc-800"
-                : "border-gray-300 text-gray-700 hover:bg-gray-100"
+                ? "border-[#2c5a50] text-zinc-200 hover:bg-white/10"
+                : "border-[#d9d9dd] text-gray-700 hover:bg-[#eeece7]"
             }`}
           >
             새로고침
@@ -188,7 +188,7 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
               <li
                 key={row.enrollmentId || row.studentId}
                 className={`rounded-xl border px-4 py-3 ${
-                  isDarkMode ? "border-zinc-600 bg-zinc-800/60" : "border-gray-200 bg-white"
+                  isDarkMode ? "border-[#1b4d44] bg-[#0b241f]" : "border-[#d9d9dd] bg-white"
                 }`}
               >
                 <div className="flex items-start gap-3">
@@ -225,8 +225,8 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
                           }
                           className={`rounded-lg px-2.5 py-1 text-xs font-medium border cursor-pointer disabled:opacity-50 ${
                             isDarkMode
-                              ? "border-zinc-600 text-zinc-200 hover:bg-zinc-700"
-                              : "border-gray-300 text-gray-700 hover:bg-gray-100"
+                              ? "border-[#2c5a50] text-zinc-200 hover:bg-white/10"
+                              : "border-[#d9d9dd] text-gray-700 hover:bg-[#eeece7]"
                           }`}
                           title="선택"
                         >
@@ -245,7 +245,7 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
       {totalPages > 1 ? (
         <div
           className={`mt-6 flex flex-wrap items-center justify-between gap-2 border-t pt-4 ${
-            isDarkMode ? "border-zinc-700" : "border-gray-200"
+            isDarkMode ? "border-[#1b3443]" : "border-[#d9d9dd]"
           }`}
         >
           <button

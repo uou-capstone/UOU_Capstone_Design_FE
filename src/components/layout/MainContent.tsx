@@ -95,51 +95,51 @@ type MenuItem = "lectures" | "settings" | "report" | "updates";
 
 const courseCardIconPalette = [
   {
-    color: "text-[#ff824d]",
-    bg: "bg-[#ff824d]/10",
-    border: "border-[#ff824d]/25",
+    color: "text-[#003c33]",
+    bg: "bg-[#edfce9]",
+    border: "border-[#b6dec6]",
     path: "M12 4v16m8-8H4",
   },
   {
-    color: "text-violet-400",
-    bg: "bg-violet-500/10",
-    border: "border-violet-400/25",
+    color: "text-[#9b60aa]",
+    bg: "bg-[#f8eefb]",
+    border: "border-[#dec2e7]",
     path: "M4 7h16M7 4h10l1 3H6l1-3Zm-1 3 1.25 13h9.5L18 7",
   },
   {
-    color: "text-blue-400",
-    bg: "bg-blue-500/10",
-    border: "border-blue-400/25",
+    color: "text-[#1863dc]",
+    bg: "bg-[#f1f5ff]",
+    border: "border-[#c9d7ff]",
     path: "M12 4 4 8l8 4 8-4-8-4Zm-8 8 8 4 8-4M4 16l8 4 8-4",
   },
   {
-    color: "text-emerald-400",
-    bg: "bg-emerald-500/10",
-    border: "border-emerald-400/25",
+    color: "text-[#003c33]",
+    bg: "bg-[#e7f7f0]",
+    border: "border-[#b7ddd0]",
     path: "M5 5v14m0-13h12l-2 4 2 4H5",
   },
   {
-    color: "text-amber-300",
-    bg: "bg-amber-400/10",
-    border: "border-amber-300/25",
+    color: "text-[#ff7759]",
+    bg: "bg-[#fff2ee]",
+    border: "border-[#ffad9b]",
     path: "M7 8h10M7 12h7M7 16h10M5 4h14v16H5z",
   },
   {
-    color: "text-cyan-300",
-    bg: "bg-cyan-400/10",
-    border: "border-cyan-300/25",
+    color: "text-[#071829]",
+    bg: "bg-[#eeece7]",
+    border: "border-[#d9d9dd]",
     path: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 0c2.5 2.4 3.75 5.4 3.75 9S14.5 18.6 12 21M12 3C9.5 5.4 8.25 8.4 8.25 12S9.5 18.6 12 21M3.6 9h16.8M3.6 15h16.8",
   },
   {
-    color: "text-pink-400",
-    bg: "bg-pink-500/10",
-    border: "border-pink-400/25",
+    color: "text-[#ff7759]",
+    bg: "bg-[#fff2ee]",
+    border: "border-[#ffd0c6]",
     path: "M5 7c0-1.7 3.1-3 7-3s7 1.3 7 3-3.1 3-7 3-7-1.3-7-3Zm0 0v10c0 1.7 3.1 3 7 3s7-1.3 7-3V7M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3",
   },
   {
-    color: "text-orange-400",
-    bg: "bg-orange-500/10",
-    border: "border-orange-400/25",
+    color: "text-[#1863dc]",
+    bg: "bg-[#f1f5ff]",
+    border: "border-[#d7e0ff]",
     path: "M12 4v5m0 6v5M4 12h5m6 0h5M7.8 7.8l3.5 3.5m1.4 1.4 3.5 3.5m0-8.4-3.5 3.5m-1.4 1.4-3.5 3.5",
   },
 ] as const;
@@ -2369,6 +2369,80 @@ const MainContent: React.FC<MainContentProps> = ({
     ) {
       return;
     }
+    const materialIds = selected
+      .filter((it) => it.type === "material" && it.materialId != null)
+      .map((it) => Number(it.materialId));
+    const generationSessionIds = selected
+      .filter((it) => it.type === "material" && it.generationSessionId != null)
+      .map((it) => Number(it.generationSessionId));
+    const examSessionIds = selected
+      .filter((it) => it.type === "exam" && it.examSessionId != null)
+      .map((it) => Number(it.examSessionId))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    const hasBulkDeletePayload =
+      materialIds.length > 0 ||
+      generationSessionIds.length > 0 ||
+      examSessionIds.length > 0;
+    const hasUnresolvedItem = selected.some((it) => {
+      if (it.type === "material") {
+        return it.materialId == null && it.generationSessionId == null;
+      }
+      if (it.type === "exam") {
+        const id = Number(it.examSessionId);
+        return !Number.isFinite(id) || id <= 0;
+      }
+      return true;
+    });
+
+    if (courseDetail?.courseId && hasBulkDeletePayload && !hasUnresolvedItem) {
+      setSubmitting(true);
+      try {
+        await courseApi.deleteCourseContents(courseDetail.courseId, {
+          materialIds,
+          examSessionIds,
+          generationSessionIds,
+        });
+        const selectedIds = new Set(selected.map((it) => it.id));
+        setLocalMaterials((prev) => {
+          const list = prev[selectedLectureId ?? 0] || [];
+          return {
+            ...prev,
+            [selectedLectureId ?? 0]: list.filter((it) => !selectedIds.has(it.id)),
+          };
+        });
+        setLocalExams((prev) => {
+          const list = prev[selectedLectureId ?? 0] || [];
+          return {
+            ...prev,
+            [selectedLectureId ?? 0]: list.filter((it) => !selectedIds.has(it.id)),
+          };
+        });
+        if (
+          (previewMaterialId != null && materialIds.includes(previewMaterialId)) ||
+          (previewLinkedGenerationSessionId != null &&
+            generationSessionIds.includes(previewLinkedGenerationSessionId))
+        ) {
+          previewBeforeExamRef.current = null;
+          setPreviewFileUrl(null);
+          setPreviewMaterialId(null);
+          setPreviewFileName(null);
+          setPreviewIsAiGenerationDoc(false);
+          setPreviewLinkedGenerationSessionId(null);
+          clearResourceParamsInUrl();
+        }
+        refetchCourseContents(courseDetail.courseId);
+        setSelectedCenterItemIds({});
+        return;
+      } catch (e) {
+        window.alert(
+          e instanceof Error ? e.message : "선택한 항목 삭제에 실패했습니다.",
+        );
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     for (const it of selected) {
       // 개별 confirm 없이 삭제
       // eslint-disable-next-line no-await-in-loop
@@ -2381,6 +2455,12 @@ const MainContent: React.FC<MainContentProps> = ({
     selectedCenterItemIds,
     canSelectCenterItemForDelete,
     handleDeleteCenterItem,
+    courseDetail?.courseId,
+    selectedLectureId,
+    previewMaterialId,
+    previewLinkedGenerationSessionId,
+    clearResourceParamsInUrl,
+    refetchCourseContents,
   ]);
 
   React.useEffect(() => {
@@ -3506,11 +3586,22 @@ const MainContent: React.FC<MainContentProps> = ({
     try {
       const exams = localExams[selectedLectureId ?? 0] ?? [];
       const toDelete = exams.filter((e) => ids.includes(e.id) && e.examSessionId);
-      await Promise.all(
-        toDelete.map((e) =>
-          examGenerationApi.deleteExamSession(Number(e.examSessionId)),
-        ),
-      );
+      const examSessionIds = toDelete
+        .map((e) => Number(e.examSessionId))
+        .filter((id) => Number.isFinite(id) && id > 0);
+      if (courseDetail?.courseId) {
+        await courseApi.deleteCourseContents(courseDetail.courseId, {
+          materialIds: [],
+          generationSessionIds: [],
+          examSessionIds,
+        });
+      } else {
+        await Promise.all(
+          examSessionIds.map((examSessionId) =>
+            examGenerationApi.deleteExamSession(examSessionId),
+          ),
+        );
+      }
       setLocalExams((prev) => {
         const list = (prev[selectedLectureId ?? 0] ?? []).filter(
           (e) => !ids.includes(e.id),
@@ -4343,11 +4434,11 @@ const MainContent: React.FC<MainContentProps> = ({
     const roleLabel = isTeacher ? "선생님" : isStudent ? "학생" : "";
     const greetingName = `${displayName}${roleLabel ? ` ${roleLabel}` : ""}`;
     const actionButtonBase =
-      "flex h-14 w-full items-center justify-start gap-3 rounded-xl px-5 text-sm font-semibold transition-all duration-200";
+      "flex h-10 w-full items-center justify-start gap-2 rounded-lg px-3 text-xs font-semibold transition-all duration-200";
     const courseListPrimaryPillCn = `${actionButtonBase} ${
       isDarkMode
-        ? "bg-[#ff824d] text-white shadow-[0_14px_34px_rgba(255,130,77,0.22)] hover:bg-[#ff6b33]"
-        : "bg-[#ff824d] text-white shadow-[0_14px_28px_rgba(255,130,77,0.22)] hover:bg-[#ff6b33]"
+        ? "bg-[#ffad9b] text-[#071829] hover:bg-[#ffd0c6]"
+        : "bg-[#003c33] text-white hover:bg-[#071829]"
     }`;
 
     if (isCoursesLoading) {
@@ -4371,11 +4462,11 @@ const MainContent: React.FC<MainContentProps> = ({
 
     const courseListEditToggleClasses = courseListEditMode
       ? isDarkMode
-        ? "bg-emerald-600/90 text-white hover:bg-emerald-600"
-        : "bg-emerald-600 text-white hover:bg-emerald-700"
+        ? "bg-[#ffad9b] text-[#071829] hover:bg-[#ffd0c6]"
+        : "bg-[#003c33] text-white hover:bg-[#071829]"
       : isDarkMode
         ? "bg-white/10 text-gray-200 hover:bg-white/15"
-        : "bg-gray-100 text-gray-800 hover:bg-gray-200";
+        : "bg-[#eeece7] text-[#212121] hover:bg-[#e1ded6]";
 
     const renderCourseListEditToggleButton = () =>
       !isTeacher ? null : (
@@ -4464,7 +4555,7 @@ const MainContent: React.FC<MainContentProps> = ({
       <div className="flex h-full min-h-0 flex-col">
         <div
           className={`flex-1 flex flex-col min-h-0 overflow-hidden ${
-            isDarkMode ? "bg-[#141414]" : "bg-white"
+            isDarkMode ? "bg-[#071829]" : "bg-white"
           }`}
         >
           <div
@@ -4476,10 +4567,10 @@ const MainContent: React.FC<MainContentProps> = ({
           </div>
           <div className="flex flex-1 min-h-0 overflow-hidden">
             <aside
-              className={`hidden w-64 shrink-0 border-r py-9 pr-7 md:block ${
-                isDarkMode
-                  ? "border-zinc-800 text-gray-200"
-                  : "border-gray-200 text-gray-800"
+              className={`hidden w-64 shrink-0 border-r p-9 md:block ${
+              isDarkMode
+                  ? "border-[#1b3443] text-gray-200"
+                  : "border-[#d9d9dd] text-[#212121]"
               }`}
             >
               <div className="flex h-full flex-col gap-6">
@@ -4527,7 +4618,7 @@ const MainContent: React.FC<MainContentProps> = ({
 
                 <div
                   className={`h-px ${
-                    isDarkMode ? "bg-zinc-800" : "bg-gray-200"
+                    isDarkMode ? "bg-[#1b3443]" : "bg-[#d9d9dd]"
                   }`}
                 />
 
@@ -4598,8 +4689,8 @@ const MainContent: React.FC<MainContentProps> = ({
             </aside>
 
             <div
-              className={`flex-1 min-w-0 overflow-y-auto py-8 md:pl-7 ${
-                isDarkMode ? "text-gray-200" : "text-gray-800"
+              className={`flex-1 min-w-0 overflow-y-auto p-9 ${
+                isDarkMode ? "text-gray-200" : "text-[#212121]"
               }`}
             >
               {isTeacher ? (
@@ -4620,19 +4711,19 @@ const MainContent: React.FC<MainContentProps> = ({
                 </div>
               ) : null}
               <div
-                className={`mb-6 rounded-2xl border px-6 py-6 shadow-[0_18px_50px_rgba(0,0,0,0.16)] sm:px-8 ${
+                className={`mb-4 rounded-xl border px-5 py-4 sm:px-6 ${
                   isDarkMode
-                    ? "border-zinc-800 bg-[#171b20]"
-                    : "border-gray-200 bg-white"
+                    ? "border-[#1b4d44] bg-[#0b241f]"
+                    : "border-[#d9d9dd] bg-[#eeece7]"
                 }`}
               >
-                <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex min-w-0 items-center gap-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-4">
                     <div
-                      className={`flex h-20 w-20 shrink-0 items-center justify-center rounded-full border text-4xl ${
+                      className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border text-3xl ${
                         isDarkMode
-                          ? "border-zinc-700 bg-white/[0.03]"
-                          : "border-gray-200 bg-gray-50"
+                          ? "border-[#2c5a50] bg-white/[0.05]"
+                          : "border-[#b6dec6] bg-[#edfce9]"
                       }`}
                       aria-hidden="true"
                     >
@@ -4647,7 +4738,7 @@ const MainContent: React.FC<MainContentProps> = ({
                         {greetingName}, 반갑습니다
                       </p>
                       <p
-                        className={`mt-2 text-sm xl:text-base ${
+                        className={`mt-1.5 text-sm ${
                           isDarkMode ? "text-gray-400" : "text-gray-600"
                         }`}
                       >
@@ -4656,8 +4747,8 @@ const MainContent: React.FC<MainContentProps> = ({
                     </div>
                   </div>
                   <div
-                    className={`hidden h-20 w-px shrink-0 sm:block ${
-                      isDarkMode ? "bg-zinc-700" : "bg-gray-200"
+                    className={`hidden h-14 w-px shrink-0 sm:block ${
+                      isDarkMode ? "bg-[#1b4d44]" : "bg-[#d9d9dd]"
                     }`}
                     aria-hidden="true"
                   />
@@ -4669,7 +4760,11 @@ const MainContent: React.FC<MainContentProps> = ({
                     >
                       내 강의실
                     </p>
-                    <p className="mt-1 text-4xl font-semibold text-emerald-400">
+                    <p
+                      className={`mt-0.5 text-3xl font-semibold ${
+                        isDarkMode ? "text-white" : "text-gray-900"
+                      }`}
+                    >
                       {courses.length}
                       <span className="ml-1 text-2xl">개</span>
                     </p>
@@ -4680,8 +4775,8 @@ const MainContent: React.FC<MainContentProps> = ({
                 <div
                   className={`flex flex-col items-center justify-center py-14 px-4 text-center rounded-xl border ${
                     isDarkMode
-                      ? "border-zinc-700 bg-zinc-900/30 text-gray-300"
-                      : "border-gray-200 bg-gray-50 text-gray-600"
+                      ? "border-[#1b3443] bg-[#0b241f] text-gray-300"
+                      : "border-[#d9d9dd] bg-[#eeece7] text-gray-600"
                   }`}
                 >
                   <p
@@ -4700,7 +4795,7 @@ const MainContent: React.FC<MainContentProps> = ({
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {sortedCourses.map((course, index) => {
                     return (
                       <div
@@ -4721,12 +4816,12 @@ const MainContent: React.FC<MainContentProps> = ({
                             handleCourseSelect(course.courseId);
                           }
                         }}
-                        className={`group relative flex min-h-64 cursor-pointer overflow-hidden rounded-2xl text-left transition-all duration-200 focus:outline-none ${
+                        className={`group relative flex min-h-56 cursor-pointer overflow-hidden rounded-xl text-left transition-all duration-200 focus:outline-none ${
                           isDarkMode
-                            ? "border border-zinc-800 bg-[#181c21] hover:border-zinc-600 hover:bg-[#1d2228]"
-                            : "border border-[#E5E7EB] bg-white hover:border-gray-300 hover:bg-gray-50"
+                            ? "border border-[#1b3443] bg-[#071829] hover:border-[#2c5a50] hover:bg-[#0b241f]"
+                            : "border border-[#d9d9dd] bg-white hover:border-[#1863dc] hover:bg-[#f1f5ff]"
                         } ${
-                          courseListEditMode ? "cursor-default" : "hover:-translate-y-0.5"
+                          courseListEditMode ? "cursor-default" : ""
                         }`}
                       >
                         {isTeacher && courseListEditMode && (
@@ -4766,8 +4861,8 @@ const MainContent: React.FC<MainContentProps> = ({
                                 }}
                                 className={`flex items-center justify-center w-9 h-9 rounded-full transition-colors ${
                                   isDarkMode
-                                    ? "text-[#ff824d] bg-black/40 hover:bg-black/55"
-                                    : "text-[#ff824d] bg-white/80 hover:bg-white"
+                                    ? "text-red-200 bg-black/40 hover:bg-black/55"
+                                    : "text-red-600 bg-white/80 hover:bg-white"
                                 }`}
                                 aria-label="강의실 삭제"
                                 title="강의실 삭제"
@@ -4777,13 +4872,13 @@ const MainContent: React.FC<MainContentProps> = ({
                             </div>
                           </div>
                         )}
-                        <div className="flex h-full min-w-0 flex-1 flex-col p-6">
-                          <div className="mb-7">
+                        <div className="flex h-full min-w-0 flex-1 flex-col p-5">
+                          <div className="mb-5">
                             <CourseCardVisualIcon index={index} />
                           </div>
                           <div className="flex items-start justify-between gap-3">
                             <h3
-                              className={`line-clamp-2 flex-1 text-xl font-semibold ${
+                              className={`line-clamp-2 flex-1 text-lg font-semibold ${
                                 isDarkMode ? "text-gray-100" : "text-gray-900"
                               }`}
                             >
@@ -4791,17 +4886,17 @@ const MainContent: React.FC<MainContentProps> = ({
                             </h3>
                           </div>
                           <p
-                            className={`mt-3 line-clamp-3 min-h-15 text-sm leading-6 ${
+                            className={`mt-2 line-clamp-3 min-h-12 text-sm leading-5 ${
                               isDarkMode ? "text-gray-400" : "text-gray-600"
                             }`}
                           >
                             {course.description || "강의 자료와 학습 활동을 한곳에서 관리합니다."}
                           </p>
                           <div
-                            className={`mt-auto border-t pt-4 text-xs ${
+                            className={`mt-auto border-t pt-3 text-xs ${
                               isDarkMode
-                                ? "border-zinc-700 text-gray-400"
-                                : "border-gray-200 text-gray-500"
+                                ? "border-[#1b3443] text-gray-400"
+                                : "border-[#d9d9dd] text-gray-500"
                             }`}
                           >
                             생성 시간 {formatIsoInstantForKo(course.createdAt)}
@@ -4933,30 +5028,68 @@ const MainContent: React.FC<MainContentProps> = ({
 
     const lectureBulkEditToggleClasses = bulkEditMode
       ? isDarkMode
-        ? "bg-emerald-600/90 text-white hover:bg-emerald-600"
-        : "bg-emerald-600 text-white hover:bg-emerald-700"
+        ? "bg-[#ffad9b] text-[#071829] hover:bg-[#ffd0c6]"
+        : "bg-[#003c33] text-white hover:bg-[#071829]"
       : isDarkMode
         ? "bg-white/10 text-gray-200 hover:bg-white/15"
-        : "bg-gray-100 text-gray-800 hover:bg-gray-200";
+        : "bg-[#eeece7] text-[#212121] hover:bg-[#e1ded6]";
     const detailActionBase =
-      "flex h-14 w-full items-center justify-start gap-3 rounded-xl px-5 text-sm font-semibold transition-all duration-200";
+      "flex h-9 w-full items-center justify-start gap-2 rounded-lg px-3 text-xs font-semibold transition-colors duration-150";
     const detailPrimaryActionClass = `${detailActionBase} ${
       isDarkMode
-        ? "bg-[#ff824d] text-white shadow-[0_14px_34px_rgba(255,130,77,0.22)] hover:bg-[#ff6b33]"
-        : "bg-[#ff824d] text-white shadow-[0_14px_28px_rgba(255,130,77,0.22)] hover:bg-[#ff6b33]"
+        ? "bg-[#ffad9b] text-[#071829] hover:bg-[#ffd0c6]"
+        : "bg-[#003c33] text-white hover:bg-[#071829]"
     }`;
     const detailSecondaryActionClass = `${detailActionBase} border ${
       isDarkMode
-        ? "border-zinc-700 bg-white/[0.03] text-gray-100 hover:border-zinc-500 hover:bg-white/[0.06]"
-        : "border-gray-300 bg-white text-gray-800 hover:border-gray-400 hover:bg-gray-50"
+        ? "border-[#1b4d44] bg-white/[0.04] text-gray-100 hover:border-[#ffad9b] hover:bg-white/[0.07]"
+        : "border-[#d9d9dd] bg-white text-[#212121] hover:border-[#1863dc] hover:bg-[#f1f5ff]"
     }`;
 
     // 업로드한 자료 미리보기 (좌: 미리보기 | 우: 채팅) — fileUrl 또는 materialId로 표시
+    const secondaryPanelItems: Array<{
+      key: "notices" | "discussions" | "attendance" | "reportCriteria";
+      label: string;
+      iconPath: string;
+    }> = [
+      {
+        key: "notices",
+        label: "공지사항",
+        iconPath:
+          "M4 7h3l9-3v16l-9-3H4V7Zm3 0v10M18 9.5a4 4 0 0 1 0 5",
+      },
+      {
+        key: "discussions",
+        label: "토론",
+        iconPath:
+          "M7 8h10M7 12h6m8-1a7 7 0 0 1-7 7H9l-5 3 1.5-4.5A7 7 0 1 1 21 11Z",
+      },
+      ...(!isTeacher
+        ? [
+            {
+              key: "attendance" as const,
+              label: "내 출석",
+              iconPath:
+                "M8 7V4m8 3V4M5 11h14M6 5h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm5 11 2 2 4-5",
+            },
+          ]
+        : []),
+      ...(isTeacher
+        ? [
+            {
+              key: "reportCriteria" as const,
+              label: "리포트 기준",
+              iconPath: "M5 7h8m-8 5h14M5 17h10m1-12v4m-5 6v4m7-9v4",
+            },
+          ]
+        : []),
+    ];
+
     if (previewFileUrl || previewMaterialId != null || examDetailSessionId) {
       const isResourceDocPreview =
         !examDetailSessionId &&
         (previewFileUrl != null || previewMaterialId != null);
-      const previewShellClass = isDarkMode ? "bg-[#141414]" : "bg-white";
+      const previewShellClass = isDarkMode ? "bg-[#071829]" : "bg-white";
       return (
         <div className={`flex flex-col h-full min-w-0 overflow-hidden ${previewShellClass}`}>
           <div
@@ -4989,9 +5122,9 @@ const MainContent: React.FC<MainContentProps> = ({
                   <div
                     className="shrink-0 h-10 min-h-10 max-h-10 flex items-center justify-between px-3 border-b box-border"
                     style={{
-                      backgroundColor: isDarkMode ? "#141414" : "#FFFFFF",
-                      color: isDarkMode ? "#FFFFFF" : "#141414",
-                      borderColor: isDarkMode ? "#404040" : "#e5e7eb",
+                      backgroundColor: isDarkMode ? "#071829" : "#FFFFFF",
+                      color: isDarkMode ? "#FFFFFF" : "#212121",
+                      borderColor: isDarkMode ? "#1b3443" : "#d9d9dd",
                     }}
                   >
                     <div className="min-w-0 flex items-center">
@@ -5339,8 +5472,8 @@ const MainContent: React.FC<MainContentProps> = ({
                                         }
                                         className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
                                           isDarkMode
-                                            ? "bg-emerald-600 text-white"
-                                            : "bg-emerald-600 text-white"
+                                            ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                            : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
                                         }`}
                                       >
                                         채점하기
@@ -5487,8 +5620,8 @@ const MainContent: React.FC<MainContentProps> = ({
                                     }
                                     className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
                                       isDarkMode
-                                        ? "bg-emerald-600 text-white"
-                                        : "bg-emerald-600 text-white"
+                                        ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                        : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
                                     }`}
                                   >
                                     채점하기
@@ -5672,8 +5805,8 @@ const MainContent: React.FC<MainContentProps> = ({
                                         }
                                         className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
                                           isDarkMode
-                                            ? "bg-emerald-600 text-white"
-                                            : "bg-emerald-600 text-white"
+                                            ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                            : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
                                         }`}
                                       >
                                         선택한 답안 채점하기
@@ -5866,8 +5999,8 @@ const MainContent: React.FC<MainContentProps> = ({
                                     }
                                     className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
                                       isDarkMode
-                                        ? "bg-emerald-600 text-white"
-                                        : "bg-emerald-600 text-white"
+                                        ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                        : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
                                     }`}
                                   >
                                     선택한 답안 채점하기
@@ -6033,8 +6166,8 @@ const MainContent: React.FC<MainContentProps> = ({
                                 }
                                 className={`inline-flex items-center px-3 py-1.5 rounded text-xs font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                                   isDarkMode
-                                    ? "bg-emerald-600 text-white"
-                                    : "bg-emerald-600 text-white"
+                                    ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                    : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
                                 }`}
                               >
                                 {shortAnswerGrading
@@ -6096,9 +6229,9 @@ const MainContent: React.FC<MainContentProps> = ({
                     <div
                       className="box-border flex h-10 max-h-10 min-h-10 shrink-0 items-center border-b px-3"
                       style={{
-                        backgroundColor: isDarkMode ? "#141414" : "#FFFFFF",
-                        color: isDarkMode ? "#FFFFFF" : "#141414",
-                        borderColor: isDarkMode ? "#404040" : "#e5e7eb",
+                        backgroundColor: isDarkMode ? "#071829" : "#FFFFFF",
+                        color: isDarkMode ? "#FFFFFF" : "#212121",
+                        borderColor: isDarkMode ? "#1b3443" : "#d9d9dd",
                       }}
                     >
                       <div className="flex min-w-0 flex-1 items-center">
@@ -6381,12 +6514,12 @@ const MainContent: React.FC<MainContentProps> = ({
         {/* 상단 컨트롤 영역(md 미만에서는 주차 가로 선택만 표시) */}
         <div
           className={`flex-1 flex flex-col min-h-0 overflow-hidden ${
-            isDarkMode ? "bg-[#141414]" : "bg-white"
+            isDarkMode ? "bg-[#071829]" : "bg-white"
           }`}
         >
           <div
             className={`md:hidden box-border flex min-h-12 shrink-0 items-center gap-2 border-b px-3 py-1.5 ${
-              isDarkMode ? "border-zinc-800" : "border-gray-200"
+              isDarkMode ? "border-[#1b3443]" : "border-[#d9d9dd]"
             }`}
           >
               <div className="flex min-h-0 min-w-0 flex-1 items-center gap-2 overflow-x-auto no-scrollbar">
@@ -6409,11 +6542,11 @@ const MainContent: React.FC<MainContentProps> = ({
                     onDeleteLecture;
                   const chipBaseInEdit = isActiveWeek
                     ? isDarkMode
-                      ? "bg-[#FFFFFF] text-[#141414]"
-                      : "bg-[#141414] text-[#FFFFFF]"
+                      ? "bg-[#ffad9b] text-[#071829]"
+                      : "bg-[#003c33] text-[#FFFFFF]"
                     : isDarkMode
-                      ? "bg-[#ffffff14] text-gray-200 hover:bg-[#ffffff20]"
-                      : "bg-[#00000014] text-gray-700 hover:bg-[#00000020]";
+                      ? "bg-white/[0.08] text-gray-200 hover:bg-white/[0.13]"
+                      : "bg-[#eeece7] text-[#212121] hover:bg-[#e1ded6]";
                   if (weekEditRow) {
                     return (
                       <div
@@ -6489,11 +6622,11 @@ const MainContent: React.FC<MainContentProps> = ({
                       className={`inline-flex h-9 shrink-0 items-center px-3 rounded-full text-xs font-medium whitespace-nowrap cursor-pointer transition-colors xl:text-sm ${
                         isActiveChip
                           ? isDarkMode
-                            ? "bg-[#FFFFFF] text-[#141414]"
-                            : "bg-[#141414] text-[#FFFFFF]"
+                            ? "bg-[#ffad9b] text-[#071829]"
+                            : "bg-[#003c33] text-[#FFFFFF]"
                           : isDarkMode
-                            ? "bg-[#ffffff14] text-gray-200 hover:bg-[#ffffff20]"
-                            : "bg-[#00000014] text-gray-700 hover:bg-[#00000020]"
+                            ? "bg-white/[0.08] text-gray-200 hover:bg-white/[0.13]"
+                            : "bg-[#eeece7] text-[#212121] hover:bg-[#e1ded6]"
                       }`}
                     >
                       {label}
@@ -6520,15 +6653,15 @@ const MainContent: React.FC<MainContentProps> = ({
           {/* 강의 리소스 박스 그리드 영역 — 데스크톱에서는 주차 헤더 줄이 없어서 상단 구분선만 border-t로 유지 */}
           <div className="flex flex-1 min-h-0 overflow-hidden">
             <aside
-              className={`hidden md:flex w-64 shrink-0 flex-col py-9 pr-7 border-r min-h-0 ${
+              className={`hidden md:flex w-56 shrink-0 flex-col p-3 border-r min-h-0 ${
                 isDarkMode
-                  ? "border-zinc-800 text-gray-200"
-                  : "border-gray-200 text-gray-800"
+                  ? "border-[#1b3443] text-gray-200"
+                  : "border-[#d9d9dd] text-[#212121]"
               }`}
             >
               {isTeacher ? (
-                <div className="shrink-0 flex flex-col gap-6">
-                  <section className="flex flex-col gap-3">
+                <div className="shrink-0 flex flex-col gap-2">
+                  <section className="flex flex-col gap-1.5">
                     <button
                       type="button"
                       onClick={() => setLectureAddMenuOpen((o) => !o)}
@@ -6538,7 +6671,7 @@ const MainContent: React.FC<MainContentProps> = ({
                       title="강의 만들기"
                     >
                       <svg
-                        className="h-6 w-6 shrink-0"
+                        className="h-4 w-4 shrink-0"
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -6554,7 +6687,31 @@ const MainContent: React.FC<MainContentProps> = ({
                       <span>강의 만들기</span>
                     </button>
                     {lectureAddMenuOpen ? (
-                      <div className="flex flex-col gap-2">
+                      <div className="flex flex-col gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddLectureModalOpen(true);
+                            setLectureAddMenuOpen(false);
+                          }}
+                          className={detailSecondaryActionClass}
+                        >
+                          <svg
+                            className="h-4 w-4 shrink-0"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M12 5v14M5 12h14"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                            />
+                          </svg>
+                          <span>주차 추가</span>
+                        </button>
                         <button
                           type="button"
                           onClick={() => {
@@ -6566,7 +6723,7 @@ const MainContent: React.FC<MainContentProps> = ({
                           className={detailSecondaryActionClass}
                         >
                           <UploadTrayIcon
-                            className="w-5 h-5 shrink-0"
+                            className="w-4 h-4 shrink-0"
                           />
                           <span>자료 업로드</span>
                         </button>
@@ -6581,7 +6738,7 @@ const MainContent: React.FC<MainContentProps> = ({
                           className={detailSecondaryActionClass}
                         >
                           <SparklesIcon
-                            className="w-5 h-5 shrink-0"
+                            className="w-4 h-4 shrink-0"
                           />
                           <span>자료 생성</span>
                         </button>
@@ -6591,18 +6748,18 @@ const MainContent: React.FC<MainContentProps> = ({
 
                   <div
                     className={`h-px ${
-                      isDarkMode ? "bg-zinc-800" : "bg-gray-200"
+                      isDarkMode ? "bg-[#1b3443]" : "bg-[#d9d9dd]"
                     }`}
                   />
 
-                  <section className="flex flex-col gap-3">
+                  <section className="flex flex-col gap-1.5">
                     <button
                       type="button"
                       onClick={() => setStudentReportModalOpen(true)}
                       className={detailSecondaryActionClass}
                     >
                       <ChartBarIcon
-                        className="w-5 h-5 shrink-0"
+                        className="w-4 h-4 shrink-0"
                       />
                       <span>강의실 리포트</span>
                     </button>
@@ -6616,21 +6773,21 @@ const MainContent: React.FC<MainContentProps> = ({
                       className={`${detailActionBase} border ${
                         teacherMainPanel === "attendance"
                           ? isDarkMode
-                            ? "border-white bg-white text-[#141414]"
-                            : "border-[#141414] bg-[#141414] text-white"
+                            ? "border-[#ffad9b] bg-[#ffad9b] text-[#071829]"
+                            : "border-[#003c33] bg-[#003c33] text-white"
                           : isDarkMode
-                            ? "border-zinc-700 bg-white/[0.03] text-gray-100 hover:border-zinc-500 hover:bg-white/[0.06]"
-                            : "border-gray-300 bg-white text-gray-800 hover:border-gray-400 hover:bg-gray-50"
+                            ? "border-[#1b4d44] bg-white/[0.04] text-gray-100 hover:border-[#ffad9b] hover:bg-white/[0.07]"
+                            : "border-[#d9d9dd] bg-white text-[#212121] hover:border-[#1863dc] hover:bg-[#f1f5ff]"
                       }`}
                       aria-label="출석 관리"
                       aria-pressed={teacherMainPanel === "attendance"}
                       title="메인 영역에서 출석 회차를 관리합니다. 다시 누르면 강의 자료로 전환합니다."
                     >
                       <svg
-                        className={`h-5 w-5 shrink-0 ${
+                        className={`h-4 w-4 shrink-0 ${
                           teacherMainPanel === "attendance"
                             ? isDarkMode
-                              ? "text-[#141414]"
+                              ? "text-[#071829]"
                               : "text-[#FFFFFF]"
                             : isDarkMode
                               ? "text-gray-300"
@@ -6662,21 +6819,21 @@ const MainContent: React.FC<MainContentProps> = ({
                       className={`${detailActionBase} border ${
                         teacherMainPanel === "studentManagement"
                           ? isDarkMode
-                            ? "border-white bg-white text-[#141414]"
-                            : "border-[#141414] bg-[#141414] text-white"
+                            ? "border-[#ffad9b] bg-[#ffad9b] text-[#071829]"
+                            : "border-[#003c33] bg-[#003c33] text-white"
                           : isDarkMode
-                            ? "border-zinc-700 bg-white/[0.03] text-gray-100 hover:border-zinc-500 hover:bg-white/[0.06]"
-                            : "border-gray-300 bg-white text-gray-800 hover:border-gray-400 hover:bg-gray-50"
+                            ? "border-[#1b4d44] bg-white/[0.04] text-gray-100 hover:border-[#ffad9b] hover:bg-white/[0.07]"
+                            : "border-[#d9d9dd] bg-white text-[#212121] hover:border-[#1863dc] hover:bg-[#f1f5ff]"
                       }`}
                       aria-label="학생 관리"
                       aria-pressed={teacherMainPanel === "studentManagement"}
                       title="메인 영역에서 수강 학생을 관리합니다. 다시 누르면 강의 자료로 전환합니다."
                     >
                       <UsersIcon
-                        className={`w-5 h-5 shrink-0 ${
+                        className={`w-4 h-4 shrink-0 ${
                           teacherMainPanel === "studentManagement"
                             ? isDarkMode
-                              ? "text-[#141414]"
+                              ? "text-[#071829]"
                               : "text-[#FFFFFF]"
                             : isDarkMode
                               ? "text-gray-300"
@@ -6687,8 +6844,8 @@ const MainContent: React.FC<MainContentProps> = ({
                     </button>
                   </section>
 
-                  <section className="grid grid-cols-2 gap-5">
-                    <div className="flex flex-col items-center gap-2">
+                  <section className="flex flex-col gap-1.5">
+                    <div className="flex flex-col">
                     <button
                       type="button"
                       aria-pressed={bulkEditMode}
@@ -6703,19 +6860,20 @@ const MainContent: React.FC<MainContentProps> = ({
                           : "주차·자료를 수정하거나 삭제합니다"
                       }
                       onClick={() => setBulkEditMode((v) => !v)}
-                      className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full cursor-pointer transition-colors ${lectureBulkEditToggleClasses}`}
+                      className={`flex h-9 w-full shrink-0 items-center justify-center gap-2 rounded-lg px-3 text-xs font-semibold cursor-pointer transition-colors ${lectureBulkEditToggleClasses}`}
                     >
                       <span className="sr-only">
                         {bulkEditMode ? "편집 완료" : "수정 모드"}
                       </span>
                       {bulkEditMode ? (
-                        <CheckIcon className="h-5 w-5" />
+                        <CheckIcon className="h-4 w-4" />
                       ) : (
-                        <EditIcon className="h-5 w-5" />
+                        <EditIcon className="h-4 w-4" />
                       )}
+                      <span>{bulkEditMode ? "편집 완료" : "편집"}</span>
                     </button>
                       <span
-                        className={`text-xs ${
+                        className={`hidden text-xs ${
                           isDarkMode ? "text-gray-400" : "text-gray-500"
                         }`}
                       >
@@ -6726,16 +6884,11 @@ const MainContent: React.FC<MainContentProps> = ({
                 </div>
               ) : null}
               <section
-                className={`mt-6 flex shrink-0 flex-col gap-3 border-t pt-6 ${
-                  isDarkMode ? "border-zinc-800" : "border-gray-200"
+                className={`mt-2 flex shrink-0 flex-col gap-1.5 border-t pt-2 ${
+                  isDarkMode ? "border-[#1b3443]" : "border-[#d9d9dd]"
                 }`}
               >
-                {[
-                  { key: "notices", label: "공지사항" },
-                  { key: "discussions", label: "토론" },
-                  { key: "attendance", label: isTeacher ? "출석 관리" : "내 출석" },
-                  ...(isTeacher ? [{ key: "reportCriteria", label: "리포트 기준" }] : []),
-                ].map((item) => {
+                {secondaryPanelItems.map((item) => {
                   const active = teacherMainPanel === item.key;
                   return (
                     <button
@@ -6749,19 +6902,19 @@ const MainContent: React.FC<MainContentProps> = ({
                       className={`${detailActionBase} border ${
                         active
                           ? isDarkMode
-                            ? "border-white bg-white text-[#141414]"
-                            : "border-[#141414] bg-[#141414] text-white"
+                            ? "border-[#ffad9b] bg-[#ffad9b] text-[#071829]"
+                            : "border-[#003c33] bg-[#003c33] text-white"
                           : isDarkMode
-                            ? "border-zinc-700 bg-white/[0.03] text-gray-100 hover:border-zinc-500 hover:bg-white/[0.06]"
-                            : "border-gray-300 bg-white text-gray-800 hover:border-gray-400 hover:bg-gray-50"
+                            ? "border-[#1b4d44] bg-white/[0.04] text-gray-100 hover:border-[#ffad9b] hover:bg-white/[0.07]"
+                            : "border-[#d9d9dd] bg-white text-[#212121] hover:border-[#1863dc] hover:bg-[#f1f5ff]"
                       }`}
                       aria-pressed={active}
                     >
                       <svg
-                        className={`h-5 w-5 shrink-0 ${
+                        className={`h-4 w-4 shrink-0 ${
                           active
                             ? isDarkMode
-                              ? "text-[#141414]"
+                              ? "text-[#071829]"
                               : "text-white"
                             : isDarkMode
                               ? "text-gray-300"
@@ -6773,7 +6926,7 @@ const MainContent: React.FC<MainContentProps> = ({
                         aria-hidden="true"
                       >
                         <path
-                          d="M5 5h14v14H5zM8 9h8M8 13h6"
+                          d={item.iconPath}
                           strokeLinecap="round"
                           strokeLinejoin="round"
                           strokeWidth={2}
@@ -6785,8 +6938,8 @@ const MainContent: React.FC<MainContentProps> = ({
                 })}
               </section>
               <nav
-                className={`mt-6 flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto border-t pt-6 ${
-                  isDarkMode ? "border-zinc-800" : "border-gray-200"
+                className={`mt-2 flex min-h-0 flex-1 flex-col gap-0.5 overflow-visible border-t pt-2 ${
+                  isDarkMode ? "border-[#1b3443]" : "border-[#d9d9dd]"
                 }`}
                 aria-label="주차"
               >
@@ -6808,16 +6961,16 @@ const MainContent: React.FC<MainContentProps> = ({
                     onEditLecture &&
                     onDeleteLecture;
                   const rowInactive = isDarkMode
-                    ? "bg-[#ffffff14] text-gray-200 hover:bg-[#ffffff20]"
-                    : "bg-[#00000014] text-gray-700 hover:bg-[#00000020]";
+                    ? "bg-white/[0.08] text-gray-200 hover:bg-white/[0.13]"
+                    : "bg-[#eeece7] text-[#212121] hover:bg-[#e1ded6]";
                   const rowActive = isDarkMode
-                    ? "bg-[#FFFFFF] text-[#141414]"
-                    : "bg-[#141414] text-[#FFFFFF]";
+                    ? "bg-[#ffad9b] text-[#071829]"
+                    : "bg-[#003c33] text-[#FFFFFF]";
                   if (weekEditRow) {
                     return (
                       <div
                         key={week}
-                        className={`flex h-11 w-full items-center gap-1 rounded-xl pl-4 pr-1 text-sm font-semibold transition-colors ${
+                        className={`flex h-8 w-full items-center gap-1 rounded-lg pl-3 pr-1 text-xs font-semibold transition-colors ${
                           isActiveWeek ? rowActive : rowInactive
                         }`}
                       >
@@ -6838,7 +6991,7 @@ const MainContent: React.FC<MainContentProps> = ({
                               e.stopPropagation();
                               onEditLecture?.(lec);
                             }}
-                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
+                            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors ${
                               isDarkMode
                                 ? "text-white bg-black/35 hover:bg-black/50"
                                 : "text-gray-800 bg-white/80 hover:bg-white"
@@ -6846,7 +6999,7 @@ const MainContent: React.FC<MainContentProps> = ({
                             aria-label={`${label} 수정`}
                             title="강의 수정"
                           >
-                            <EditIcon className="w-3.5 h-3.5" />
+                            <EditIcon className="w-3 h-3" />
                           </button>
                           <button
                             type="button"
@@ -6855,7 +7008,7 @@ const MainContent: React.FC<MainContentProps> = ({
                               e.stopPropagation();
                               void onDeleteLecture?.(lec.lectureId);
                             }}
-                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
+                            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors ${
                               isDarkMode
                                 ? "text-[#ff824d] bg-black/35 hover:bg-black/50"
                                 : "text-[#ff824d] bg-white/80 hover:bg-white"
@@ -6863,7 +7016,7 @@ const MainContent: React.FC<MainContentProps> = ({
                             aria-label={`${label} 삭제`}
                             title="강의 삭제"
                           >
-                            <TrashIcon className="w-3.5 h-3.5" />
+                            <TrashIcon className="w-3 h-3" />
                           </button>
                         </div>
                       </div>
@@ -6883,11 +7036,11 @@ const MainContent: React.FC<MainContentProps> = ({
                           }
                         }
                       }}
-                      className={`flex h-11 w-full items-center px-4 rounded-xl text-left text-sm font-semibold cursor-pointer transition-colors ${
+                      className={`flex h-8 w-full items-center px-3 rounded-lg text-left text-xs font-semibold cursor-pointer transition-colors ${
                         isActiveChip
                           ? isDarkMode
-                            ? "bg-[#FFFFFF] text-[#141414]"
-                            : "bg-[#141414] text-[#FFFFFF]"
+                            ? "bg-[#ffad9b] text-[#071829]"
+                            : "bg-[#003c33] text-[#FFFFFF]"
                           : rowInactive
                       }`}
                     >
@@ -6908,8 +7061,8 @@ const MainContent: React.FC<MainContentProps> = ({
             </aside>
 
             <div
-              className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden py-8 md:pl-7 ${
-                isDarkMode ? "text-gray-200" : "text-gray-800"
+              className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden p-3 ${
+                isDarkMode ? "text-gray-200" : "text-[#212121]"
               }`}
             >
               {teacherMainPanel === "materials" ? (
@@ -6980,8 +7133,8 @@ const MainContent: React.FC<MainContentProps> = ({
                   <div
                     className={`mb-5 rounded-2xl border px-5 py-4 ${
                       isDarkMode
-                        ? "border-zinc-800 bg-[#171b20]"
-                        : "border-gray-200 bg-white"
+                        ? "border-[#1b4d44] bg-[#0b241f]"
+                        : "border-[#d9d9dd] bg-[#eeece7]"
                     }`}
                   >
                     <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
@@ -7015,8 +7168,8 @@ const MainContent: React.FC<MainContentProps> = ({
                       <div
                         className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 ${
                           isDarkMode
-                            ? "border-zinc-700 bg-zinc-900/40"
-                            : "border-gray-200 bg-gray-50"
+                            ? "border-[#1b3443] bg-[#102a35]"
+                            : "border-[#d9d9dd] bg-[#eeece7]"
                         }`}
                       >
                         <div className="text-xs font-medium xl:text-sm">
@@ -7052,7 +7205,7 @@ const MainContent: React.FC<MainContentProps> = ({
                       </div>
                     </div>
                   ) : null}
-                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                     {sortedItems.map((item, index) => {
                       const selectMode = isTeacher && bulkEditMode;
                       const canSelect = canSelectCenterItemForDelete(item);
@@ -7090,16 +7243,16 @@ const MainContent: React.FC<MainContentProps> = ({
                               handleCardClick(item);
                             }
                           }}
-                          className={`group/card relative flex min-h-64 overflow-hidden rounded-2xl text-left transition-all duration-200 focus:outline-none ${
+                          className={`group/card relative flex min-h-56 overflow-hidden rounded-xl text-left transition-all duration-200 focus:outline-none ${
                             isDarkMode
-                              ? "border border-zinc-800 bg-[#181c21] hover:border-zinc-600 hover:bg-[#1d2228]"
-                              : "border border-[#E5E7EB] bg-white hover:border-gray-300 hover:bg-gray-50"
+                              ? "border border-[#1b3443] bg-[#071829] hover:border-[#2c5a50] hover:bg-[#0b241f]"
+                              : "border border-[#d9d9dd] bg-white hover:border-[#1863dc] hover:bg-[#f1f5ff]"
                           } ${
                             selectMode
                               ? canSelect
                                 ? "cursor-pointer"
                                 : "cursor-not-allowed opacity-70"
-                              : "cursor-pointer hover:-translate-y-0.5"
+                              : "cursor-pointer"
                           }`}
                         >
                           {selectMode ? (
@@ -7128,14 +7281,14 @@ const MainContent: React.FC<MainContentProps> = ({
                             </div>
                           ) : null}
                           <div
-                            className="flex h-full min-w-0 flex-1 flex-col p-6"
+                            className="flex h-full min-w-0 flex-1 flex-col p-5"
                           >
-                            <div className="mb-7">
+                            <div className="mb-5">
                               <CourseCardVisualIcon index={index + 4} />
                             </div>
                             <div className="flex items-start justify-between gap-3">
                               <h3
-                                className={`line-clamp-2 flex-1 text-xl font-semibold ${
+                                className={`line-clamp-2 flex-1 text-lg font-semibold ${
                                   isDarkMode ? "text-gray-100" : "text-gray-900"
                                 }`}
                               >
@@ -7143,7 +7296,7 @@ const MainContent: React.FC<MainContentProps> = ({
                               </h3>
                             </div>
                             <p
-                              className={`mt-3 line-clamp-3 min-h-15 text-sm leading-6 ${
+                              className={`mt-2 line-clamp-3 min-h-12 text-sm leading-5 ${
                                 isDarkMode ? "text-gray-400" : "text-gray-600"
                               }`}
                             >
@@ -7154,10 +7307,10 @@ const MainContent: React.FC<MainContentProps> = ({
                               {selectMode && !canSelect ? " · 삭제 미지원" : ""}
                             </p>
                             <div
-                              className={`mt-auto border-t pt-4 text-xs ${
+                              className={`mt-auto border-t pt-3 text-xs ${
                                 isDarkMode
-                                  ? "border-zinc-700 text-gray-400"
-                                  : "border-gray-200 text-gray-500"
+                                  ? "border-[#1b3443] text-gray-400"
+                                  : "border-[#d9d9dd] text-gray-500"
                               }`}
                             >
                               생성 시간 {formatIsoInstantForKo(item.createdAt)}
@@ -7238,11 +7391,13 @@ const MainContent: React.FC<MainContentProps> = ({
   return (
     <>
       <div
-        className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden transition-colors px-5 ${
+        className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden transition-colors ${
           selectedMenu === "settings" ||
           selectedMenu === "report" ||
           selectedMenu === "updates"
-        } ${isDarkMode ? "bg-[#141414]" : "bg-white"}`}
+            ? "px-5"
+            : "px-0"
+        } ${isDarkMode ? "bg-[#071829]" : "bg-white"}`}
       >
         {renderCourseListHeader()}
         {renderCourseDetailHeader()}
@@ -7523,10 +7678,10 @@ const MainContent: React.FC<MainContentProps> = ({
                     editCourseMetaSaving || !editCourseMetaTitle.trim()
                       ? isDarkMode
                         ? "bg-zinc-800/40 text-gray-400 cursor-not-allowed"
-                        : "bg-emerald-200 text-emerald-500 cursor-not-allowed"
+                        : "bg-[#ff824d]/20 text-[#d95d26] cursor-not-allowed"
                       : isDarkMode
-                        ? "bg-emerald-600 hover:bg-emerald-500 text-white"
-                        : "bg-emerald-600 hover:bg-emerald-700 text-white"
+                        ? "bg-[#ff824d] hover:bg-[#f26f37] text-white"
+                        : "bg-[#ff824d] hover:bg-[#f26f37] text-white"
                   }`}
                 >
                   {editCourseMetaSaving ? "저장 중..." : "저장"}
@@ -7954,8 +8109,8 @@ const MainContent: React.FC<MainContentProps> = ({
                   }
                   className={`px-4 py-2 text-sm rounded font-medium transition-colors ${
                     isJoining
-                      ? "bg-emerald-400 text-white cursor-not-allowed"
-                      : "bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer"
+                      ? "bg-[#ff824d]/55 text-white cursor-not-allowed"
+                      : "bg-[#ff824d] hover:bg-[#f26f37] text-white cursor-pointer"
                   }`}
                   disabled={isJoining}
                 >
@@ -9168,8 +9323,8 @@ const MainContent: React.FC<MainContentProps> = ({
                                 }
                                 className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
                                   isDarkMode
-                                    ? "bg-emerald-600 text-white"
-                                    : "bg-emerald-600 text-white"
+                                    ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                    : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
                                 }`}
                               >
                                 채점하기
@@ -9311,8 +9466,8 @@ const MainContent: React.FC<MainContentProps> = ({
                               }
                               className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
                                 isDarkMode
-                                  ? "bg-emerald-600 text-white"
-                                  : "bg-emerald-600 text-white"
+                                  ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                  : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
                               }`}
                             >
                               채점하기
@@ -9491,8 +9646,8 @@ const MainContent: React.FC<MainContentProps> = ({
                                 }
                                 className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
                                   isDarkMode
-                                    ? "bg-emerald-600 text-white"
-                                    : "bg-emerald-600 text-white"
+                                    ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                    : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
                                 }`}
                               >
                                 선택한 답안 채점하기
@@ -9669,8 +9824,8 @@ const MainContent: React.FC<MainContentProps> = ({
                               }
                               className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
                                 isDarkMode
-                                  ? "bg-emerald-600 text-white"
-                                  : "bg-emerald-600 text-white"
+                                  ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                  : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
                               }`}
                             >
                               선택한 답안 채점하기
@@ -9868,8 +10023,8 @@ const MainContent: React.FC<MainContentProps> = ({
                               }
                               className={`inline-flex items-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
                                 isDarkMode
-                                  ? "bg-emerald-600 text-white"
-                                  : "bg-emerald-600 text-white"
+                                  ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                  : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
                               }`}
                             >
                               {shortAnswerGrading
@@ -10041,7 +10196,7 @@ const MainContent: React.FC<MainContentProps> = ({
                 disabled={
                   submitting || !assessmentTitle.trim() || !assessmentDueDate
                 }
-                className="px-4 py-2 text-sm rounded font-medium bg-emerald-600 text-white disabled:opacity-50 cursor-pointer"
+                className="px-4 py-2 text-sm rounded font-medium bg-[#ff824d] text-white hover:bg-[#f26f37] disabled:opacity-50 cursor-pointer"
               >
                 {submitting ? "생성 중..." : "생성"}
               </button>
@@ -10057,7 +10212,7 @@ const MainContent: React.FC<MainContentProps> = ({
         >
           <div
             className={`w-full max-w-6xl h-[80vh] rounded-lg shadow-lg overflow-hidden flex flex-col ${
-              isDarkMode ? "bg-[#141414] text-white" : "bg-white text-gray-900"
+              isDarkMode ? "bg-[#071829] text-white" : "bg-white text-gray-900"
             }`}
           >
             <div
@@ -10161,7 +10316,7 @@ const MainContent: React.FC<MainContentProps> = ({
                         }
                       })();
                     }}
-                    className="px-3 py-2 text-xs font-semibold rounded-lg bg-emerald-600 text-white disabled:opacity-50"
+                    className="px-3 py-2 text-xs font-semibold rounded-lg bg-[#ff824d] text-white hover:bg-[#f26f37] disabled:opacity-50"
                   >
                     {classroomAnalyzeSyncLoading ? "분석 중…" : "종합 분석 (동기)"}
                   </button>

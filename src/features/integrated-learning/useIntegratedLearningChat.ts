@@ -13,6 +13,24 @@ const INTEGRATED_WELCOME_TEXT_RE =
   /학습\s*세션에\s*오신\s*것을\s*환영합니다|학습\s*세션에\s*오신것을\s*환영합니다/;
 const INTEGRATED_QUIZ_REQUEST_RE =
   /(퀴즈|quiz|문제\s*만들|문제\s*내|시험\s*만들|시험\s*내)/i;
+const INTERNAL_THOUGHT_DIAGNOSTIC_RE =
+  /(validation\s*error|json\s*decode|jsondecodeerror|parse\s*error|parsing|parser|schema|enum|pydantic|zoderror|traceback|stack\s*trace|exception|typeerror|referenceerror|syntaxerror|keyerror|valueerror|cannot\s+deserialize|no\s+enum\s+constant|failed\s+to\s+parse)/i;
+const FRIENDLY_INTERNAL_THOUGHT_TEXT =
+  "생각 과정 중 내부 처리 정보를 정리하고 있습니다. 최종 답변에는 필요한 내용만 반영할게요.";
+const FRIENDLY_INTEGRATED_ERROR_TEXT =
+  "통합학습 처리 중 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
+
+function toUserFacingThoughtText(text: string): string {
+  return INTERNAL_THOUGHT_DIAGNOSTIC_RE.test(text)
+    ? FRIENDLY_INTERNAL_THOUGHT_TEXT
+    : text;
+}
+
+function toUserFacingIntegratedError(message: string): string {
+  return INTERNAL_THOUGHT_DIAGNOSTIC_RE.test(message)
+    ? FRIENDLY_INTEGRATED_ERROR_TEXT
+    : message;
+}
 
 export interface IntegratedChatMessage {
   id: number;
@@ -154,8 +172,8 @@ export function useIntegratedLearningChat(options: {
             assistantVariant: "orchestrator",
             text: "현재 페이지 설명을 시작할까요?",
             actionButtons: [
-              { id: "start_explanation_accept", label: "설명 시작", variant: "primary" },
-              { id: "start_explanation_reject", label: "나중에", variant: "muted" },
+              { id: "start_explanation_accept", label: "예", variant: "primary" },
+              { id: "start_explanation_reject", label: "아니오", variant: "muted" },
             ],
           },
         ]);
@@ -171,8 +189,8 @@ export function useIntegratedLearningChat(options: {
             assistantVariant: "orchestrator",
             text: "이 페이지 내용을 퀴즈로 확인할까요?",
             actionButtons: [
-              { id: "quiz_decision_accept", label: "퀴즈 진행", variant: "primary" },
-              { id: "quiz_decision_reject", label: "건너뛰기", variant: "muted" },
+              { id: "quiz_decision_accept", label: "예", variant: "primary" },
+              { id: "quiz_decision_reject", label: "아니오", variant: "muted" },
             ],
           },
         ]);
@@ -186,10 +204,10 @@ export function useIntegratedLearningChat(options: {
             isUser: false,
             roleBadge: "통합학습",
             assistantVariant: "orchestrator",
-            text: "다음 페이지로 넘어갈까요?",
+            text: "다음 페이지로 이동할까요?",
             actionButtons: [
-              { id: "next_page_accept", label: "다음 페이지", variant: "primary" },
-              { id: "next_page_reject", label: "현재 페이지 유지", variant: "muted" },
+              { id: "next_page_accept", label: "예", variant: "primary" },
+              { id: "next_page_reject", label: "아니오", variant: "muted" },
             ],
           },
         ]);
@@ -205,8 +223,8 @@ export function useIntegratedLearningChat(options: {
             assistantVariant: "orchestrator",
             text: "복습 모드로 진행할까요?",
             actionButtons: [
-              { id: "review_accept", label: "복습 시작", variant: "primary" },
-              { id: "review_reject", label: "건너뛰기", variant: "muted" },
+              { id: "review_accept", label: "예", variant: "primary" },
+              { id: "review_reject", label: "아니오", variant: "muted" },
             ],
           },
         ]);
@@ -222,8 +240,8 @@ export function useIntegratedLearningChat(options: {
             assistantVariant: "orchestrator",
             text: "재시험을 진행할까요?",
             actionButtons: [
-              { id: "retest_accept", label: "재시험 시작", variant: "primary" },
-              { id: "retest_reject", label: "건너뛰기", variant: "muted" },
+              { id: "retest_accept", label: "예", variant: "primary" },
+              { id: "retest_reject", label: "아니오", variant: "muted" },
             ],
           },
         ]);
@@ -267,6 +285,8 @@ export function useIntegratedLearningChat(options: {
       let streamError: string | null = null;
       let gotThought = false;
       let gotBody = false;
+      let thoughtMessageId: number | null = null;
+      let thoughtBuf = "";
 
       const notifyDrainIfDone = () => {
         if (
@@ -329,7 +349,52 @@ export function useIntegratedLearningChat(options: {
         });
       };
 
-      const finalizeThought = () => {};
+      const finalizeThought = () => {
+        if (thoughtMessageId == null) return;
+        const id = thoughtMessageId;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === id ? { ...m, thoughtFinished: true } : m,
+          ),
+        );
+      };
+
+      const appendThoughtDelta = (chunk: string) => {
+        if (cancelled || !chunk) return;
+        gotThought = true;
+        thoughtBuf += chunk;
+        if (thoughtMessageId == null) {
+          thoughtMessageId = nextMessageId();
+          const id = thoughtMessageId;
+          flushSync(() => {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id,
+                isUser: false,
+                roleBadge: "통합학습",
+                assistantVariant: "orchestrator",
+                thoughtSummary: toUserFacingThoughtText(thoughtBuf),
+                thoughtExpanded: false,
+                thoughtFinished: false,
+              },
+            ]);
+          });
+          return;
+        }
+        const id = thoughtMessageId;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === id
+              ? {
+                  ...m,
+                  thoughtSummary: toUserFacingThoughtText(thoughtBuf),
+                  thoughtFinished: false,
+                }
+              : m,
+          ),
+        );
+      };
 
       try {
         const tail = await integratedLearningApi.sendEvent(
@@ -340,8 +405,7 @@ export function useIntegratedLearningChat(options: {
           {
             signal: ac.signal,
             onThoughtDelta: (chunk) => {
-              if (cancelled || !chunk) return;
-              gotThought = true;
+              appendThoughtDelta(chunk);
             },
             onAgentDelta: (chunk) => {
               if (cancelled || !chunk) return;
@@ -351,6 +415,7 @@ export function useIntegratedLearningChat(options: {
                 answerBuf = "";
                 answerPending += chunk;
                 flushSync(() => {
+                  finalizeThought();
                   setMessages((p) => [
                     ...p,
                     {
@@ -379,6 +444,7 @@ export function useIntegratedLearningChat(options: {
         if (cancelled) return;
 
         streamCompleted = true;
+        finalizeThought();
         notifyDrainIfDone();
         await waitForRenderedDrain();
 
@@ -489,7 +555,7 @@ export function useIntegratedLearningChat(options: {
             suppressWelcomeText: eventType === "SESSION_ENTERED",
           });
         } else if (streamError) {
-          const errText = streamError;
+          const errText = toUserFacingIntegratedError(streamError);
           setMessages((prev) => [
             ...prev,
             {
@@ -511,7 +577,7 @@ export function useIntegratedLearningChat(options: {
                 isUser: false,
                 assistantVariant: "system" as const,
                 roleBadge: "SYSTEM",
-                text: errTxt,
+                text: toUserFacingIntegratedError(errTxt),
               },
             ]);
           }
@@ -552,7 +618,9 @@ export function useIntegratedLearningChat(options: {
             isUser: false,
             assistantVariant: "system",
             text:
-              e instanceof Error ? e.message : "통합학습 요청에 실패했습니다.",
+              e instanceof Error
+                ? toUserFacingIntegratedError(e.message)
+                : "통합학습 요청에 실패했습니다.",
           },
         ]);
       } finally {
@@ -677,13 +745,16 @@ export function useIntegratedLearningChat(options: {
           lastRequestedQuizTypeRef.current = quizType;
           await runStreamingAgentTurn("QUIZ_TYPE_SELECTED", { quizType });
         } else if (decisionEvent) {
-          await runStreamingAgentTurn(decisionEvent, { accept: decisionAccept });
+          await runStreamingAgentTurn(decisionEvent, {
+            accept: decisionAccept,
+            ...(currentPage != null ? { fromPage: currentPage } : {}),
+          });
         }
       } finally {
         setBusy(false);
       }
     },
-    [busy, enabled, lectureId, nextMessageId, runStreamingAgentTurn],
+    [busy, currentPage, enabled, lectureId, nextMessageId, runStreamingAgentTurn],
   );
 
   const stop = useCallback(async () => {
