@@ -345,22 +345,22 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const pdfLearningPanel = fillContainer && viewMode === "course-detail";
   const sidebarBackground = pdfLearningPanel
     ? isDarkMode
-      ? "#071829"
+      ? "#313130"
       : "#FFFFFF"
     : isDarkMode
-      ? "#071829"
+      ? "#313130"
       : "#FFFFFF";
-  const sidebarTextColor = isDarkMode ? "#FFFFFF" : "#212121";
+  const sidebarTextColor = isDarkMode ? "#FFFFFF" : "#000000";
   const sidebarBorderColor = pdfLearningPanel
     ? isDarkMode
-      ? "#1b3443"
-      : "#d9d9dd"
+      ? "rgba(255, 255, 255, 0.16)"
+      : "#D3CEC6"
     : isDarkMode
-      ? "#1b3443"
-      : "#d9d9dd";
-  const panelSurface = isDarkMode ? "#0b241f" : "#FFFFFF";
-  const controlSurface = isDarkMode ? "#102a35" : "#FFFFFF";
-  const controlBorder = isDarkMode ? "#2c5a50" : "#d9d9dd";
+      ? "rgba(255, 255, 255, 0.16)"
+      : "#D3CEC6";
+  const panelSurface = isDarkMode ? "#313130" : "#FFFFFF";
+  const controlSurface = isDarkMode ? "#3A3A38" : "#FFFFFF";
+  const controlBorder = isDarkMode ? "rgba(255, 255, 255, 0.16)" : "#D3CEC6";
   const examControlStyle: React.CSSProperties = {
     backgroundColor: controlSurface,
     borderColor: controlBorder,
@@ -1349,12 +1349,12 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       {isDragging && (
         <div
           className="absolute inset-0 z-50 flex items-center justify-center"
-          style={{ backgroundColor: isDarkMode ? "rgba(20,20,20,0.9)" : "rgba(255,255,255,0.9)" }}
+          style={{ backgroundColor: isDarkMode ? "rgba(49, 49, 48, 0.92)" : "rgba(245, 241, 236, 0.92)" }}
         >
           <div className={`p-8 rounded-lg border-2 border-dashed ${
             isDarkMode ? "border-[#2c5a50]" : "border-[#d9d9dd] bg-[#eeece7]"
           }`}
-          style={isDarkMode ? { backgroundColor: "#102a35" } : undefined}
+          style={isDarkMode ? { backgroundColor: "#3A3A38" } : undefined}
           >
             <p className="text-lg font-medium" style={{ color: sidebarTextColor }}>
               파일을 여기에 놓으세요
@@ -1750,7 +1750,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                       inBulkMode && checked
                         ? isDarkMode
                           ? "shadow-[inset_0_0_0_0.125rem_#ffffff]"
-                          : "shadow-[inset_0_0_0_0.125rem_#003c33]"
+                          : "shadow-[inset_0_0_0_0.125rem_#181818]"
                         : ""
                     }`}
                     style={{ color: sidebarTextColor }}
@@ -1821,8 +1821,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             : undefined,
           scrollbarWidth: "thin" as const,
           scrollbarColor: isDarkMode
-            ? "#52525b #101113"
-            : "#cbd5e0 #f6f7fb",
+            ? "#ff824d #313130"
+            : "#ff824d #F5F1EC",
         }}
       >
         {learningTab === "integrated" && showIntegratedBetaNotice ? (

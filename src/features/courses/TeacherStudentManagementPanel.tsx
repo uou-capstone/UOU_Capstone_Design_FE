@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { RefreshIcon } from "@/components/common/Icons";
 import {
   courseApi,
   type CourseJoinRequestListItem,
@@ -160,48 +161,62 @@ export const TeacherStudentManagementPanel: React.FC<
     [courseId, loadList, selectedIds],
   );
 
+  const surfaceClass = isDarkMode
+    ? "border-[#2b2b2b] bg-[#202020] text-gray-100"
+    : "border-[#dedbd5] bg-white text-gray-900";
+
   return (
-    <div className="flex min-h-full flex-col pb-8">
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <Button
-          isDarkMode={isDarkMode}
-          active={tab === "enrolled"}
-          onClick={() => {
-            setTab("enrolled");
-            setListPage(0);
-          }}
-        >
-          수강 학생
-        </Button>
-        <Button
-          isDarkMode={isDarkMode}
-          active={tab === "pending"}
-          onClick={() => {
-            setTab("pending");
-            setListPage(0);
-          }}
-        >
-          가입 요청
-        </Button>
-        <button
-          type="button"
-          disabled={loading}
-          onClick={() => void loadList()}
-          className={`rounded-full px-3 py-1.5 text-xs font-medium border cursor-pointer disabled:opacity-50 ${
-            isDarkMode
-              ? "border-[#2c5a50] text-zinc-200 hover:bg-white/10"
-              : "border-[#d9d9dd] text-gray-700 hover:bg-[#eeece7]"
-          }`}
-        >
-          새로고침
-        </button>
+    <div className="flex min-h-full flex-col gap-4 pb-6">
+      <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
+        <div className="flex min-h-10 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-xl font-semibold">학생 관리</h2>
+          <div className="flex h-9 flex-wrap items-center gap-2">
+            <Button
+              isDarkMode={isDarkMode}
+              active={tab === "enrolled"}
+              onClick={() => {
+                setTab("enrolled");
+                setListPage(0);
+              }}
+            >
+              수강 학생
+            </Button>
+            <Button
+              isDarkMode={isDarkMode}
+              active={tab === "pending"}
+              onClick={() => {
+                setTab("pending");
+                setListPage(0);
+              }}
+            >
+              가입 요청
+            </Button>
+          </div>
+        </div>
+      </section>
+
+      <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
         {tab === "pending" ? (
-          <>
+          <div className="mb-3 flex flex-wrap items-center justify-start gap-2">
+            <button
+              type="button"
+              disabled={loading}
+              onClick={() => void loadList()}
+              aria-label="새로고침"
+              title="새로고침"
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium border cursor-pointer disabled:opacity-50 ${
+                isDarkMode
+                  ? "border-[#2c5a50] text-zinc-200 hover:bg-white/10"
+                  : "border-[#d9d9dd] text-gray-700 hover:bg-[#eeece7]"
+              }`}
+            >
+              <RefreshIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            </button>
             <button
               type="button"
               disabled={selectedIds.length === 0 || actingId != null}
               onClick={() => void handleBulkJoinAction("approve")}
-              className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 ${
                 isDarkMode ? "bg-white text-[#141414]" : "bg-[#141414] text-white hover:bg-black"
               }`}
             >
@@ -211,36 +226,34 @@ export const TeacherStudentManagementPanel: React.FC<
               type="button"
               disabled={selectedIds.length === 0 || actingId != null}
               onClick={() => void handleBulkJoinAction("reject")}
-              className="rounded-full bg-zinc-500 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+              className="rounded-lg bg-zinc-500 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
             >
               선택 거절
             </button>
-          </>
+          </div>
         ) : null}
-      </div>
 
-      {tab === "enrolled" ? (
-        <EnrolledStudentsPanel courseId={courseId} isDarkMode={isDarkMode} />
-      ) : loading ? (
-        <div className="text-sm opacity-70 py-12 text-center">
-          불러오는 중…
-        </div>
-      ) : error ? (
-        <div className={`text-sm py-6 ${isDarkMode ? "text-red-400" : "text-red-600"}`}>{error}</div>
-      ) : rows.length === 0 ? (
-        <div className="text-sm opacity-60 py-12 text-center">
-          {tab === "enrolled" ? "등록된 수강 학생이 없습니다." : "대기 중인 가입 요청이 없습니다."}
-        </div>
-      ) : (
-        <ul className="space-y-2">
-          {rows.map((row) => (
-            <li
-              key={row.requestId}
-              className={`rounded-xl border px-4 py-3 ${
-                isDarkMode ? "border-[#1b4d44] bg-[#0b241f]" : "border-[#d9d9dd] bg-white"
-              }`}
-            >
-              {tab === "pending" ? (
+        {tab === "enrolled" ? (
+          <EnrolledStudentsPanel courseId={courseId} isDarkMode={isDarkMode} />
+        ) : loading ? (
+          <div className="text-sm opacity-70 py-12 text-center">
+            불러오는 중…
+          </div>
+        ) : error ? (
+          <div className={`text-sm py-6 ${isDarkMode ? "text-red-400" : "text-red-600"}`}>{error}</div>
+        ) : rows.length === 0 ? (
+          <div className="text-sm opacity-60 py-12 text-center">
+            대기 중인 가입 요청이 없습니다.
+          </div>
+        ) : (
+          <ul className="space-y-2">
+            {rows.map((row) => (
+              <li
+                key={row.requestId}
+                className={`rounded-xl border px-4 py-3 ${
+                  isDarkMode ? "border-[#343434] bg-[#181818]" : "border-[#dedbd5] bg-[#fbfaf7]"
+                }`}
+              >
                 <label className="mb-2 inline-flex items-center gap-2 text-xs font-medium">
                   <input
                     type="checkbox"
@@ -255,80 +268,78 @@ export const TeacherStudentManagementPanel: React.FC<
                   />
                   선택
                 </label>
-              ) : null}
-              <div className="text-sm font-medium">{row.studentName}</div>
-              <div className={`text-xs mt-0.5 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                {row.studentEmail}
-              </div>
-              <div className={`text-xs mt-1 opacity-70`}>
-                요청 시각: {formatJoinRequestInstant(row.requestedAt)}
-              </div>
-              {tab === "pending" ? (
-                <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                  <button
-                    type="button"
-                    disabled={actingId === row.requestId}
-                    onClick={() => void handleJoinRequestAction("approve", row)}
-                    className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 cursor-pointer ${
-                      isDarkMode ? "bg-white text-[#141414]" : "bg-[#141414] text-white hover:bg-black"
-                    }`}
-                  >
-                    승인
-                  </button>
-                  <button
-                    type="button"
-                    disabled={actingId === row.requestId}
-                    onClick={() => void handleJoinRequestAction("reject", row)}
-                    className="rounded-lg bg-zinc-500 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50 cursor-pointer"
-                  >
-                    거절
-                  </button>
-                  <button
-                    type="button"
-                    disabled={actingId === row.requestId}
-                    onClick={() => void handleJoinRequestAction("block", row)}
-                    className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50 cursor-pointer"
-                  >
-                    차단
-                  </button>
+                <div className="text-sm font-medium">{row.studentName}</div>
+                <div className={`text-xs mt-0.5 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+                  {row.studentEmail}
                 </div>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
+                <div className={`text-xs mt-1 opacity-70`}>
+                  요청 시각: {formatJoinRequestInstant(row.requestedAt)}
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={actingId === row.requestId}
+                  onClick={() => void handleJoinRequestAction("approve", row)}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50 cursor-pointer ${
+                    isDarkMode ? "bg-white text-[#141414]" : "bg-[#141414] text-white hover:bg-black"
+                  }`}
+                >
+                  승인
+                </button>
+                <button
+                  type="button"
+                  disabled={actingId === row.requestId}
+                  onClick={() => void handleJoinRequestAction("reject", row)}
+                  className="rounded-lg bg-zinc-500 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50 cursor-pointer"
+                >
+                  거절
+                </button>
+                <button
+                  type="button"
+                  disabled={actingId === row.requestId}
+                  onClick={() => void handleJoinRequestAction("block", row)}
+                  className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-50 cursor-pointer"
+                >
+                  차단
+                </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
 
-      {totalPages > 1 ? (
-        <div
-          className={`mt-6 flex flex-wrap items-center justify-between gap-2 border-t pt-4 ${
-            isDarkMode ? "border-zinc-700" : "border-gray-200"
-          }`}
-        >
-          <button
-            type="button"
-            disabled={listPage <= 0 || loading}
-            onClick={() => setListPage((p) => Math.max(0, p - 1))}
-            className="rounded-lg border px-3 py-1.5 text-xs disabled:opacity-50 cursor-pointer"
+        {tab === "pending" && totalPages > 1 ? (
+          <div
+            className={`mt-6 flex flex-wrap items-center justify-between gap-2 border-t pt-4 ${
+              isDarkMode ? "border-zinc-700" : "border-gray-200"
+            }`}
           >
-            이전
-          </button>
-          <span className="text-xs opacity-70">
-            {listPage + 1} / {totalPages}
-          </span>
-          <button
-            type="button"
-            disabled={listPage + 1 >= totalPages || loading}
-            onClick={() =>
-              setListPage((p) =>
-                Math.min(totalPages - 1, p + 1),
-              )
-            }
-            className="rounded-lg border px-3 py-1.5 text-xs disabled:opacity-50 cursor-pointer"
-          >
-            다음
-          </button>
-        </div>
-      ) : null}
+            <button
+              type="button"
+              disabled={listPage <= 0 || loading}
+              onClick={() => setListPage((p) => Math.max(0, p - 1))}
+              className="rounded-lg border px-3 py-1.5 text-xs disabled:opacity-50 cursor-pointer"
+            >
+              이전
+            </button>
+            <span className="text-xs opacity-70">
+              {listPage + 1} / {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={listPage + 1 >= totalPages || loading}
+              onClick={() =>
+                setListPage((p) =>
+                  Math.min(totalPages - 1, p + 1),
+                )
+              }
+              className="rounded-lg border px-3 py-1.5 text-xs disabled:opacity-50 cursor-pointer"
+            >
+              다음
+            </button>
+          </div>
+        ) : null}
+      </section>
     </div>
   );
 };
@@ -347,7 +358,7 @@ const Button = ({
   <button
     type="button"
     onClick={onClick}
-    className={`rounded-full px-4 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
+    className={`inline-flex h-9 min-w-24 items-center justify-center rounded-lg px-4 text-sm font-semibold transition-colors cursor-pointer ${
       active
         ? isDarkMode
           ? "bg-[#FFFFFF] text-[#141414]"

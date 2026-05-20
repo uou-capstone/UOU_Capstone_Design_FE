@@ -276,10 +276,10 @@ const TopNav: React.FC<TopNavProps> = ({
 
   return (
     <header
-      className={`flex h-[4.5rem] shrink-0 items-center border-b px-7 transition-colors ${
+      className={`flex h-16 shrink-0 items-center border-b px-7 transition-colors ${
         isDarkMode
-          ? "border-[#1b3443] bg-[#071829]"
-          : "border-[#d9d9dd] bg-[#ffffff]"
+          ? "border-white/15 bg-[#181818]"
+          : "border-black/15 bg-white"
       }`}
     >
       <div className="flex items-center min-w-0 flex-1">
@@ -288,12 +288,7 @@ const TopNav: React.FC<TopNavProps> = ({
           onClick={handleNavigateHome}
           className={`flex min-w-0 items-center gap-3 text-lg font-semibold xl:text-xl 2xl:text-2xl ${isDarkMode ? "text-white" : "text-gray-900"}`}
         >
-          <span
-            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
-              isDarkMode ? "text-[#ffad9b]" : "text-[#003c33]"
-            }`}
-            aria-hidden="true"
-          >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[#ff824d]" aria-hidden="true">
             <BookOpenIcon className="h-7 w-7" />
           </span>
           <span className="truncate">AI Tutor LMS</span>
@@ -336,7 +331,7 @@ const TopNav: React.FC<TopNavProps> = ({
               >
                 <BellIcon className="w-5 h-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-[11px] leading-5 text-center">
+                  <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-[#ff824d] text-black text-[11px] leading-5 text-center">
                     {unreadCount > 99 ? "99+" : String(unreadCount)}
                   </span>
                 )}
@@ -344,10 +339,10 @@ const TopNav: React.FC<TopNavProps> = ({
               {notifOpen && (
                 <div
                   className={`absolute right-0 mt-2 w-[22rem] max-w-[80vw] rounded-2xl border shadow-xl overflow-hidden z-30 ${
-                    isDarkMode ? "bg-[#071829] border-[#1b3443] text-gray-100" : "bg-white border-[#d9d9dd] text-gray-900"
+                    isDarkMode ? "bg-[#181818] border-white/15 text-white" : "bg-white border-black/15 text-black"
                   }`}
                 >
-                  <div className={`flex items-center justify-between px-4 py-3 border-b ${isDarkMode ? "border-[#1b3443]" : "border-[#d9d9dd]"}`}>
+                  <div className={`flex items-center justify-between px-4 py-3 border-b ${isDarkMode ? "border-white/15" : "border-black/15"}`}>
                     <div className="text-sm font-semibold">알림</div>
                     <button
                       type="button"
@@ -392,7 +387,7 @@ const TopNav: React.FC<TopNavProps> = ({
                               }`}
                             >
                               <div className="flex items-start gap-2">
-                                {!n.read && <span className="mt-1.5 h-2 w-2 rounded-full bg-[#ff7759] shrink-0" aria-hidden="true" />}
+                                {!n.read && <span className="mt-1.5 h-2 w-2 rounded-full bg-[#ff824d] shrink-0" aria-hidden="true" />}
                                 <div className="min-w-0">
                                   <div className="text-sm font-semibold truncate">{n.title || n.type}</div>
                                   <div className={`text-xs mt-1 whitespace-pre-wrap break-words ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
@@ -410,7 +405,7 @@ const TopNav: React.FC<TopNavProps> = ({
                     )}
                   </div>
                   {notifTotalPages > 1 && (
-                    <div className={`flex items-center justify-between px-4 py-2 border-t ${isDarkMode ? "border-[#1b3443]" : "border-[#d9d9dd]"}`}>
+                    <div className={`flex items-center justify-between px-4 py-2 border-t ${isDarkMode ? "border-white/15" : "border-black/15"}`}>
                       <button
                         type="button"
                         disabled={notifPage <= 0 || notifLoading}
@@ -490,7 +485,7 @@ const TopNav: React.FC<TopNavProps> = ({
                   <div className="truncate text-base font-semibold text-white">
                     {user.fullName}
                   </div>
-                  <div className="truncate text-sm text-gray-400">
+                  <div className="truncate text-sm text-white">
                     {user.email}
                   </div>
                 </div>
@@ -521,7 +516,7 @@ const TopNav: React.FC<TopNavProps> = ({
                           type="button"
                           onClick={() => setThemeMode(mode)}
                           className={`relative z-10 flex items-center justify-center w-8 h-8 rounded-full transition-colors duration-200 ${
-                            themeMode === mode ? "text-white" : "text-gray-400 hover:text-gray-300"
+                            themeMode === mode ? "text-white" : "text-white hover:text-white"
                           }`}
                           aria-label={mode === "light" ? "라이트 모드" : mode === "dark" ? "다크 모드" : "시스템 모드"}
                         >
@@ -547,7 +542,7 @@ const TopNav: React.FC<TopNavProps> = ({
                     }}
                     className="flex h-9 items-center rounded-xl p-2 gap-2 cursor-pointer text-base font-semibold text-white hover:bg-white/10 transition-colors"
                   >
-                    <SettingsIcon className="w-4 h-4 text-gray-400" />
+                    <SettingsIcon className="w-4 h-4 text-current" />
                     <span>설정</span>
                   </button>
                   <button
@@ -562,7 +557,7 @@ const TopNav: React.FC<TopNavProps> = ({
                     }}
                     className="flex h-9 items-center rounded-xl p-2 gap-2 cursor-pointer text-base font-semibold text-white hover:bg-white/10 transition-colors"
                   >
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                     </svg>
                     <span>신고</span>
@@ -579,7 +574,7 @@ const TopNav: React.FC<TopNavProps> = ({
                     }}
                     className="flex h-9 items-center rounded-xl p-2 gap-2 cursor-pointer text-base font-semibold text-white hover:bg-white/10 transition-colors"
                   >
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-4 h-4 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
                     <span>업데이트</span>

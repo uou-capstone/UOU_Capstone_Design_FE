@@ -1,4 +1,5 @@
 import React from "react";
+import { RefreshIcon } from "@/components/common/Icons";
 import {
   reportCriteriaApi,
   type ReportCriterion,
@@ -133,12 +134,9 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
   return (
     <div className="flex min-h-full flex-col gap-4 pb-6">
       <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div className="flex min-h-10 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className={`text-xs font-semibold uppercase tracking-wide ${mutedClass}`}>
-              Report Criteria
-            </p>
-            <h2 className="mt-1 text-xl font-semibold">리포트 평가 기준</h2>
+            <h2 className="text-xl font-semibold">리포트 평가 기준</h2>
             <p className={`mt-2 text-sm ${mutedClass}`}>
               학생 리포트 분석에 사용할 기준과 가중치를 관리합니다.
             </p>
@@ -235,11 +233,13 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
             type="button"
             onClick={() => void load()}
             disabled={loading}
-            className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
+            aria-label="새로고침"
+            title="새로고침"
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold ${
               isDarkMode ? "border-zinc-600" : "border-gray-300"
             }`}
           >
-            새로고침
+            <RefreshIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </button>
         </div>
         {loading ? (

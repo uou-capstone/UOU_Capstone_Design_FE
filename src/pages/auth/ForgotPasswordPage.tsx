@@ -21,7 +21,7 @@ const ForgotPasswordPage: React.FC = () => {
 
   return (
     <div className={`min-h-screen flex items-center justify-center transition-colors ${
-      isDarkMode ? 'bg-zinc-900' : 'bg-gray-100'
+      isDarkMode ? 'bg-[#313130]' : 'bg-gray-100'
     }`}>
       <div className={`w-full max-w-md p-8 rounded-lg shadow-lg ${
         isDarkMode ? 'bg-zinc-800' : 'bg-white'

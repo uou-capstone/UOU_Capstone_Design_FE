@@ -1,5 +1,6 @@
 import React from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { RefreshIcon } from "@/components/common/Icons";
 import {
   discussionApi,
   noticeApi,
@@ -94,6 +95,10 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
   const canCreate = tab === "notices" ? isTeacher : true;
   const selectedId =
     tab === "notices" ? selectedNotice?.noticeId : selectedDiscussion?.discussionId;
+
+  React.useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
 
   const loadList = React.useCallback(async () => {
     setLoading(true);
@@ -406,30 +411,11 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
   return (
     <div className="flex min-h-full flex-col gap-4 pb-6">
       <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-h-10 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <p className={`text-xs font-semibold uppercase tracking-wide ${mutedClass}`}>
-              Classroom Board
-            </p>
-            <h2 className="mt-1 text-xl font-semibold">
+            <h2 className="text-xl font-semibold">
               {tab === "notices" ? "공지사항" : "토론게시판"}
             </h2>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <TabButton
-              active={tab === "notices"}
-              isDarkMode={isDarkMode}
-              onClick={() => setTab("notices")}
-            >
-              공지사항
-            </TabButton>
-            <TabButton
-              active={tab === "discussions"}
-              isDarkMode={isDarkMode}
-              onClick={() => setTab("discussions")}
-            >
-              토론
-            </TabButton>
           </div>
         </div>
 
@@ -596,11 +582,13 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
               type="button"
               onClick={() => void loadList()}
               disabled={loading}
-              className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${
+              aria-label="새로고침"
+              title="새로고침"
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold ${
                 isDarkMode ? "border-zinc-600" : "border-gray-300"
               }`}
             >
-              새로고침
+              <RefreshIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             </button>
           </div>
           {loading ? (
@@ -816,33 +804,3 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
     </div>
   );
 };
-
-function TabButton({
-  active,
-  isDarkMode,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  isDarkMode: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-full px-4 py-2 text-xs font-semibold transition-colors ${
-        active
-          ? isDarkMode
-            ? "bg-white text-[#141414]"
-            : "bg-[#141414] text-white"
-          : isDarkMode
-            ? "bg-white/10 text-gray-300 hover:bg-white/15"
-            : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-      }`}
-    >
-      {children}
-    </button>
-  );
-}

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
+import { RefreshIcon } from "@/components/common/Icons";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { monitoringApi, notificationsApi, userApi, type TeacherNotificationPreference } from "../../services/api";
@@ -617,7 +618,9 @@ const SettingsPage: React.FC = () => {
               type="button"
               onClick={loadMonitoring}
               disabled={isMonitoringLoading}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer ${
+              aria-label="새로고침"
+              title="새로고침"
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs font-medium cursor-pointer ${
                 isMonitoringLoading
                   ? isDarkMode
                     ? "bg-zinc-900 text-gray-400 cursor-not-allowed"
@@ -625,7 +628,7 @@ const SettingsPage: React.FC = () => {
                   : "bg-[#ff824d] hover:bg-[#f26f37] text-white"
               }`}
             >
-              {isMonitoringLoading ? "새로고치는 중..." : "새로고침"}
+              <RefreshIcon className={`h-4 w-4 ${isMonitoringLoading ? "animate-spin" : ""}`} />
             </button>
           </div>
 

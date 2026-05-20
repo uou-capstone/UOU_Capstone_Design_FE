@@ -1,4 +1,5 @@
 import React from "react";
+import { RefreshIcon } from "@/components/common/Icons";
 import { courseApi, type CourseStudentListItem } from "@/services/api";
 
 function formatInstant(iso: string | undefined): string {
@@ -121,33 +122,20 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
   const busy = loading || acting != null;
 
   return (
-    <div className="flex min-h-full flex-col pb-8">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <label className="inline-flex items-center gap-2 text-xs font-medium">
-            <input
-              type="checkbox"
-              checked={allChecked}
-              onChange={(e) => toggleAll(e.target.checked)}
-              disabled={busy || rows.length === 0}
-            />
-            전체 선택
-          </label>
-          <span className="text-xs opacity-70">선택됨: {selectedIds.length}명</span>
-        </div>
-
-        <div className="flex items-center gap-2">
+    <div className="flex min-h-full flex-col">
+      <div className="mb-3 flex flex-wrap items-center justify-start gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => void load()}
-            disabled={busy}
-            className={`rounded-full px-3 py-1.5 text-xs font-medium border cursor-pointer disabled:opacity-50 ${
+            onClick={() => toggleAll(true)}
+            disabled={busy || rows.length === 0 || allChecked}
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
               isDarkMode
-                ? "border-[#2c5a50] text-zinc-200 hover:bg-white/10"
-                : "border-[#d9d9dd] text-gray-700 hover:bg-[#eeece7]"
+                ? "bg-zinc-700 text-white hover:bg-zinc-600"
+                : "bg-gray-200 text-gray-800 hover:bg-gray-300"
             }`}
           >
-            새로고침
+            전체 선택
           </button>
           <button
             type="button"
@@ -169,6 +157,20 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
           >
             일괄 차단
           </button>
+          <button
+            type="button"
+            onClick={() => void load()}
+            disabled={busy}
+            aria-label="새로고침"
+            title="새로고침"
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium border cursor-pointer disabled:opacity-50 ${
+              isDarkMode
+                ? "border-[#2c5a50] text-zinc-200 hover:bg-white/10"
+                : "border-[#d9d9dd] text-gray-700 hover:bg-[#eeece7]"
+            }`}
+          >
+            <RefreshIcon className={`h-4 w-4 ${busy ? "animate-spin" : ""}`} />
+          </button>
         </div>
       </div>
 
@@ -181,65 +183,72 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
       ) : rows.length === 0 ? (
         <div className="text-sm opacity-60 py-12 text-center">등록된 수강 학생이 없습니다.</div>
       ) : (
-        <ul className="space-y-2">
-          {rows.map((row) => {
-            const checked = !!selected[row.studentId];
-            return (
-              <li
-                key={row.enrollmentId || row.studentId}
-                className={`rounded-xl border px-4 py-3 ${
-                  isDarkMode ? "border-[#1b4d44] bg-[#0b241f]" : "border-[#d9d9dd] bg-white"
-                }`}
-              >
-                <div className="flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={checked}
-                    onChange={(e) =>
-                      setSelected((prev) => ({
-                        ...prev,
-                        [row.studentId]: e.target.checked,
-                      }))
-                    }
-                    disabled={busy}
-                    aria-label={`${row.studentName} 선택`}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <div className="text-sm font-medium truncate">{row.studentName}</div>
-                        <div className={`text-xs mt-0.5 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                          {row.studentEmail}
-                        </div>
-                        <div className="text-[11px] mt-1 opacity-70">
-                          등록 시각: {formatInstant(row.enrolledAt)}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={() =>
-                            setSelected((prev) => ({ ...prev, [row.studentId]: true }))
-                          }
-                          className={`rounded-lg px-2.5 py-1 text-xs font-medium border cursor-pointer disabled:opacity-50 ${
-                            isDarkMode
-                              ? "border-[#2c5a50] text-zinc-200 hover:bg-white/10"
-                              : "border-[#d9d9dd] text-gray-700 hover:bg-[#eeece7]"
-                          }`}
-                          title="선택"
-                        >
-                          선택
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+        <div
+          className={`overflow-x-auto rounded-xl border ${
+            isDarkMode ? "border-[#2b2b2b]" : "border-[#dedbd5]"
+          }`}
+        >
+          <div
+            className={`grid min-w-[48rem] grid-cols-[minmax(12rem,1.35fr)_minmax(5rem,0.5fr)_minmax(14rem,1.3fr)_minmax(12rem,0.95fr)] items-center gap-3 border-b px-4 py-2 text-xs font-semibold ${
+              isDarkMode
+                ? "border-[#2b2b2b] bg-[#181818] text-gray-400"
+                : "border-[#dedbd5] bg-[#f7f5f1] text-gray-500"
+            }`}
+          >
+            <span>학생 이름</span>
+            <span>ID</span>
+            <span>이메일</span>
+            <span>등록시간</span>
+          </div>
+          <ul
+            className={`min-w-[48rem] divide-y ${
+              isDarkMode ? "divide-[#2b2b2b]" : "divide-[#dedbd5]"
+            }`}
+          >
+            {rows.map((row) => {
+              const checked = !!selected[row.studentId];
+              return (
+                <li
+                  key={row.enrollmentId || row.studentId}
+                  className={`grid grid-cols-[minmax(12rem,1.35fr)_minmax(5rem,0.5fr)_minmax(14rem,1.3fr)_minmax(12rem,0.95fr)] items-center gap-3 px-4 py-3 text-sm ${
+                    isDarkMode ? "bg-[#202020] text-gray-100" : "bg-white text-[#212121]"
+                  }`}
+                >
+                  <span className="flex min-w-0 items-center gap-3">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) =>
+                        setSelected((prev) => ({
+                          ...prev,
+                          [row.studentId]: e.target.checked,
+                        }))
+                      }
+                      disabled={busy}
+                      aria-label={`${row.studentName} 선택`}
+                    />
+                    <span className="min-w-0 truncate font-semibold">
+                      {row.studentName || "이름 없음"}
+                    </span>
+                  </span>
+                  <span className="min-w-0 truncate font-mono text-xs tabular-nums opacity-80">
+                    {row.studentId}
+                  </span>
+                  <span
+                    className={`min-w-0 truncate ${
+                      isDarkMode ? "text-gray-400" : "text-gray-600"
+                    }`}
+                  >
+                    {row.studentEmail || "이메일 없음"}
+                  </span>
+                  <span className="min-w-0 truncate text-xs opacity-75">
+                    {formatInstant(row.enrolledAt)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
 
       {totalPages > 1 ? (

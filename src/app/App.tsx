@@ -18,7 +18,7 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FFFFFF] dark:bg-[#141414]">
+      <div className="min-h-screen flex items-center justify-center bg-[#f5f1ec] dark:bg-[#313130]">
         <TruckLoader />
       </div>
     );

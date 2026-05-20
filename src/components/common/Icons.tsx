@@ -158,6 +158,24 @@ export const CheckIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+/** 새로고침 */
+export const RefreshIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg
+    className={className}
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+    aria-hidden="true"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M4 7v5h5M20 17v-5h-5M5.67 11A7 7 0 0 1 18.2 7.2L20 9M18.33 13A7 7 0 0 1 5.8 16.8L4 15"
+    />
+  </svg>
+);
+
 /** 벨(알림) 아이콘 */
 export const BellIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg

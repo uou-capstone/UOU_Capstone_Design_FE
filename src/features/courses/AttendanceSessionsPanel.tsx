@@ -1,4 +1,5 @@
 import React from "react";
+import { RefreshIcon } from "@/components/common/Icons";
 import {
   courseApi,
   type AttendanceRecord,
@@ -424,24 +425,23 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
   return (
     <div className="flex min-h-full flex-col gap-4 pb-6">
       <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
-        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className="mb-4 flex min-h-10 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className={`text-xs font-semibold uppercase tracking-wide ${mutedTextClass}`}>
-              Attendance
-            </p>
-            <h2 className="mt-1 text-xl font-semibold">출석 회차 관리</h2>
+            <h2 className="text-xl font-semibold">출석 회차 관리</h2>
           </div>
           <button
             type="button"
             onClick={() => void loadSessions(page)}
             disabled={busy}
-            className={`h-9 rounded-full border px-4 text-xs font-semibold transition-colors disabled:opacity-50 ${
+            aria-label="새로고침"
+            title="새로고침"
+            className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-xs font-semibold transition-colors disabled:opacity-50 ${
               isDarkMode
                 ? "border-zinc-600 text-gray-200 hover:bg-white/10"
                 : "border-gray-300 text-gray-700 hover:bg-gray-100"
             }`}
           >
-            새로고침
+            <RefreshIcon className={`h-4 w-4 ${busy ? "animate-spin" : ""}`} />
           </button>
         </div>
 
@@ -734,11 +734,13 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
                 type="button"
                 onClick={() => void loadRecords(selectedSession.sessionId)}
                 disabled={recordsLoading}
-                className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+                aria-label="새로고침"
+                title="새로고침"
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border text-xs font-semibold ${
                   isDarkMode ? "border-zinc-600" : "border-gray-300"
                 }`}
               >
-                새로고침
+                <RefreshIcon className={`h-4 w-4 ${recordsLoading ? "animate-spin" : ""}`} />
               </button>
               <button
                 type="button"
@@ -809,11 +811,13 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
             type="button"
             onClick={() => void loadMatrix()}
             disabled={matrixLoading}
-            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+            aria-label="새로고침"
+            title="새로고침"
+            className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border text-xs font-semibold ${
               isDarkMode ? "border-zinc-600" : "border-gray-300"
             }`}
           >
-            갱신
+            <RefreshIcon className={`h-4 w-4 ${matrixLoading ? "animate-spin" : ""}`} />
           </button>
         </div>
         {matrixLoading ? (
@@ -965,11 +969,13 @@ function StudentAttendanceSummaryPanel({
             type="button"
             onClick={() => void load()}
             disabled={loading}
-            className={`rounded-full border px-4 py-2 text-xs font-semibold ${
+            aria-label="새로고침"
+            title="새로고침"
+            className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-xs font-semibold ${
               isDarkMode ? "border-zinc-600" : "border-gray-300"
             }`}
           >
-            새로고침
+            <RefreshIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </button>
         </div>
       </section>

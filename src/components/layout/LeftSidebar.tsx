@@ -10,7 +10,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useTheme } from "../../contexts/ThemeContext";
 import { lectureApi, type CourseDetail, type LectureResponseDto } from "../../services/api";
-import { EditIcon, TrashIcon } from "../common/Icons";
+import { CloseIcon, EditIcon, TrashIcon } from "../common/Icons";
 
 type ViewMode = "course-list" | "course-detail";
 
@@ -581,7 +581,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
       ref={sidebarRef}
       className={`h-full overflow-hidden flex-shrink-0 group ${commonStyles.transition} ease-in-out relative ${sidebarBgClass} ${sidebarTextClass}`}
       style={{
-        width: `${width}px`,
+        width: isCollapsed ? `${width}px` : "var(--app-shell-sidebar-width)",
         transition: "width 300ms ease-in-out",
       }}
     >
@@ -943,7 +943,7 @@ const LeftSidebar: React.FC<LeftSidebarProps> = ({
                 }`}
                 aria-label="닫기"
               >
-                ✕
+                <CloseIcon className="h-4 w-4" />
               </button>
             </div>
 

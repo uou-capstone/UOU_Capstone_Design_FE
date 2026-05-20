@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useTheme } from "../../contexts/ThemeContext";
+import { CloseIcon } from "../common/Icons";
 
 const DROPDOWN_WIDTH = 240;
 const AVATAR_GAP = 8;
@@ -257,7 +258,7 @@ const ProfileMenu: React.FC = () => {
                 className="p-1 rounded hover:text-glass-text-primary"
                 aria-label="닫기"
               >
-                ✕
+                <CloseIcon className="h-4 w-4" />
               </button>
             </div>
           </div>,
