@@ -165,7 +165,7 @@ body {
   --cohere-focus-violet: var(--spotify-green);
   --app-course-list-sidebar-width: 16rem;
   --app-course-detail-sidebar-width: 18rem;
-  --app-resource-preview-sidebar-width: 13rem;
+  --app-resource-preview-sidebar-width: var(--app-course-detail-sidebar-width);
   --app-shell-sidebar-width: 12.5rem;
   --app-control-radius: 0.5rem;
 }
@@ -198,7 +198,7 @@ button.rounded-2xl,
   :root {
     --app-course-list-sidebar-width: 15.25rem;
     --app-course-detail-sidebar-width: 17rem;
-    --app-resource-preview-sidebar-width: 12.25rem;
+    --app-resource-preview-sidebar-width: var(--app-course-detail-sidebar-width);
     --app-shell-sidebar-width: 11.75rem;
   }
 }
@@ -211,7 +211,7 @@ button.rounded-2xl,
   :root {
     --app-course-list-sidebar-width: 15.5rem;
     --app-course-detail-sidebar-width: 17.45rem;
-    --app-resource-preview-sidebar-width: 12.6rem;
+    --app-resource-preview-sidebar-width: var(--app-course-detail-sidebar-width);
     --app-shell-sidebar-width: 12.1rem;
   }
 }

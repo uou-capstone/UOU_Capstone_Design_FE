@@ -28,6 +28,8 @@ import {
   type ClassroomReportResponse,
   type StudentReportAiContextResponse,
   type ExamSessionDetailResponse,
+  type ExamAnswerSubmission,
+  type ExamSubmissionResponse,
   type ExamUserProfile,
   type CourseContentsResponse,
   type CourseContentsLectureExamSession,
@@ -79,7 +81,6 @@ import ReportPage from "@/pages/dashboard/ReportPage";
 import UpdatesPage from "@/pages/dashboard/UpdatesPage";
 import PdfViewer, { type PdfViewerHandle } from "../common/PdfViewer";
 import {
-  ChartBarIcon,
   CheckIcon,
   CloseIcon,
   EditIcon,
@@ -814,7 +815,7 @@ function examSingleFlashCardShellClass(isDarkMode: boolean): string {
   return `flex w-full min-h-[min(20rem,45dvh)] flex-col rounded-xl border p-5 text-left transition-colors ${
     isDarkMode
       ? "border-zinc-700 bg-zinc-900/70"
-      : "border-gray-200 bg-gray-50"
+      : "border-gray-200 bg-white"
   }`;
 }
 
@@ -822,7 +823,7 @@ function examModalFlashCardShellClass(isDarkMode: boolean): string {
   return `flex w-full min-h-[min(15rem,36dvh)] flex-col rounded-xl border p-4 text-left transition-colors ${
     isDarkMode
       ? "border-zinc-700 bg-zinc-900/70"
-      : "border-gray-200 bg-gray-50"
+      : "border-gray-200 bg-white"
   }`;
 }
 
@@ -971,12 +972,6 @@ const MainContent: React.FC<MainContentProps> = ({
   const [localExams, setLocalExams] = React.useState<
     Record<number, CenterItem[]>
   >({});
-  const [courseDashboardStats, setCourseDashboardStats] = React.useState({
-    studentCount: 0,
-    presentCount: 0,
-    absentCount: 0,
-    attendanceRate: 0,
-  });
   const [uploadModalOpen, setUploadModalOpen] = React.useState(false);
   const [materialGenModalOpen, setMaterialGenModalOpen] = React.useState(false);
   /** 오른쪽 패널 시험 만들기 모드 (강의 선택 후 PDF 미리보기 옆 채팅창에서 프로필 설정) */
@@ -1209,7 +1204,7 @@ const MainContent: React.FC<MainContentProps> = ({
     page: number;
     at: number;
   } | null>(null);
-  const RIGHT_SIDEBAR_DEFAULT_WIDTH = 480;
+  const RIGHT_SIDEBAR_DEFAULT_WIDTH = 384;
   const [rightSidebarWidth, setRightSidebarWidth] = React.useState(
     RIGHT_SIDEBAR_DEFAULT_WIDTH,
   );
@@ -1267,6 +1262,12 @@ const MainContent: React.FC<MainContentProps> = ({
   const [shortAnswerGradeError, setShortAnswerGradeError] = React.useState<
     string | null
   >(null);
+  const [examSubmissionLoading, setExamSubmissionLoading] = React.useState(false);
+  const [examSubmissionError, setExamSubmissionError] = React.useState<
+    string | null
+  >(null);
+  const [examSubmissionResult, setExamSubmissionResult] =
+    React.useState<ExamSubmissionResponse | null>(null);
   const [oxUserAnswers, setOxUserAnswers] = React.useState<
     Record<string, OxUserChoice>
   >({});
@@ -1297,12 +1298,14 @@ const MainContent: React.FC<MainContentProps> = ({
   const [teacherMainPanel, setTeacherMainPanel] = React.useState<
     | "materials"
     | "studentManagement"
-    | "attendance"
-    | "notices"
-    | "discussions"
-    | "reportCriteria"
-    | "classroomReport"
+	    | "attendance"
+	    | "notices"
+	    | "discussions"
+	    | "classroomReport"
   >("materials");
+  const [weekBoardTab, setWeekBoardTab] = React.useState<
+    "notices" | "discussions" | null
+  >(null);
   /** 강의실 목록에서 수정/삭제 모드 (버튼 1개로 토글) */
   const [courseListEditMode, setCourseListEditMode] = React.useState(false);
   const [bulkSelectedCourseIds, setBulkSelectedCourseIds] = React.useState<
@@ -1315,6 +1318,14 @@ const MainContent: React.FC<MainContentProps> = ({
   const [activeResourceActionItemId, setActiveResourceActionItemId] =
     React.useState<string | null>(null);
   const [courseContentsLoaded, setCourseContentsLoaded] = React.useState(false);
+  React.useEffect(() => {
+    if (teacherMainPanel !== "materials") {
+      setWeekBoardTab(null);
+    }
+  }, [teacherMainPanel]);
+  React.useEffect(() => {
+    setWeekBoardTab(null);
+  }, [selectedLectureId]);
   const [studentReportModalOpen, setStudentReportModalOpen] = React.useState(false);
   const [studentReportSearchInput, setStudentReportSearchInput] = React.useState("");
   const [studentReportQuery, setStudentReportQuery] = React.useState("");
@@ -1422,9 +1433,16 @@ const MainContent: React.FC<MainContentProps> = ({
     if (courseListSortOrder !== "name") return courses;
     return [...courses].sort((a, b) => (a.title ?? "").localeCompare(b.title ?? ""));
   }, [courses, courseListSortOrder]);
+  const classroomReportPageOpen = isTeacher && teacherMainPanel === "classroomReport";
+  const studentReportWorkspaceOpen = studentReportModalOpen || classroomReportPageOpen;
+  const studentReportListVisible =
+    classroomReportPageOpen ||
+    (studentReportModalOpen && studentReportModalTab === "students");
+  const classroomReportVisible =
+    classroomReportPageOpen ||
+    (studentReportModalOpen && studentReportModalTab === "classroom");
   const loadStudentReportList = React.useCallback(async () => {
-    if (!studentReportModalOpen || courseDetail?.courseId == null) return;
-    if (studentReportModalTab !== "students") return;
+    if (!studentReportListVisible || courseDetail?.courseId == null) return;
     setStudentReportListLoading(true);
     setStudentReportListError(null);
     try {
@@ -1457,11 +1475,10 @@ const MainContent: React.FC<MainContentProps> = ({
     }
   }, [
     courseDetail?.courseId,
-    studentReportModalOpen,
+    studentReportListVisible,
     studentReportPage,
     studentReportQuery,
     studentReportStatus,
-    studentReportModalTab,
   ]);
 
   React.useEffect(() => {
@@ -1470,7 +1487,7 @@ const MainContent: React.FC<MainContentProps> = ({
 
   React.useEffect(() => {
     if (
-      !studentReportModalOpen ||
+      !studentReportListVisible ||
       courseDetail?.courseId == null ||
       selectedStudentReportId == null
     ) {
@@ -1478,10 +1495,6 @@ const MainContent: React.FC<MainContentProps> = ({
       setStudentReportDetailError(null);
       return;
     }
-    if (studentReportModalTab !== "students") {
-      return;
-    }
-
     let cancelled = false;
     setStudentReportDetailLoading(true);
     setStudentReportDetailError(null);
@@ -1512,20 +1525,13 @@ const MainContent: React.FC<MainContentProps> = ({
   }, [
     courseDetail?.courseId,
     selectedStudentReportId,
-    studentReportModalOpen,
-    studentReportModalTab,
+    studentReportListVisible,
   ]);
 
   React.useEffect(() => {
-    const classroomReportPageOpen =
-      isTeacher && teacherMainPanel === "classroomReport";
-    if (
-      (!studentReportModalOpen && !classroomReportPageOpen) ||
-      courseDetail?.courseId == null
-    ) {
+    if (!classroomReportVisible || courseDetail?.courseId == null) {
       return;
     }
-    if (studentReportModalOpen && studentReportModalTab !== "classroom") return;
     let cancelled = false;
     setClassroomReportLoading(true);
     setClassroomReportError(null);
@@ -1547,16 +1553,13 @@ const MainContent: React.FC<MainContentProps> = ({
       cancelled = true;
     };
   }, [
-    studentReportModalOpen,
+    classroomReportVisible,
     courseDetail?.courseId,
-    studentReportModalTab,
-    isTeacher,
-    teacherMainPanel,
   ]);
 
   React.useEffect(() => {
-    if (!studentReportModalOpen || courseDetail?.courseId == null) return;
-    if (studentReportModalTab !== "students" || selectedStudentReportId == null) {
+    if (!studentReportListVisible || courseDetail?.courseId == null) return;
+    if (selectedStudentReportId == null) {
       setStudentAiContext(null);
       setStudentAiContextError(null);
       setStudentAiContextLoading(false);
@@ -1585,9 +1588,8 @@ const MainContent: React.FC<MainContentProps> = ({
       cancelled = true;
     };
   }, [
-    studentReportModalOpen,
+    studentReportListVisible,
     courseDetail?.courseId,
-    studentReportModalTab,
     selectedStudentReportId,
   ]);
 
@@ -1599,7 +1601,7 @@ const MainContent: React.FC<MainContentProps> = ({
   }, [selectedStudentReportId]);
 
   React.useEffect(() => {
-    if (studentReportModalOpen) return;
+    if (studentReportWorkspaceOpen) return;
     setStudentReportModalTab("students");
     setClassroomReport(undefined);
     setClassroomReportError(null);
@@ -1612,7 +1614,92 @@ const MainContent: React.FC<MainContentProps> = ({
     setReportChatInput("");
     reportChatAbortRef.current?.abort();
     reportChatAbortRef.current = null;
-  }, [studentReportModalOpen]);
+  }, [studentReportWorkspaceOpen]);
+
+  const submitStudentReportChatQuestion = React.useCallback(async () => {
+    const question = reportChatInput.trim();
+    if (
+      !question ||
+      courseDetail?.courseId == null ||
+      selectedStudentReportId == null ||
+      reportChatSending
+    ) {
+      return;
+    }
+
+    const userMessageId =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `u-${Date.now()}`;
+    const assistantMessageId =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `a-${Date.now()}`;
+    const historyPayload = reportChatMessages.map((message) =>
+      message.role === "user"
+        ? { role: "user", content: message.text }
+        : { role: "assistant", content: message.text },
+    );
+
+    setReportChatInput("");
+    setReportChatMessages((prev) => [
+      ...prev,
+      { id: userMessageId, role: "user", text: question },
+      { id: assistantMessageId, role: "assistant", text: "" },
+    ]);
+    setReportChatSending(true);
+    const abortController = new AbortController();
+    reportChatAbortRef.current = abortController;
+
+    try {
+      const finalText = await studentReportApi.streamStudentReportChat(
+        courseDetail.courseId,
+        selectedStudentReportId,
+        {
+          question,
+          messages: historyPayload.length > 0 ? historyPayload : undefined,
+        },
+        {
+          signal: abortController.signal,
+          onDelta: (chunk) => {
+            setReportChatMessages((prev) =>
+              prev.map((row) =>
+                row.id === assistantMessageId
+                  ? { ...row, text: row.text + chunk }
+                  : row,
+              ),
+            );
+          },
+        },
+      );
+      setReportChatMessages((prev) =>
+        prev.map((row) =>
+          row.id === assistantMessageId
+            ? { ...row, text: finalText.trim() ? finalText : row.text }
+            : row,
+        ),
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "챗봇 응답을 받지 못했습니다.";
+      setReportChatMessages((prev) =>
+        prev.map((row) =>
+          row.id === assistantMessageId
+            ? { ...row, text: `오류: ${message}` }
+            : row,
+        ),
+      );
+    } finally {
+      setReportChatSending(false);
+      reportChatAbortRef.current = null;
+    }
+  }, [
+    courseDetail?.courseId,
+    selectedStudentReportId,
+    reportChatInput,
+    reportChatMessages,
+    reportChatSending,
+  ]);
 
   const [examRecoverOpen, setExamRecoverOpen] = React.useState(false);
   const [examRecoverSelectedId, setExamRecoverSelectedId] = React.useState("");
@@ -1978,72 +2065,6 @@ const MainContent: React.FC<MainContentProps> = ({
   }, [courseDetail?.courseId]);
 
   React.useEffect(() => {
-    if (!isTeacher || courseDetail?.courseId == null) {
-      setCourseDashboardStats({
-        studentCount: 0,
-        presentCount: 0,
-        absentCount: 0,
-        attendanceRate: 0,
-      });
-      return;
-    }
-
-    const courseId = courseDetail.courseId;
-    let cancelled = false;
-
-    void (async () => {
-      const [studentsResult, attendanceResult] = await Promise.allSettled([
-        courseApi.getCourseStudents(courseId, { page: 0, size: 1 }),
-        courseApi.getAttendanceMatrix(courseId, { page: 0, size: 200 }),
-      ]);
-
-      if (cancelled) return;
-
-      let studentCount = 0;
-      let presentCount = 0;
-      let absentCount = 0;
-
-      if (studentsResult.status === "fulfilled") {
-        studentCount = studentsResult.value.totalElements ?? 0;
-      }
-
-      if (attendanceResult.status === "fulfilled") {
-        const matrix = attendanceResult.value;
-        studentCount = Math.max(studentCount, matrix.students.totalElements ?? 0);
-
-        for (const row of matrix.students.content ?? []) {
-          for (const status of Object.values(row.records ?? {})) {
-            if (status === "ABSENT") {
-              absentCount += 1;
-            } else if (
-              status === "PRESENT" ||
-              status === "LATE" ||
-              status === "EXCUSED"
-            ) {
-              presentCount += 1;
-            }
-          }
-        }
-      }
-
-      const attendanceTotal = presentCount + absentCount;
-      const attendanceRate =
-        attendanceTotal > 0 ? Math.round((presentCount / attendanceTotal) * 100) : 0;
-
-      setCourseDashboardStats({
-        studentCount,
-        presentCount,
-        absentCount,
-        attendanceRate,
-      });
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [courseDetail?.courseId, isTeacher]);
-
-  React.useEffect(() => {
     setTeacherMainPanel("materials");
   }, [courseDetail?.courseId]);
 
@@ -2055,6 +2076,8 @@ const MainContent: React.FC<MainContentProps> = ({
     const rawMaterials: CenterItem[] =
       (selectedLectureId ? localMaterials[selectedLectureId] : []) ?? [];
     const materials = rawMaterials.filter(isPdfOrMarkdownResourceItem);
+    const exams: CenterItem[] =
+      (selectedLectureId ? localExams[selectedLectureId] : []) ?? [];
     const fromAssessments: CenterItem[] = assessments.map((a) => ({
       id: `assessment-${a.assessmentId}`,
       type: "assessment" as const,
@@ -2063,10 +2086,10 @@ const MainContent: React.FC<MainContentProps> = ({
       createdAt: a.dueDate || "",
       assessmentId: a.assessmentId,
     }));
-    const merged = [...materials, ...fromAssessments];
+    const merged = [...materials, ...exams, ...fromAssessments];
     merged.sort((a, b) => a.title.localeCompare(b.title));
     return merged;
-  }, [selectedLectureId, localMaterials, assessments]);
+  }, [selectedLectureId, localMaterials, localExams, assessments]);
 
   // 강의실 진입 시 /api/courses/{courseId}/contents 한 번 호출하여 모든 주차 리소스 로드
   React.useEffect(() => {
@@ -2629,7 +2652,7 @@ const MainContent: React.FC<MainContentProps> = ({
       const startLeft =
         resourcePreviewViewerWidthPx ??
         measuredLeft ??
-        Math.max(RESOURCE_PREVIEW_SPLIT_MIN_VIEWER, rowWidth / 2);
+        Math.max(RESOURCE_PREVIEW_SPLIT_MIN_VIEWER, rowWidth * 0.6);
       const onMove = (ev: MouseEvent) => {
         const w = resourcePreviewSplitRowRef.current?.getBoundingClientRect()
           .width ?? rowWidth;
@@ -3481,12 +3504,17 @@ const MainContent: React.FC<MainContentProps> = ({
       setShortAnswerKeywordOpen({});
       setShortAnswerGrading(false);
       setShortAnswerGradeError(null);
+      setExamSubmissionLoading(false);
+      setExamSubmissionError(null);
+      setExamSubmissionResult(null);
       try {
         const numericId = Number(sessionId);
         if (!Number.isFinite(numericId)) {
           throw new Error("유효하지 않은 시험 세션 ID입니다.");
         }
-        const detail = await examGenerationApi.getSession(numericId);
+        const detail = isStudent
+          ? await examGenerationApi.getStudentSession(numericId)
+          : await examGenerationApi.getSession(numericId);
         setExamDetail(detail);
       } catch (e) {
         setExamDetailError(
@@ -3505,6 +3533,7 @@ const MainContent: React.FC<MainContentProps> = ({
       previewFileName,
       previewIsAiGenerationDoc,
       previewLinkedGenerationSessionId,
+      isStudent,
     ],
   );
 
@@ -3541,6 +3570,9 @@ const MainContent: React.FC<MainContentProps> = ({
     setShortAnswerKeywordOpen({});
     setShortAnswerGrading(false);
     setShortAnswerGradeError(null);
+    setExamSubmissionLoading(false);
+    setExamSubmissionError(null);
+    setExamSubmissionResult(null);
 
     const snap = previewBeforeExamRef.current;
     previewBeforeExamRef.current = null;
@@ -3762,6 +3794,7 @@ const MainContent: React.FC<MainContentProps> = ({
     problemIndex: number,
     optionId: string,
   ) => {
+    if (examSubmissionResult != null) return;
     setFiveChoiceUserAnswers((prev) => ({
       ...prev,
       [String(problemIndex)]: optionId,
@@ -3769,7 +3802,7 @@ const MainContent: React.FC<MainContentProps> = ({
   };
 
   const handleOxAnswerChange = (problemIndex: number, choice: OxUserChoice) => {
-    if (oxGraded) return;
+    if (oxGraded || examSubmissionResult != null) return;
     setOxUserAnswers((prev) => ({
       ...prev,
       [String(problemIndex)]: choice,
@@ -3868,6 +3901,112 @@ const MainContent: React.FC<MainContentProps> = ({
     };
   }, [examDetail?.shortAnswerProblems, shortAnswerUserAnswers, shortAnswerLog]);
 
+  const studentExamSubmitStats = React.useMemo(() => {
+    if (!examDetail) return { answerableCount: 0, answeredCount: 0, allAnswered: false };
+    const oxCount = examDetail.oxProblems?.length ?? 0;
+    const fiveCount = examDetail.fiveChoiceProblems?.length ?? 0;
+    const shortCount = examDetail.shortAnswerProblems?.length ?? 0;
+    const answerableCount = oxCount + fiveCount + shortCount;
+    let answeredCount = 0;
+    for (let i = 0; i < oxCount; i += 1) {
+      const c = oxUserAnswers[String(i)];
+      if (c === "O" || c === "X") answeredCount += 1;
+    }
+    for (let i = 0; i < fiveCount; i += 1) {
+      const selected = fiveChoiceUserAnswers[String(i)];
+      const options = examDetail.fiveChoiceProblems[i]?.options ?? [];
+      if (selected && options.some((option) => option.id === selected)) {
+        answeredCount += 1;
+      }
+    }
+    for (let i = 0; i < shortCount; i += 1) {
+      if ((shortAnswerUserAnswers[String(i)] ?? "").trim().length > 0) {
+        answeredCount += 1;
+      }
+    }
+    return {
+      answerableCount,
+      answeredCount,
+      allAnswered: answerableCount > 0 && answeredCount === answerableCount,
+    };
+  }, [examDetail, fiveChoiceUserAnswers, oxUserAnswers, shortAnswerUserAnswers]);
+
+  const readExamQuestionId = React.useCallback(
+    (problem: { id?: number }, fallbackIndex: number): number => {
+      return typeof problem.id === "number" && Number.isFinite(problem.id)
+        ? problem.id
+        : fallbackIndex + 1;
+    },
+    [],
+  );
+
+  const handleStudentExamSubmit = React.useCallback(async () => {
+    if (!isStudent || !examDetail || !examDetailSessionId) return;
+    const sessionNum = Number(examDetailSessionId);
+    if (!Number.isFinite(sessionNum)) {
+      setExamSubmissionError("유효하지 않은 시험 세션입니다.");
+      return;
+    }
+
+    const answers: ExamAnswerSubmission[] = [];
+    examDetail.oxProblems?.forEach((problem, idx) => {
+      const choice = oxUserAnswers[String(idx)];
+      if (choice === "O" || choice === "X") {
+        answers.push({
+          questionId: readExamQuestionId(problem, idx),
+          answerText: choice,
+        });
+      }
+    });
+    examDetail.fiveChoiceProblems?.forEach((problem, idx) => {
+      const selectedOptionId = fiveChoiceUserAnswers[String(idx)];
+      if (selectedOptionId) {
+        answers.push({
+          questionId: readExamQuestionId(problem, idx),
+          selectedOptionId,
+        });
+      }
+    });
+    examDetail.shortAnswerProblems?.forEach((problem, idx) => {
+      const answerText = (shortAnswerUserAnswers[String(idx)] ?? "").trim();
+      if (answerText) {
+        answers.push({
+          questionId: readExamQuestionId(problem, idx),
+          answerText,
+        });
+      }
+    });
+
+    if (answers.length === 0) {
+      setExamSubmissionError("제출할 답안이 없습니다.");
+      return;
+    }
+
+    setExamSubmissionLoading(true);
+    setExamSubmissionError(null);
+    try {
+      const result = await examGenerationApi.submitExam({
+        examSessionId: sessionNum,
+        answers,
+      });
+      setExamSubmissionResult(result);
+    } catch (e) {
+      setExamSubmissionError(
+        e instanceof Error ? e.message : "시험 제출에 실패했습니다.",
+      );
+    } finally {
+      setExamSubmissionLoading(false);
+    }
+  }, [
+    examDetail,
+    examDetailSessionId,
+    fiveChoiceUserAnswers,
+    isStudent,
+    oxUserAnswers,
+    readExamQuestionId,
+    shortAnswerUserAnswers,
+  ]);
+
   const handleFiveChoiceGrade = () => {
     if (
       !examDetail ||
@@ -3939,7 +4078,7 @@ const MainContent: React.FC<MainContentProps> = ({
     problemIndex: number,
     value: string,
   ) => {
-    if (shortAnswerLog) return;
+    if (shortAnswerLog || examSubmissionResult != null) return;
     setShortAnswerUserAnswers((prev) => ({
       ...prev,
       [String(problemIndex)]: value,
@@ -4305,16 +4444,17 @@ const MainContent: React.FC<MainContentProps> = ({
   }, [bulkSelectedCourseIds, courses, onDeleteCourse]);
 
   const handleCreateCourse = async () => {
-    if (!courseModalTitle.trim()) {
+    const rawTitle = courseModalTitle;
+    const rawDescription = courseModalDescription;
+    if (!rawTitle.trim()) {
       window.alert("강의실 제목을 입력해주세요.");
       return;
     }
 
     try {
-      const description = courseModalDescription.trim();
       const course = await courseApi.createCourse({
-        title: courseModalTitle.trim(),
-        description: description || "설명 없음",
+        title: rawTitle,
+        description: rawDescription.length > 0 ? rawDescription : "설명 없음",
       });
 
       // 자동으로 OT 강의 생성
@@ -4471,21 +4611,21 @@ const MainContent: React.FC<MainContentProps> = ({
   const handleEditCourseMetaSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!courseDetail?.courseId) return;
-    const trimmedTitle = editCourseMetaTitle.trim();
-    if (!trimmedTitle) {
+    const rawTitle = editCourseMetaTitle;
+    const rawDescription = editCourseMetaDescription;
+    if (!rawTitle.trim()) {
       window.alert("강의실 제목은 비워둘 수 없습니다.");
       return;
     }
-    if (trimmedTitle.length > MAX_COURSE_TITLE_LEN) {
+    if (rawTitle.length > MAX_COURSE_TITLE_LEN) {
       window.alert(
-        `강의실 제목은 ${MAX_COURSE_TITLE_LEN}자 이내로 입력해주세요. (현재 ${trimmedTitle.length}자)`,
+        `강의실 제목은 ${MAX_COURSE_TITLE_LEN}자 이내로 입력해주세요. (현재 ${rawTitle.length}자)`,
       );
       return;
     }
-    const trimmedDescription = editCourseMetaDescription.trim();
-    if (trimmedDescription.length > MAX_COURSE_DESCRIPTION_LEN) {
+    if (rawDescription.length > MAX_COURSE_DESCRIPTION_LEN) {
       window.alert(
-        `강의실 설명은 ${MAX_COURSE_DESCRIPTION_LEN}자 이내로 입력해주세요. (현재 ${trimmedDescription.length}자)`,
+        `강의실 설명은 ${MAX_COURSE_DESCRIPTION_LEN}자 이내로 입력해주세요. (현재 ${rawDescription.length}자)`,
       );
       return;
     }
@@ -4494,14 +4634,14 @@ const MainContent: React.FC<MainContentProps> = ({
       let result: { success: boolean; error?: string };
       if (onUpdateCourse) {
         result = await onUpdateCourse(courseDetail.courseId, {
-          title: trimmedTitle,
-          description: trimmedDescription,
+          title: rawTitle,
+          description: rawDescription,
         });
       } else {
         try {
           await courseApi.updateCourse(courseDetail.courseId, {
-            title: trimmedTitle,
-            description: trimmedDescription,
+            title: rawTitle,
+            description: rawDescription,
           });
           result = { success: true };
         } catch (err) {
@@ -4603,7 +4743,9 @@ const MainContent: React.FC<MainContentProps> = ({
           {courseListEditMode ? (
             <CheckIcon className="h-5 w-5" />
           ) : (
-            <EditIcon className="h-5 w-5" />
+            <EditIcon
+              className={`h-5 w-5 ${isDarkMode ? "text-[#ff824d]" : ""}`}
+            />
           )}
         </button>
       );
@@ -4635,7 +4777,7 @@ const MainContent: React.FC<MainContentProps> = ({
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="h-5 w-5"
+            className={`h-5 w-5 ${isDarkMode ? "text-[#ff824d]" : ""}`}
             aria-hidden="true"
           >
             <path d="M4 6h9" />
@@ -4652,7 +4794,7 @@ const MainContent: React.FC<MainContentProps> = ({
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className="h-5 w-5"
+            className={`h-5 w-5 ${isDarkMode ? "text-[#ff824d]" : ""}`}
             aria-hidden="true"
           >
             <circle cx="12" cy="12" r="9" />
@@ -5100,12 +5242,6 @@ const MainContent: React.FC<MainContentProps> = ({
     const selectedLecture = courseDetail.lectures?.find(
       (lecture) => lecture.lectureId === selectedLectureId,
     );
-    const currentWeekLabel = selectedLecture
-      ? selectedLecture.weekNumber === 0
-        ? "OT"
-        : `${selectedLecture.weekNumber}주차`
-      : null;
-
     const weekNumbers = Array.from(
       new Set((courseDetail.lectures || []).map((lec) => lec.weekNumber)),
     ).sort((a, b) => {
@@ -5113,15 +5249,6 @@ const MainContent: React.FC<MainContentProps> = ({
       if (b === 0) return 1;
       return a - b;
     });
-    const activeWeekMaterialsCount =
-      selectedLectureId != null
-        ? (localMaterials[selectedLectureId] ?? []).filter(isPdfOrMarkdownResourceItem).length
-        : 0;
-    const dashboardAttendanceRate = Math.max(
-      0,
-      Math.min(100, courseDashboardStats.attendanceRate),
-    );
-
     const lectureBulkEditToggleClasses = bulkEditMode
       ? isDarkMode
         ? "bg-[#ff9b6a] text-[#181818] hover:bg-[#ffad9b]"
@@ -5131,35 +5258,35 @@ const MainContent: React.FC<MainContentProps> = ({
         : "bg-[#f4f1eb] text-[#212121] hover:bg-[#ebe6dc]";
     const detailActionBase =
       "flex h-9 w-full min-w-0 items-center justify-start gap-2 rounded-lg px-3 text-sm font-semibold transition-colors duration-150";
-    const detailPrimaryActionClass = `${detailActionBase} ${
-      isDarkMode
-        ? "bg-[#ff9b6a] text-[#181818] hover:bg-[#ffad9b]"
-        : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
-    }`;
-    const detailSecondaryActionClass = `${detailActionBase} border ${
-      isDarkMode
-        ? "border-[#343434] bg-white/[0.04] text-gray-100 hover:border-[#4a4a4a] hover:bg-white/[0.07]"
-        : "border-[#dedbd5] bg-white text-[#212121] hover:border-[#cfcac1] hover:bg-[#f7f5f1]"
-    }`;
+    const weekResourceActionClass = (active = false, primary = false) =>
+      `inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
+        primary
+          ? isDarkMode
+            ? "border-[#ff9b6a] bg-[#ff9b6a] text-[#181818] hover:bg-[#ffad9b]"
+            : "border-[#ff824d] bg-[#ff824d] text-white hover:bg-[#f26f37]"
+          : active
+            ? isDarkMode
+              ? "border-[#ff9b6a] bg-[#ff9b6a]/12 text-[#ffad9b]"
+              : "border-[#ff824d] bg-[#fff2eb] text-[#ff824d]"
+            : isDarkMode
+              ? "border-[#343434] bg-[#202020] text-gray-100 hover:bg-[#252525]"
+              : "border-[#dedbd5] bg-white text-[#212121] hover:bg-[#f7f5f1]"
+      }`;
+    const openWeekBoardPanel = (nextTab: "notices" | "discussions") => {
+      if (!selectedLecture) {
+        window.alert("강의(주차)를 먼저 선택해주세요.");
+        return;
+      }
+      setTeacherMainPanel("materials");
+      setWeekBoardTab(nextTab);
+    };
 
     // 업로드한 자료 미리보기 (좌: 미리보기 | 우: 채팅) — fileUrl 또는 materialId로 표시
     const secondaryPanelItems: Array<{
-      key: "notices" | "discussions" | "attendance" | "reportCriteria";
+      key: "attendance";
       label: string;
       iconPath: string;
     }> = [
-      {
-        key: "notices",
-        label: "공지사항",
-        iconPath:
-          "M4 7h3l9-3v16l-9-3H4V7Zm3 0v10M18 9.5a4 4 0 0 1 0 5",
-      },
-      {
-        key: "discussions",
-        label: "토론",
-        iconPath:
-          "M7 8h10M7 12h6m8-1a7 7 0 0 1-7 7H9l-5 3 1.5-4.5A7 7 0 1 1 21 11Z",
-      },
       ...(!isTeacher
         ? [
             {
@@ -5170,29 +5297,35 @@ const MainContent: React.FC<MainContentProps> = ({
             },
           ]
         : []),
-      ...(isTeacher
-        ? [
-            {
-              key: "reportCriteria" as const,
-              label: "리포트 기준",
-              iconPath: "M5 7h8m-8 5h14M5 17h10m1-12v4m-5 6v4m7-9v4",
-            },
-          ]
-        : []),
     ];
 
-    const boardPanelItems = secondaryPanelItems.filter(
-      (item) => item.key === "notices" || item.key === "discussions",
-    );
-    const otherSecondaryPanelItems = secondaryPanelItems.filter(
-      (item) => item.key !== "notices" && item.key !== "discussions",
-    );
+    const otherSecondaryPanelItems = secondaryPanelItems;
+    const reportPanelItems = isTeacher
+      ? [
+          {
+            key: "classroomReport" as typeof teacherMainPanel,
+            label: "강의실 리포트",
+            iconPath:
+              "M4 19V5m5 14V9m5 10V4m5 15v-7M3 19h18",
+          },
+        ]
+      : [];
 
     const previewSidebarPanelItems: Array<{
       key: typeof teacherMainPanel;
       label: string;
       iconPath: string;
     }> = [
+      ...(isTeacher
+        ? [
+            {
+              key: "classroomReport" as const,
+              label: "강의실 리포트",
+              iconPath:
+                "M4 19V5m5 14V9m5 10V4m5 15v-7M3 19h18",
+            },
+          ]
+        : []),
       {
         key: "materials",
         label: "자료 목록",
@@ -5220,11 +5353,11 @@ const MainContent: React.FC<MainContentProps> = ({
       })),
     ];
 
-    const previewBoardPanelItems = previewSidebarPanelItems.filter(
-      (item) => item.key === "notices" || item.key === "discussions",
-    );
     const previewPrimaryPanelItems = previewSidebarPanelItems.filter(
       (item) => item.key !== "notices" && item.key !== "discussions",
+    );
+    const previewReportPanelItems = previewPrimaryPanelItems.filter(
+      (item) => item.key === "classroomReport",
     );
     const previewStudentAttendancePanelItems = previewPrimaryPanelItems
       .filter((item) => item.key === "studentManagement" || item.key === "attendance")
@@ -5234,28 +5367,31 @@ const MainContent: React.FC<MainContentProps> = ({
         return 0;
       });
     const previewStandalonePanelItems = previewPrimaryPanelItems.filter(
-      (item) => item.key !== "studentManagement" && item.key !== "attendance",
+      (item) =>
+        item.key !== "studentManagement" &&
+        item.key !== "attendance" &&
+        item.key !== "classroomReport",
     );
 
     const previewSidebarButtonClass = (active: boolean) =>
       `${detailActionBase} border ${
         active
           ? isDarkMode
-            ? "border-[#ffad9b] bg-[#ffad9b] text-[#071829]"
-            : "border-[#003c33] bg-[#003c33] text-white"
+            ? "border-[#ff9b6a] bg-[#ff9b6a] text-[#181818]"
+            : "border-[#ff824d] bg-[#ff824d] text-white"
           : isDarkMode
-            ? "border-[#2b2b2b] bg-white/[0.04] text-gray-100 hover:bg-white/[0.08]"
-            : "border-[#d9d9dd] bg-white text-[#212121] hover:bg-[#f7f7f7]"
+            ? "border-[#343434] bg-[#202020] text-gray-100 hover:border-[#4a4a4a] hover:bg-[#252525]"
+            : "border-[#dedbd5] bg-white text-[#212121] hover:border-[#cfcac1] hover:bg-[#f7f5f1]"
       }`;
 
     const previewSidebarIconClass = (active: boolean) =>
       `h-3.5 w-3.5 shrink-0 ${
         active
           ? isDarkMode
-            ? "text-[#071829]"
+            ? "text-[#181818]"
             : "text-white"
           : isDarkMode
-            ? "text-gray-300"
+            ? "text-[#ff824d]"
             : "text-gray-600"
       }`;
     const courseSidebarButtonClass = (active: boolean) =>
@@ -5275,7 +5411,7 @@ const MainContent: React.FC<MainContentProps> = ({
             ? "text-[#181818]"
             : "text-white"
           : isDarkMode
-            ? "text-gray-300"
+            ? "text-[#ff824d]"
             : "text-gray-600"
       }`;
 
@@ -5296,16 +5432,12 @@ const MainContent: React.FC<MainContentProps> = ({
       </svg>
     );
 
-    const openPanelFromPreview = (panel: typeof teacherMainPanel) => {
-      setTeacherMainPanel(panel);
-      exitPreviewAndExamViewer();
-    };
+	    const openPanelFromPreview = (panel: typeof teacherMainPanel) => {
+	      setTeacherMainPanel(panel);
+	      exitPreviewAndExamViewer();
+	    };
 
-    const openClassroomReportFromPreview = () => {
-      openPanelFromPreview("classroomReport");
-    };
-
-    const selectLectureFromPreview = (lectureId: number) => {
+	    const selectLectureFromPreview = (lectureId: number) => {
       setTeacherMainPanel("materials");
       exitPreviewAndExamViewer();
       onSelectLecture?.(lectureId);
@@ -5313,24 +5445,14 @@ const MainContent: React.FC<MainContentProps> = ({
 
     const renderResourcePreviewSidebar = () => (
       <aside
-        className={`hidden w-[var(--app-resource-preview-sidebar-width)] lg:flex shrink-0 flex-col border-r px-3 py-3 ${
+        className={`hidden w-[var(--app-resource-preview-sidebar-width)] lg:flex shrink-0 flex-col gap-5 border-r px-3 pb-3 pt-5 ${
           isDarkMode
             ? "border-[#2b2b2b] bg-[#181818] text-gray-200"
-            : "border-[#d9d9dd] bg-white text-[#212121]"
+            : "border-[#dedbd5] bg-[#fbfaf7] text-[#212121]"
         }`}
         aria-label="강의자료 탐색"
       >
         <div className="flex shrink-0 flex-col gap-1.5">
-          {isTeacher ? (
-            <button
-              type="button"
-              onClick={openClassroomReportFromPreview}
-              className={detailSecondaryActionClass}
-            >
-              <ChartBarIcon className="h-3.5 w-3.5 shrink-0" />
-              <span>강의실 리포트</span>
-            </button>
-          ) : null}
           {previewStandalonePanelItems.map((item) => {
             const active = teacherMainPanel === item.key;
             return (
@@ -5346,6 +5468,29 @@ const MainContent: React.FC<MainContentProps> = ({
               </button>
             );
           })}
+          {previewReportPanelItems.length > 0 ? (
+            <div
+              className={`grid gap-1.5 ${
+                previewReportPanelItems.length > 1 ? "grid-cols-2" : "grid-cols-1"
+              }`}
+            >
+              {previewReportPanelItems.map((item) => {
+                const active = teacherMainPanel === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => openPanelFromPreview(item.key)}
+                    className={previewSidebarButtonClass(active)}
+                    aria-pressed={active}
+                  >
+                    {renderPreviewSidebarIcon(item.iconPath, active)}
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
           {previewStudentAttendancePanelItems.length > 0 ? (
             <div className="grid grid-cols-2 gap-1.5">
               {previewStudentAttendancePanelItems.map((item) => {
@@ -5365,29 +5510,10 @@ const MainContent: React.FC<MainContentProps> = ({
               })}
             </div>
           ) : null}
-          {previewBoardPanelItems.length > 0 ? (
-            <div className="grid grid-cols-2 gap-1.5">
-              {previewBoardPanelItems.map((item) => {
-                const active = teacherMainPanel === item.key;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => openPanelFromPreview(item.key)}
-                    className={previewSidebarButtonClass(active)}
-                    aria-pressed={active}
-                  >
-                    {renderPreviewSidebarIcon(item.iconPath, active)}
-                    <span className="truncate">{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
         </div>
 
         <nav
-          className={`mt-3 flex min-h-0 flex-1 flex-col gap-1 border-t pt-3 ${
+          className={`mt-5 flex min-h-0 flex-1 flex-col gap-1 border-t pt-5 ${
             isDarkMode ? "border-[#2b2b2b]" : "border-[#d9d9dd]"
           }`}
           aria-label="주차 목록"
@@ -5405,9 +5531,18 @@ const MainContent: React.FC<MainContentProps> = ({
               const lecture = courseDetail?.lectures?.find(
                 (item) => item.weekNumber === week,
               );
+              const lectureTitle = lecture?.title?.trim();
+              const showLectureTitle =
+                !!lectureTitle && lectureTitle !== label;
               const active =
                 selectedLecture != null &&
                 selectedLecture.weekNumber === week;
+              const rowInactive = isDarkMode
+                ? "border border-[#343434] bg-[#202020] text-gray-200 hover:bg-[#252525]"
+                : "border border-[#dedbd5] bg-white text-[#212121] hover:bg-[#f7f5f1]";
+              const rowActive = isDarkMode
+                ? "border border-[#ff9b6a] bg-[#ff9b6a] text-[#181818]"
+                : "border border-[#ff824d] bg-[#ff824d] text-white";
               return (
                 <button
                   key={week}
@@ -5416,17 +5551,16 @@ const MainContent: React.FC<MainContentProps> = ({
                   onClick={() => {
                     if (lecture) selectLectureFromPreview(lecture.lectureId);
                   }}
-                  className={`flex h-9 w-full items-center rounded-lg px-3 text-left text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                    active
-                      ? isDarkMode
-                        ? "bg-[#ffad9b] text-[#071829]"
-                        : "bg-[#003c33] text-white"
-                      : isDarkMode
-                        ? "bg-white/[0.06] text-gray-200 hover:bg-white/[0.1]"
-                        : "bg-[#eeece7] text-[#212121] hover:bg-[#e1ded6]"
+                  className={`flex h-9 w-full items-center gap-2 rounded-xl px-3 text-left text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    active ? rowActive : rowInactive
                   }`}
                 >
-                  {label}
+	                          <span className="w-11 shrink-0 text-left tabular-nums">{label}</span>
+                  {showLectureTitle ? (
+                    <span className="min-w-0 truncate text-xs font-medium opacity-75">
+                      {lectureTitle}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
@@ -5445,28 +5579,32 @@ const MainContent: React.FC<MainContentProps> = ({
     );
 
     if (previewFileUrl || previewMaterialId != null || examDetailSessionId) {
+      const hasResourcePreviewContext =
+        previewFileUrl != null || previewMaterialId != null;
       const isResourceDocPreview =
-        !examDetailSessionId &&
-        (previewFileUrl != null || previewMaterialId != null);
-      const previewShellClass = isDarkMode ? "bg-[#181818]" : "bg-white";
+        !examDetailSessionId && hasResourcePreviewContext;
+      const showResourcePreviewSidebar = true;
+      const usePdfLearningPanelStyle =
+        isResourceDocPreview || examDetailSessionId != null;
+      const previewShellClass = isDarkMode ? "bg-[#181818]" : "bg-[#fbfaf7]";
       return (
         <div className={`flex flex-col h-full min-w-0 overflow-hidden ${previewShellClass}`}>
           <div
             className="flex-1 flex min-h-0 min-w-0 overflow-hidden"
           >
-            {isResourceDocPreview ? renderResourcePreviewSidebar() : null}
+            {showResourcePreviewSidebar ? renderResourcePreviewSidebar() : null}
             <div
               ref={resourcePreviewSplitRowRef}
               className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
             >
-            {/* 좌: 미리보기 (PDF·MD: 기본 50:50, 구분선 드래그로 너비 조절) */}
+            {/* 좌: 미리보기 (PDF·MD: 기본 3:2, 구분선 드래그로 너비 조절) */}
             <div
               ref={resourcePreviewViewerPanelRef}
               className={`min-h-0 min-w-0 ${previewShellClass} flex flex-col overflow-hidden ${
                 isResourceDocPreview
                   ? resourcePreviewViewerWidthPx != null
                     ? "shrink-0"
-                    : "flex-1 basis-0"
+                    : "min-w-0"
                   : "flex-1"
               }`}
               style={
@@ -5475,6 +5613,11 @@ const MainContent: React.FC<MainContentProps> = ({
                       width: resourcePreviewViewerWidthPx,
                       minWidth: RESOURCE_PREVIEW_SPLIT_MIN_VIEWER,
                     }
+                  : isResourceDocPreview
+                    ? {
+                        flex: "3 1 0%",
+                        minWidth: RESOURCE_PREVIEW_SPLIT_MIN_VIEWER,
+                      }
                   : undefined
               }
             >
@@ -5568,6 +5711,69 @@ const MainContent: React.FC<MainContentProps> = ({
                     )}
                     {!examDetailLoading && !examDetailError && examDetail && (
                       <>
+                        {isStudent ? (
+                          <section
+                            className={`rounded-xl border px-4 py-3 ${
+                              isDarkMode
+                                ? "border-[#2b2b2b] bg-[#202020]"
+                                : "border-[#dedbd5] bg-white"
+                            }`}
+                          >
+                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div className="min-w-0">
+                                <p className="text-sm font-semibold">시험 응시</p>
+                                {examSubmissionResult ? (
+                                  <p className="mt-1 text-xs opacity-75">
+                                    제출 완료
+                                    {examSubmissionResult.totalScore != null ||
+                                    examSubmissionResult.maxScore != null
+                                      ? ` · 점수 ${examSubmissionResult.totalScore ?? "-"} / ${examSubmissionResult.maxScore ?? "-"}`
+                                      : ""}
+                                  </p>
+                                ) : studentExamSubmitStats.answerableCount > 0 ? (
+                                  <p className="mt-1 text-xs opacity-75">
+                                    답변 {studentExamSubmitStats.answeredCount} /{" "}
+                                    {studentExamSubmitStats.answerableCount}
+                                  </p>
+                                ) : (
+                                  <p className="mt-1 text-xs opacity-75">
+                                    제출형 문항이 없는 시험입니다.
+                                  </p>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => void handleStudentExamSubmit()}
+                                disabled={
+                                  examSubmissionLoading ||
+                                  examSubmissionResult != null ||
+                                  !studentExamSubmitStats.allAnswered
+                                }
+                                className={`inline-flex h-9 shrink-0 items-center justify-center rounded-xl px-3 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                                  isDarkMode
+                                    ? "bg-[#ff9b6a] text-[#181818] hover:bg-[#ffad9b]"
+                                    : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                }`}
+                              >
+                                {examSubmissionLoading
+                                  ? "제출 중..."
+                                  : examSubmissionResult
+                                    ? "제출 완료"
+                                    : "답안 제출"}
+                              </button>
+                            </div>
+                            {examSubmissionError ? (
+                              <p className={`mt-2 text-xs ${isDarkMode ? "text-red-300" : "text-red-600"}`}>
+                                {examSubmissionError}
+                              </p>
+                            ) : null}
+                            {examSubmissionResult?.overallFeedback ? (
+                              <p className="mt-2 text-xs leading-5 opacity-80">
+                                {examSubmissionResult.overallFeedback}
+                              </p>
+                            ) : null}
+                          </section>
+                        ) : null}
                         {examDetail.flashCards?.length ? (
                           <section className="min-h-[calc(100vh-17.5rem)] flex flex-col">
                             <div className="flex-1 min-h-0 flex flex-col gap-3">
@@ -5624,7 +5830,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                       className={`w-full h-full min-h-80 rounded-xl border p-5 text-left transition-all ${
                                         isDarkMode
                                           ? "border-zinc-700 bg-zinc-900/70 hover:bg-zinc-800"
-                                          : "border-gray-200 bg-gray-50 hover:bg-gray-100"
+                                          : "border-gray-200 bg-white hover:bg-gray-50"
                                       }`}
                                     >
                                       <div className="flex items-center justify-between mb-3">
@@ -5754,7 +5960,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                               name={`ox-problem-inline-${idx}`}
                                               className="sr-only"
                                               checked={choice === "O"}
-                                              disabled={oxGraded}
+                                              disabled={oxGraded || examSubmissionResult != null}
                                               onChange={() =>
                                                 handleOxAnswerChange(idx, "O")
                                               }
@@ -5775,7 +5981,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                               name={`ox-problem-inline-${idx}`}
                                               className="sr-only"
                                               checked={choice === "X"}
-                                              disabled={oxGraded}
+                                              disabled={oxGraded || examSubmissionResult != null}
                                               onChange={() =>
                                                 handleOxAnswerChange(idx, "X")
                                               }
@@ -5825,31 +6031,37 @@ const MainContent: React.FC<MainContentProps> = ({
                                   {(oxExamSingleIndex ===
                                     oxExamStats.total - 1 ||
                                     oxExamStats.total <= 1) && (
-                                    <>
-                                      <button
-                                        type="button"
-                                        onClick={handleOxGrade}
-                                        disabled={
-                                          !oxExamStats.allAnswered ||
-                                          oxGraded
-                                        }
-                                        className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
-                                          isDarkMode
-                                            ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
-                                            : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
-                                        }`}
-                                      >
-                                        채점하기
-                                      </button>
-                                      {oxGraded ? (
-                                        <p
-                                          className={`text-xs font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                                    !isStudent ? (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={handleOxGrade}
+                                          disabled={
+                                            !oxExamStats.allAnswered ||
+                                            oxGraded
+                                          }
+                                          className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                                            isDarkMode
+                                              ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                              : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                          }`}
                                         >
-                                          {oxExamStats.total}문제 중{" "}
-                                          {oxExamStats.correctCount}문제 정답
-                                        </p>
-                                      ) : null}
-                                    </>
+                                          채점하기
+                                        </button>
+                                        {oxGraded ? (
+                                          <p
+                                            className={`text-xs font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                                          >
+                                            {oxExamStats.total}문제 중{" "}
+                                            {oxExamStats.correctCount}문제 정답
+                                          </p>
+                                        ) : null}
+                                      </>
+                                    ) : (
+                                      <p className="text-xs opacity-70">
+                                        답안을 모두 선택한 뒤 상단에서 제출할 수 있습니다.
+                                      </p>
+                                    )
                                   )}
                                 </div>
                                 <ExamQuestionProgressDots
@@ -5883,7 +6095,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                   return (
                                     <div
                                       key={idx}
-                                      className={`rounded-lg border p-3 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}
+                                      className={`rounded-lg border p-3 ${isDarkMode ? "border-zinc-700" : "border-gray-200 bg-white"}`}
                                     >
                                       <p className="mb-2 text-sm font-medium whitespace-pre-line">
                                         <span className="mr-1.5 inline tabular-nums font-semibold">
@@ -5906,7 +6118,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                             name={`ox-problem-inline-all-${idx}`}
                                             className="sr-only"
                                             checked={choice === "O"}
-                                            disabled={oxGraded}
+                                            disabled={oxGraded || examSubmissionResult != null}
                                             onChange={() =>
                                               handleOxAnswerChange(idx, "O")
                                             }
@@ -5927,7 +6139,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                             name={`ox-problem-inline-all-${idx}`}
                                             className="sr-only"
                                             checked={choice === "X"}
-                                            disabled={oxGraded}
+                                            disabled={oxGraded || examSubmissionResult != null}
                                             onChange={() =>
                                               handleOxAnswerChange(idx, "X")
                                             }
@@ -5975,31 +6187,39 @@ const MainContent: React.FC<MainContentProps> = ({
                               </div>
                               <div className="mt-2 flex flex-col gap-1.5">
                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                  <button
-                                    type="button"
-                                    onClick={handleOxGrade}
-                                    disabled={
-                                      !oxExamStats.allAnswered || oxGraded
-                                    }
-                                    className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
-                                      isDarkMode
-                                        ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
-                                        : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
-                                    }`}
-                                  >
-                                    채점하기
-                                  </button>
-                                  {oxGraded ? (
-                                    <p
-                                      className={`text-xs font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
-                                    >
-                                      {oxExamStats.total}문제 중{" "}
-                                      {oxExamStats.correctCount}문제 정답
-                                    </p>
+                                  {!isStudent ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={handleOxGrade}
+                                        disabled={
+                                          !oxExamStats.allAnswered || oxGraded
+                                        }
+                                        className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                                          isDarkMode
+                                            ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                            : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                        }`}
+                                      >
+                                        채점하기
+                                      </button>
+                                      {oxGraded ? (
+                                        <p
+                                          className={`text-xs font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                                        >
+                                          {oxExamStats.total}문제 중{" "}
+                                          {oxExamStats.correctCount}문제 정답
+                                        </p>
+                                      ) : (
+                                        <p className="text-xs opacity-70">
+                                          모든 문항에 O 또는 X를 선택하면 채점하기를
+                                          누를 수 있습니다.
+                                        </p>
+                                      )}
+                                    </>
                                   ) : (
                                     <p className="text-xs opacity-70">
-                                      모든 문항에 O 또는 X를 선택하면 채점하기를
-                                      누를 수 있습니다.
+                                      답안을 모두 선택한 뒤 상단에서 제출할 수 있습니다.
                                     </p>
                                   )}
                                 </div>
@@ -6091,7 +6311,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                                     name={`five-choice-inline-${idx}`}
                                                     value={opt.id}
                                                     className="sr-only"
-                                                    disabled={mcGraded}
+                                                    disabled={mcGraded || examSubmissionResult != null}
                                                     checked={selected}
                                                     onChange={() =>
                                                       handleFiveChoiceAnswerChange(
@@ -6159,35 +6379,43 @@ const MainContent: React.FC<MainContentProps> = ({
                                     1) && (
                                   <div className="flex w-full flex-col items-center gap-1.5">
                                     <div className="flex w-full max-w-md flex-col items-center gap-2 text-center">
-                                      <button
-                                        type="button"
-                                        onClick={handleFiveChoiceGrade}
-                                        disabled={
-                                          !fiveChoiceExamStats?.allAnswered ||
-                                          fiveChoiceExamStats?.graded
-                                        }
-                                        className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
-                                          isDarkMode
-                                            ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
-                                            : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
-                                        }`}
-                                      >
-                                        선택한 답안 채점하기
-                                      </button>
-                                      {fiveChoiceExamStats?.graded ? (
-                                        <p
-                                          className={`text-xs font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
-                                        >
-                                          {fiveChoiceExamStats.total}문제 중{" "}
-                                          {
-                                            fiveChoiceExamStats.correctCount
-                                          }
-                                          문제 정답
-                                        </p>
+                                      {!isStudent ? (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={handleFiveChoiceGrade}
+                                            disabled={
+                                              !fiveChoiceExamStats?.allAnswered ||
+                                              fiveChoiceExamStats?.graded
+                                            }
+                                            className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                                              isDarkMode
+                                                ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                                : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                            }`}
+                                          >
+                                            선택한 답안 채점하기
+                                          </button>
+                                          {fiveChoiceExamStats?.graded ? (
+                                            <p
+                                              className={`text-xs font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                                            >
+                                              {fiveChoiceExamStats.total}문제 중{" "}
+                                              {
+                                                fiveChoiceExamStats.correctCount
+                                              }
+                                              문제 정답
+                                            </p>
+                                          ) : (
+                                            <p className="text-xs opacity-70">
+                                              모든 문항에 답을 선택하면 채점하기를
+                                              누를 수 있습니다.
+                                            </p>
+                                          )}
+                                        </>
                                       ) : (
                                         <p className="text-xs opacity-70">
-                                          모든 문항에 답을 선택하면 채점하기를
-                                          누를 수 있습니다.
+                                          답안을 모두 선택한 뒤 상단에서 제출할 수 있습니다.
                                         </p>
                                       )}
                                     </div>
@@ -6242,7 +6470,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                 }}
                                 isDarkMode={isDarkMode}
                               />
-                              <ol className="divide-y divide-gray-200 text-xs list-decimal list-inside dark:divide-zinc-600">
+                              <ol className="space-y-3 text-xs list-decimal list-inside">
                                 {examDetail.fiveChoiceProblems.map(
                                   (_, idx) => {
                                     const q =
@@ -6262,7 +6490,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                     return (
                                       <li
                                         key={idx}
-                                        className="py-3 first:pt-0"
+                                        className={`rounded-lg border p-3 ${isDarkMode ? "border-zinc-700" : "border-gray-200 bg-white"}`}
                                       >
                                         <p className="mb-2 font-medium">
                                           {q.questionContent}
@@ -6288,7 +6516,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                                     name={`five-choice-inline-${idx}`}
                                                     value={opt.id}
                                                     className="sr-only"
-                                                    disabled={mcGraded}
+                                                    disabled={mcGraded || examSubmissionResult != null}
                                                     checked={selected}
                                                     onChange={() =>
                                                       handleFiveChoiceAnswerChange(
@@ -6353,33 +6581,41 @@ const MainContent: React.FC<MainContentProps> = ({
                               </ol>
                               <div className="mt-2 flex flex-col gap-1">
                                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                                  <button
-                                    type="button"
-                                    onClick={handleFiveChoiceGrade}
-                                    disabled={
-                                      !fiveChoiceExamStats?.allAnswered ||
-                                      fiveChoiceExamStats?.graded
-                                    }
-                                    className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
-                                      isDarkMode
-                                        ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
-                                        : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
-                                    }`}
-                                  >
-                                    선택한 답안 채점하기
-                                  </button>
-                                  {fiveChoiceExamStats?.graded ? (
-                                    <p
-                                      className={`text-xs font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
-                                    >
-                                      {fiveChoiceExamStats.total}문제 중{" "}
-                                      {fiveChoiceExamStats.correctCount}문제
-                                      정답
-                                    </p>
+                                  {!isStudent ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={handleFiveChoiceGrade}
+                                        disabled={
+                                          !fiveChoiceExamStats?.allAnswered ||
+                                          fiveChoiceExamStats?.graded
+                                        }
+                                        className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium cursor-pointer disabled:cursor-not-allowed disabled:opacity-50 ${
+                                          isDarkMode
+                                            ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                            : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                        }`}
+                                      >
+                                        선택한 답안 채점하기
+                                      </button>
+                                      {fiveChoiceExamStats?.graded ? (
+                                        <p
+                                          className={`text-xs font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                                        >
+                                          {fiveChoiceExamStats.total}문제 중{" "}
+                                          {fiveChoiceExamStats.correctCount}문제
+                                          정답
+                                        </p>
+                                      ) : (
+                                        <p className="text-xs opacity-70">
+                                          모든 문항에 답을 선택하면 채점하기를 누를
+                                          수 있습니다.
+                                        </p>
+                                      )}
+                                    </>
                                   ) : (
                                     <p className="text-xs opacity-70">
-                                      모든 문항에 답을 선택하면 채점하기를 누를
-                                      수 있습니다.
+                                      답안을 모두 선택한 뒤 상단에서 제출할 수 있습니다.
                                     </p>
                                   )}
                                 </div>
@@ -6403,7 +6639,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                 return (
                                   <li
                                     key={idx}
-                                    className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}
+                                    className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200 bg-white"}`}
                                   >
                                     <p className="font-medium mb-1">
                                       {q.questionContent}
@@ -6467,7 +6703,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                           e.target.value,
                                         )
                                       }
-                                      readOnly={saGraded}
+                                      readOnly={saGraded || examSubmissionResult != null}
                                       className={`w-full rounded border px-2 py-1 text-xs resize-y min-h-15 ${
                                         saGraded ? "opacity-90" : ""
                                       } ${
@@ -6519,39 +6755,47 @@ const MainContent: React.FC<MainContentProps> = ({
                               })}
                             </ol>
                             <div className="mt-2 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
-                              <button
-                                type="button"
-                                onClick={handleShortAnswerGrade}
-                                disabled={
-                                  !shortAnswerExamStats?.allAnswered ||
-                                  shortAnswerExamStats?.graded ||
-                                  shortAnswerGrading
-                                }
-                                className={`inline-flex items-center px-3 py-1.5 rounded text-xs font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                                  isDarkMode
-                                    ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
-                                    : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
-                                }`}
-                              >
-                                {shortAnswerGrading
-                                  ? "채점 중…"
-                                  : "작성한 단답/서술형 채점하기"}
-                              </button>
-                              {shortAnswerExamStats?.graded &&
-                              shortAnswerExamStats.totalScoreOutOf10 != null ? (
-                                <p
-                                  className={`text-xs font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
-                                >
-                                  총점{" "}
-                                  {shortAnswerExamStats.totalScoreOutOf10.toFixed(
-                                    1,
-                                  )}{" "}
-                                  / 10
-                                </p>
+                              {!isStudent ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={handleShortAnswerGrade}
+                                    disabled={
+                                      !shortAnswerExamStats?.allAnswered ||
+                                      shortAnswerExamStats?.graded ||
+                                      shortAnswerGrading
+                                    }
+                                    className={`inline-flex items-center px-3 py-1.5 rounded text-xs font-medium cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                                      isDarkMode
+                                        ? "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                        : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+                                    }`}
+                                  >
+                                    {shortAnswerGrading
+                                      ? "채점 중…"
+                                      : "작성한 단답/서술형 채점하기"}
+                                  </button>
+                                  {shortAnswerExamStats?.graded &&
+                                  shortAnswerExamStats.totalScoreOutOf10 != null ? (
+                                    <p
+                                      className={`text-xs font-semibold ${isDarkMode ? "text-emerald-300" : "text-emerald-700"}`}
+                                    >
+                                      총점{" "}
+                                      {shortAnswerExamStats.totalScoreOutOf10.toFixed(
+                                        1,
+                                      )}{" "}
+                                      / 10
+                                    </p>
+                                  ) : (
+                                    <p className="text-xs opacity-70">
+                                      모든 문항에 답안을 작성한 뒤 채점하기를 누를
+                                      수 있습니다.
+                                    </p>
+                                  )}
+                                </>
                               ) : (
                                 <p className="text-xs opacity-70">
-                                  모든 문항에 답안을 작성한 뒤 채점하기를 누를
-                                  수 있습니다.
+                                  답안을 모두 작성한 뒤 상단에서 제출할 수 있습니다.
                                 </p>
                               )}
                             </div>
@@ -6569,7 +6813,7 @@ const MainContent: React.FC<MainContentProps> = ({
                             <h3 className="text-sm font-semibold mb-2">토론형 주제 ({examDetail.debateTopics.length}개)</h3>
                             <ol className="space-y-3 text-xs list-decimal list-inside">
                               {examDetail.debateTopics.map((d, idx) => (
-                                <li key={idx} className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
+                                <li key={idx} className={`rounded-lg border p-2 ${isDarkMode ? "border-zinc-700" : "border-gray-200 bg-white"}`}>
                                   <p className="font-medium mb-1">{d.topic}</p>
                                   {d.context && <p className="text-xs opacity-80 whitespace-pre-line">맥락: {d.context}</p>}
                                   <p className="mt-1 text-xs"><span className="font-semibold">찬성 입장:</span> {d.proSideStand}</p>
@@ -6757,11 +7001,22 @@ const MainContent: React.FC<MainContentProps> = ({
             <div
               ref={resourcePreviewChatPanelRef}
               className={`min-h-0 overflow-hidden flex flex-col ${previewShellClass} ${
-                isResourceDocPreview ? "flex-1 basis-0 min-w-0" : "shrink-0"
+                isResourceDocPreview ? "min-w-0" : "shrink-0"
               }`}
+              style={
+                isResourceDocPreview
+                  ? {
+                      flex: "2 1 0%",
+                      minWidth: RESOURCE_PREVIEW_SPLIT_MIN_SIDEBAR,
+                    }
+                  : {
+                      width: rightSidebarWidth,
+                      minWidth: RESOURCE_PREVIEW_SPLIT_MIN_SIDEBAR,
+                    }
+              }
             >
             <RightSidebar
-              fillContainer={isResourceDocPreview}
+              fillContainer={usePdfLearningPanelStyle}
               width={rightSidebarWidth}
               lectureId={selectedLectureId ?? undefined}
               courseId={courseDetail.courseId}
@@ -6892,6 +7147,9 @@ const MainContent: React.FC<MainContentProps> = ({
                   const lec = courseDetail?.lectures?.find(
                     (l) => l.weekNumber === week,
                   );
+                  const lectureTitle = lec?.title?.trim();
+                  const showLectureTitle =
+                    !!lectureTitle && lectureTitle !== label;
                   const isActiveWeek =
                     selectedLecture && selectedLecture.weekNumber === week;
                   const isActiveChip =
@@ -6926,9 +7184,14 @@ const MainContent: React.FC<MainContentProps> = ({
                             lec &&
                             onSelectLecture?.(lec.lectureId)
                           }
-                          className="flex min-h-0 min-w-0 max-w-[5.5rem] flex-1 items-center truncate px-1 text-left"
+                          className="flex min-h-0 min-w-0 max-w-[12rem] flex-1 items-center gap-1.5 truncate px-1 text-left"
                         >
-                          {label}
+	                      <span className="w-11 shrink-0 text-left tabular-nums">{label}</span>
+                          {showLectureTitle ? (
+                            <span className="min-w-0 truncate opacity-75">
+                              {lectureTitle}
+                            </span>
+                          ) : null}
                         </button>
                         <div className="flex shrink-0 items-center gap-0.5">
                           <button
@@ -6940,7 +7203,7 @@ const MainContent: React.FC<MainContentProps> = ({
                             }}
                             className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-colors ${
                               isDarkMode
-                                ? "text-white bg-black/35 hover:bg-black/50"
+                                ? "text-[#ff824d] bg-black/35 hover:bg-black/50"
                                 : "text-gray-800 bg-white/85 hover:bg-white"
                             }`}
                             aria-label={`${label} 수정`}
@@ -6983,7 +7246,7 @@ const MainContent: React.FC<MainContentProps> = ({
                           }
                         }
                       }}
-                      className={`inline-flex h-9 shrink-0 items-center px-3 rounded-full text-xs font-medium whitespace-nowrap cursor-pointer transition-colors xl:text-sm ${
+                      className={`inline-flex h-9 max-w-[14rem] shrink-0 items-center gap-1.5 px-3 rounded-full text-xs font-medium whitespace-nowrap cursor-pointer transition-colors xl:text-sm ${
                         isActiveChip
                           ? isDarkMode
                             ? "bg-[#ff9b6a] text-[#181818]"
@@ -6993,7 +7256,12 @@ const MainContent: React.FC<MainContentProps> = ({
                             : "bg-[#f4f1eb] text-[#212121] hover:bg-[#ebe6dc]"
                       }`}
                     >
-                      {label}
+	                          <span className="w-12 shrink-0 text-left tabular-nums">{label}</span>
+                      {showLectureTitle ? (
+                        <span className="min-w-0 truncate opacity-75">
+                          {lectureTitle}
+                        </span>
+                      ) : null}
                     </button>
                   );
                 })}
@@ -7017,54 +7285,30 @@ const MainContent: React.FC<MainContentProps> = ({
           {/* 강의 리소스 박스 그리드 영역 — 데스크톱에서는 주차 헤더 줄이 없어서 상단 구분선만 border-t로 유지 */}
           <div className="flex flex-1 min-h-0 overflow-hidden">
             <aside
-              className={`hidden w-[var(--app-course-detail-sidebar-width)] md:flex shrink-0 flex-col gap-3 border-r p-3 min-h-0 ${
+              className={`hidden w-[var(--app-course-detail-sidebar-width)] md:flex shrink-0 flex-col gap-5 border-r px-3 pb-3 pt-5 min-h-0 ${
                 isDarkMode
                   ? "border-[#2b2b2b] bg-[#181818] text-gray-200"
                   : "border-[#dedbd5] bg-[#fbfaf7] text-[#212121]"
               }`}
-            >
-              {isTeacher ? (
-                <div className="shrink-0 flex flex-col gap-3">
-                  <section className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        window.dispatchEvent(new Event("open-upload-modal"));
-                      }}
-                      className={`flex h-10 min-w-0 items-center justify-start gap-2 rounded-lg border px-3 text-sm font-semibold transition-colors ${
-                        isDarkMode
-                          ? "border-[#3a3a3a] bg-[#202020] text-gray-100 hover:bg-[#252525]"
-                          : "border-[#dedbd5] bg-white text-[#212121] hover:bg-[#f7f5f1]"
-                      }`}
-                    >
-                      <UploadTrayIcon className="h-3.5 w-3.5 shrink-0 text-[#ff824d]" />
-                      <span className="truncate">자료 업로드</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        window.dispatchEvent(new Event("open-material-gen-modal"));
-                      }}
-                      className={`flex h-10 min-w-0 items-center justify-start gap-2 rounded-lg border px-3 text-sm font-semibold transition-colors ${
-                        isDarkMode
-                          ? "border-[#3a3a3a] bg-[#202020] text-gray-100 hover:bg-[#252525]"
-                          : "border-[#dedbd5] bg-white text-[#212121] hover:bg-[#f7f5f1]"
-                      }`}
-                    >
-                      <SparklesIcon className="h-3.5 w-3.5 shrink-0 text-[#ff824d]" />
-                      <span className="truncate">자료 생성</span>
-                    </button>
-                  </section>
-
-                  <section className="flex flex-col gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setTeacherMainPanel("materials")}
-                      className={courseSidebarButtonClass(teacherMainPanel === "materials")}
-                      aria-pressed={teacherMainPanel === "materials"}
-                    >
+	            >
+	              {isTeacher ? (
+	                <div className="shrink-0 flex flex-col gap-3">
+	                  <section className="flex flex-col gap-1.5">
+	                    <button
+	                      type="button"
+	                      onClick={() => {
+	                        setWeekBoardTab(null);
+	                        setTeacherMainPanel("materials");
+	                      }}
+	                      className={courseSidebarButtonClass(
+	                        teacherMainPanel === "materials" && weekBoardTab == null,
+	                      )}
+	                      aria-pressed={teacherMainPanel === "materials" && weekBoardTab == null}
+	                    >
                       <svg
-                        className={courseSidebarIconClass(teacherMainPanel === "materials")}
+	                        className={courseSidebarIconClass(
+	                          teacherMainPanel === "materials" && weekBoardTab == null,
+	                        )}
                         fill="none"
                         stroke="currentColor"
                         viewBox="0 0 24 24"
@@ -7079,21 +7323,48 @@ const MainContent: React.FC<MainContentProps> = ({
                       </svg>
                       <span>자료 목록</span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setTeacherMainPanel((p) =>
-                          p === "classroomReport" ? "materials" : "classroomReport",
-                        )
-                      }
-                      className={courseSidebarButtonClass(teacherMainPanel === "classroomReport")}
-                      aria-pressed={teacherMainPanel === "classroomReport"}
-                    >
-                      <ChartBarIcon
-                        className={courseSidebarIconClass(teacherMainPanel === "classroomReport")}
-                      />
-                      <span>강의실 리포트</span>
-                    </button>
+                    {reportPanelItems.length > 0 ? (
+                      <div
+                        className={`grid gap-2 ${
+                          reportPanelItems.length > 1 ? "grid-cols-2" : "grid-cols-1"
+                        }`}
+                      >
+                        {reportPanelItems.map((item) => {
+                          const active = teacherMainPanel === item.key;
+                          return (
+                            <button
+                              key={item.key}
+                              type="button"
+                              onClick={() =>
+                                setTeacherMainPanel((panel) =>
+                                  panel === item.key
+                                    ? "materials"
+                                    : (item.key as typeof teacherMainPanel),
+                                )
+                              }
+                              className={courseSidebarButtonClass(active)}
+                              aria-pressed={active}
+                            >
+                              <svg
+                                className={courseSidebarIconClass(active)}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                                aria-hidden="true"
+                              >
+                                <path
+                                  d={item.iconPath}
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                />
+                              </svg>
+                              <span className="truncate">{item.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
                     <div className="grid grid-cols-2 gap-2">
                       <button
                         type="button"
@@ -7146,76 +7417,42 @@ const MainContent: React.FC<MainContentProps> = ({
                   </section>
                 </div>
               ) : null}
-              <section
-                className="flex shrink-0 flex-col gap-1.5"
-              >
-                {boardPanelItems.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    {boardPanelItems.map((item) => {
-                      const active = teacherMainPanel === item.key;
-                      return (
-                        <button
-                          key={item.key}
-                          type="button"
-                          onClick={() =>
-                            setTeacherMainPanel(item.key as typeof teacherMainPanel)
-                          }
-                          className={courseSidebarButtonClass(active)}
-                          aria-pressed={active}
-                        >
-                          <svg
-                            className={courseSidebarIconClass(active)}
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                            aria-hidden="true"
-                          >
-                            <path
-                              d={item.iconPath}
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                            />
-                          </svg>
-                          <span className="truncate">{item.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-                {otherSecondaryPanelItems.map((item) => {
-                  const active = teacherMainPanel === item.key;
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() =>
-                        setTeacherMainPanel(item.key as typeof teacherMainPanel)
-                      }
-                      className={courseSidebarButtonClass(active)}
-                      aria-pressed={active}
-                    >
-                      <svg
-                        className={courseSidebarIconClass(active)}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
+              {otherSecondaryPanelItems.length > 0 ? (
+                <section className="flex shrink-0 flex-col gap-1.5">
+                  {otherSecondaryPanelItems.map((item) => {
+                    const active = teacherMainPanel === item.key;
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() =>
+                          setTeacherMainPanel(item.key as typeof teacherMainPanel)
+                        }
+                        className={courseSidebarButtonClass(active)}
+                        aria-pressed={active}
                       >
-                        <path
-                          d={item.iconPath}
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                        />
-                      </svg>
-                      <span>{item.label}</span>
-                    </button>
-                  );
-                })}
-              </section>
+                        <svg
+                          className={courseSidebarIconClass(active)}
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                          aria-hidden="true"
+                        >
+                          <path
+                            d={item.iconPath}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                          />
+                        </svg>
+                        <span>{item.label}</span>
+                      </button>
+                    );
+                  })}
+                </section>
+              ) : null}
               <section
-                className={`shrink-0 border-t pt-3 ${
+                className={`shrink-0 border-t pt-5 ${
                   isDarkMode ? "border-[#2b2b2b]" : "border-[#dedbd5]"
                 }`}
               >
@@ -7247,7 +7484,11 @@ const MainContent: React.FC<MainContentProps> = ({
                       {bulkEditMode ? (
                         <CheckIcon className="h-3 w-3" />
                       ) : (
-                        <EditIcon className="h-3 w-3" />
+                        <EditIcon
+                          className={`h-3 w-3 ${
+                            isDarkMode ? "text-[#ff824d]" : ""
+                          }`}
+                        />
                       )}
                       <span>{bulkEditMode ? "완료" : "편집"}</span>
                     </button>
@@ -7262,6 +7503,9 @@ const MainContent: React.FC<MainContentProps> = ({
                   const lec = courseDetail?.lectures?.find(
                     (l) => l.weekNumber === week,
                   );
+                  const lectureTitle = lec?.title?.trim();
+                  const showLectureTitle =
+                    !!lectureTitle && lectureTitle !== label;
                   const isActiveChip =
                     !bulkEditMode &&
                     selectedLecture &&
@@ -7293,9 +7537,14 @@ const MainContent: React.FC<MainContentProps> = ({
                           onClick={() =>
                             lec && onSelectLecture?.(lec.lectureId)
                           }
-                          className="flex min-h-0 min-w-0 flex-1 items-center truncate py-0 text-left"
+                          className="flex min-h-0 min-w-0 flex-1 items-center gap-2 truncate py-0 text-left"
                         >
-                          {label}
+	                      <span className="w-12 shrink-0 text-left tabular-nums">{label}</span>
+                          {showLectureTitle ? (
+                            <span className="min-w-0 truncate text-xs font-medium opacity-75">
+                              {lectureTitle}
+                            </span>
+                          ) : null}
                         </button>
                         <div className="flex shrink-0 items-center gap-0.5 pr-0.5">
                           <button
@@ -7307,7 +7556,7 @@ const MainContent: React.FC<MainContentProps> = ({
                             }}
                             className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors ${
                               isDarkMode
-                                ? "text-white bg-black/35 hover:bg-black/50"
+                                ? "text-[#ff824d] bg-black/35 hover:bg-black/50"
                                 : "text-gray-800 bg-white/80 hover:bg-white"
                             }`}
                             aria-label={`${label} 수정`}
@@ -7350,7 +7599,7 @@ const MainContent: React.FC<MainContentProps> = ({
                           }
                         }
                       }}
-                      className={`flex h-9 w-full items-center px-3 rounded-xl text-left text-sm font-semibold cursor-pointer transition-colors ${
+                      className={`flex h-9 w-full items-center gap-2 px-3 rounded-xl text-left text-sm font-semibold cursor-pointer transition-colors ${
                         isActiveChip
                           ? isDarkMode
                             ? "border border-[#ff9b6a] bg-[#ff9b6a] text-[#181818]"
@@ -7358,7 +7607,12 @@ const MainContent: React.FC<MainContentProps> = ({
                           : rowInactive
                       }`}
                     >
-                      {label}
+	                      <span className="w-12 shrink-0 text-left tabular-nums">{label}</span>
+                      {showLectureTitle ? (
+                        <span className="min-w-0 truncate text-xs font-medium opacity-75">
+                          {lectureTitle}
+                        </span>
+                      ) : null}
                     </button>
                   );
                 })}
@@ -7409,26 +7663,98 @@ const MainContent: React.FC<MainContentProps> = ({
             >
               {teacherMainPanel === "materials" ? (
                 <CourseMaterialsMetaCard
-                  title={courseDetail.title ?? "강의실"}
-                  description={courseDetail.description}
-                  createdAt={courseDetail.createdAt}
-                  invitationCode={courseDetail.invitationCode}
-                  progressMetrics={[
-                    { label: "자료", value: `${activeWeekMaterialsCount}개` },
-                    { label: "학생", value: `${courseDashboardStats.studentCount}명` },
-                    { label: "출석률", value: `${dashboardAttendanceRate}%` },
-                  ]}
-                  isDarkMode={isDarkMode}
-                  isTeacher={isTeacher}
+	                  title={courseDetail.title ?? "강의실"}
+	                  description={courseDetail.description}
+	                  invitationCode={courseDetail.invitationCode}
+		                  resourceActions={
+	                    isTeacher ? (
+	                      <>
+	                        <button
+	                          type="button"
+	                          onClick={() => {
+	                            setWeekBoardTab(null);
+	                            window.dispatchEvent(new Event("open-upload-modal"));
+	                          }}
+	                          className={weekResourceActionClass(false)}
+	                        >
+	                          <UploadTrayIcon className="h-3.5 w-3.5 shrink-0 text-[#ff824d]" />
+	                          <span className="truncate">자료 업로드</span>
+	                        </button>
+	                        <button
+	                          type="button"
+	                          onClick={() => {
+	                            setWeekBoardTab(null);
+	                            window.dispatchEvent(new Event("open-material-gen-modal"));
+	                          }}
+	                          className={weekResourceActionClass(false)}
+	                        >
+	                          <SparklesIcon className="h-3.5 w-3.5 shrink-0 text-[#ff824d]" />
+	                          <span className="truncate">자료 생성</span>
+	                        </button>
+	                        <button
+	                          type="button"
+	                          onClick={() => openWeekBoardPanel("notices")}
+	                          className={weekResourceActionClass(weekBoardTab === "notices")}
+	                        >
+	                          <svg
+	                            className={`h-3.5 w-3.5 shrink-0 ${
+	                              isDarkMode && weekBoardTab !== "notices"
+	                                ? "text-[#ff824d]"
+	                                : ""
+	                            }`}
+	                            fill="none"
+	                            stroke="currentColor"
+	                            viewBox="0 0 24 24"
+	                            aria-hidden="true"
+	                          >
+	                            <path
+	                              d="M4 7h3l9-3v16l-9-3H4V7Zm3 0v10M18 9.5a4 4 0 0 1 0 5"
+	                              strokeLinecap="round"
+	                              strokeLinejoin="round"
+	                              strokeWidth={2}
+	                            />
+	                          </svg>
+	                          <span className="truncate">공지</span>
+	                        </button>
+	                        <button
+	                          type="button"
+	                          onClick={() => openWeekBoardPanel("discussions")}
+	                          className={weekResourceActionClass(weekBoardTab === "discussions")}
+	                        >
+	                          <svg
+	                            className={`h-3.5 w-3.5 shrink-0 ${
+	                              isDarkMode && weekBoardTab !== "discussions"
+	                                ? "text-[#ff824d]"
+	                                : ""
+	                            }`}
+	                            fill="none"
+	                            stroke="currentColor"
+	                            viewBox="0 0 24 24"
+	                            aria-hidden="true"
+	                          >
+	                            <path
+	                              d="M7 8h10M7 12h6m8-1a7 7 0 0 1-7 7H9l-5 3 1.5-4.5A7 7 0 1 1 21 11Z"
+	                              strokeLinecap="round"
+	                              strokeLinejoin="round"
+	                              strokeWidth={2}
+	                            />
+	                          </svg>
+	                          <span className="truncate">토론</span>
+	                        </button>
+	                      </>
+	                    ) : null
+	                  }
+	                  isDarkMode={isDarkMode}
+	                  isTeacher={isTeacher}
                   onCopyInvitationCode={handleCopyInvitationCodeSilent}
-                  onEditCourseMeta={() => {
-                    setEditCourseMetaTitle(courseDetail.title ?? "");
-                    setEditCourseMetaDescription(courseDetail.description ?? "");
-                    setEditCourseMetaModalOpen(true);
-                  }}
-                />
-              ) : null}
-              <div className="scrollbar-hide flex min-h-0 flex-1 flex-col overflow-y-auto pb-4">
+	                  onEditCourseMeta={() => {
+	                    setEditCourseMetaTitle(courseDetail.title ?? "");
+	                    setEditCourseMetaDescription(courseDetail.description ?? "");
+	                    setEditCourseMetaModalOpen(true);
+	                  }}
+	                />
+	              ) : null}
+	              <div className="scrollbar-hide flex min-h-0 flex-1 flex-col overflow-y-auto pb-4">
               {isTeacher && teacherMainPanel === "classroomReport" ? (
                 <div className="flex min-h-full flex-col gap-4 pb-6">
                   <section
@@ -7726,8 +8052,476 @@ const MainContent: React.FC<MainContentProps> = ({
                       </details>
                     ) : null}
                   </section>
-                </div>
-              ) : isTeacher && teacherMainPanel === "studentManagement" ? (
+                  <section
+                    className={`rounded-xl border px-4 py-4 ${
+                      isDarkMode
+                        ? "border-[#1b3443] bg-[#181818] text-gray-100"
+                        : "border-[#d9d9dd] bg-white text-gray-900"
+                    }`}
+                  >
+                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <h2 className="text-xl font-semibold">학생 리포트 챗봇</h2>
+                        <p
+                          className={`mt-1 text-sm ${
+                            isDarkMode ? "text-gray-400" : "text-gray-500"
+                          }`}
+                        >
+                          학생을 선택하고 리포트 기반 후속 질문을 스트리밍 답변으로 확인합니다.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void loadStudentReportList();
+                        }}
+                        aria-label="학생 리포트 새로고침"
+                        title="학생 리포트 새로고침"
+                        className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-semibold disabled:opacity-50 ${
+                          isDarkMode
+                            ? "bg-white/[0.08] text-gray-200 hover:bg-white/[0.12]"
+                            : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+                        }`}
+                      >
+                        <RefreshIcon
+                          className={`h-4 w-4 ${
+                            studentReportListLoading ? "animate-spin" : ""
+                          }`}
+                        />
+                      </button>
+                    </div>
+
+                    {studentReportListError ? (
+                      <p
+                        className={`mb-3 text-sm ${
+                          isDarkMode ? "text-red-300" : "text-red-600"
+                        }`}
+                      >
+                        {studentReportListError}
+                      </p>
+                    ) : null}
+
+                    <div className="grid min-h-[30rem] grid-cols-1 gap-3 xl:grid-cols-[18rem_minmax(0,1fr)]">
+                      <div
+                        className={`flex min-h-0 flex-col rounded-xl border ${
+                          isDarkMode
+                            ? "border-[#2b2b2b] bg-[#202020]"
+                            : "border-[#dedbd5] bg-[#fbfaf7]"
+                        }`}
+                      >
+                        <div className="space-y-2 border-b border-inherit p-3">
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={studentReportSearchInput}
+                              onChange={(event) =>
+                                setStudentReportSearchInput(event.target.value)
+                              }
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  setStudentReportPage(0);
+                                  setStudentReportQuery(
+                                    studentReportSearchInput.trim(),
+                                  );
+                                }
+                              }}
+                              placeholder="학생 검색"
+                              className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm ${
+                                isDarkMode
+                                  ? "border-[#343434] bg-[#181818] text-white placeholder:text-gray-500"
+                                  : "border-[#dedbd5] bg-white text-[#212121] placeholder:text-gray-400"
+                              }`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStudentReportPage(0);
+                                setStudentReportQuery(studentReportSearchInput.trim());
+                              }}
+                              className="rounded-lg bg-[#ff824d] px-3 py-2 text-sm font-semibold text-white hover:bg-[#f26f37]"
+                            >
+                              검색
+                            </button>
+                          </div>
+                          <select
+                            value={studentReportStatus}
+                            onChange={(event) => {
+                              setStudentReportPage(0);
+                              setStudentReportStatus(
+                                event.target.value as StudentReportStatusFilter,
+                              );
+                            }}
+                            className={`w-full rounded-lg border px-3 py-2 text-sm ${
+                              isDarkMode
+                                ? "border-[#343434] bg-[#181818] text-white"
+                                : "border-[#dedbd5] bg-white text-[#212121]"
+                            }`}
+                          >
+                            {STUDENT_REPORT_STATUS_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-y-auto p-2">
+                          {studentReportListLoading ? (
+                            <div className="flex h-full items-center justify-center text-sm opacity-70">
+                              학생 리포트를 불러오는 중...
+                            </div>
+                          ) : studentReportList?.content?.length ? (
+                            <div className="space-y-1.5">
+                              {studentReportList.content.map((student) => {
+                                const active =
+                                  selectedStudentReportId === student.studentId;
+                                return (
+                                  <button
+                                    key={student.studentId}
+                                    type="button"
+                                    onClick={() =>
+                                      setSelectedStudentReportId(student.studentId)
+                                    }
+                                    className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                                      active
+                                        ? isDarkMode
+                                          ? "border-[#ff9b6a] bg-[#ff9b6a] text-[#181818]"
+                                          : "border-[#ff824d] bg-[#ff824d] text-white"
+                                        : isDarkMode
+                                          ? "border-[#343434] bg-[#181818] text-gray-100 hover:bg-[#252525]"
+                                          : "border-[#dedbd5] bg-white text-[#212121] hover:bg-[#f7f5f1]"
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="truncate text-sm font-semibold">
+                                        {student.name || `학생 ${student.studentId}`}
+                                      </span>
+                                      <span className="shrink-0 text-xs opacity-75">
+                                        {studentReportStatusLabel(
+                                          String(student.reportStatus),
+                                        )}
+                                      </span>
+                                    </div>
+                                    <div className="mt-1 flex items-center justify-between gap-2 text-xs opacity-75">
+                                      <span>
+                                        평균{" "}
+                                        {student.averageScorePercent != null
+                                          ? `${student.averageScorePercent}%`
+                                          : "-"}
+                                      </span>
+                                      <span>
+                                        제출 {student.submissionCount ?? 0}
+                                      </span>
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <div className="flex h-full items-center justify-center px-3 text-center text-sm opacity-70">
+                              표시할 학생 리포트가 없습니다.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid min-h-0 grid-cols-1 gap-3 2xl:grid-cols-[minmax(0,1fr)_24rem]">
+                        <div
+                          className={`min-h-0 overflow-y-auto rounded-xl border p-4 ${
+                            isDarkMode
+                              ? "border-[#2b2b2b] bg-[#202020]"
+                              : "border-[#dedbd5] bg-[#fbfaf7]"
+                          }`}
+                        >
+                          {studentReportDetailLoading ? (
+                            <div className="flex min-h-[16rem] items-center justify-center text-sm opacity-70">
+                              학생 상세 리포트를 불러오는 중...
+                            </div>
+                          ) : studentReportDetailError ? (
+                            <p
+                              className={`text-sm ${
+                                isDarkMode ? "text-red-300" : "text-red-600"
+                              }`}
+                            >
+                              {studentReportDetailError}
+                            </p>
+                          ) : studentReportDetail ? (
+                            <div className="space-y-4">
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                  <h3 className="text-lg font-semibold">
+                                    {studentReportDetail.name ||
+                                      `학생 ${studentReportDetail.studentId}`}
+                                  </h3>
+                                  <p className="mt-1 text-xs opacity-70">
+                                    studentId {studentReportDetail.studentId}
+                                    {studentReportDetail.email
+                                      ? ` · ${studentReportDetail.email}`
+                                      : ""}
+                                  </p>
+                                </div>
+                                <span
+                                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                                    isDarkMode
+                                      ? "bg-white/[0.08] text-gray-200"
+                                      : "bg-white text-[#212121] border border-[#dedbd5]"
+                                  }`}
+                                >
+                                  {studentReportStatusLabel(
+                                    String(studentReportDetail.reportStatus),
+                                  )}
+                                </span>
+                              </div>
+
+                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                <div
+                                  className={`rounded-lg border p-3 ${
+                                    isDarkMode
+                                      ? "border-[#343434] bg-[#181818]"
+                                      : "border-[#dedbd5] bg-white"
+                                  }`}
+                                >
+                                  <p className="text-xs opacity-70">평균 점수</p>
+                                  <p className="mt-1 text-lg font-semibold">
+                                    {studentReportDetail.averageScorePercent != null
+                                      ? `${studentReportDetail.averageScorePercent}%`
+                                      : "-"}
+                                  </p>
+                                </div>
+                                <div
+                                  className={`rounded-lg border p-3 ${
+                                    isDarkMode
+                                      ? "border-[#343434] bg-[#181818]"
+                                      : "border-[#dedbd5] bg-white"
+                                  }`}
+                                >
+                                  <p className="text-xs opacity-70">최근 활동</p>
+                                  <p className="mt-1 text-sm font-medium">
+                                    {studentReportDetail.latestActivityAt || "-"}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <section className="space-y-2">
+                                <h4 className="text-sm font-semibold">서술 리포트</h4>
+                                <div
+                                  className={`rounded-lg border p-3 text-sm whitespace-pre-wrap ${
+                                    isDarkMode
+                                      ? "border-[#343434] bg-[#181818] text-gray-200"
+                                      : "border-[#dedbd5] bg-white text-gray-700"
+                                  }`}
+                                >
+                                  {studentReportDetail.narrativeReport?.trim() ||
+                                    "리포트 본문이 없습니다."}
+                                </div>
+                              </section>
+
+                              <section className="space-y-2">
+                                <h4 className="text-sm font-semibold">역량</h4>
+                                {studentReportDetail.competencies.length > 0 ? (
+                                  <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
+                                    {studentReportDetail.competencies.map(
+                                      (competency, index) => (
+                                        <div
+                                          key={`${competency.competencyName}-${index}`}
+                                          className={`rounded-lg border p-3 ${
+                                            isDarkMode
+                                              ? "border-[#343434] bg-[#181818]"
+                                              : "border-[#dedbd5] bg-white"
+                                          }`}
+                                        >
+                                          <div className="flex items-center justify-between gap-2">
+                                            <p className="truncate text-sm font-medium">
+                                              {competency.competencyName}
+                                            </p>
+                                            <span className="shrink-0 text-xs opacity-70">
+                                              {competency.scorePercent != null
+                                                ? `${competency.scorePercent}%`
+                                                : competency.level || "-"}
+                                            </span>
+                                          </div>
+                                          {competency.feedback ? (
+                                            <p className="mt-2 text-xs opacity-75">
+                                              {competency.feedback}
+                                            </p>
+                                          ) : null}
+                                        </div>
+                                      ),
+                                    )}
+                                  </div>
+                                ) : (
+                                  <p className="text-sm opacity-70">
+                                    표시할 역량 데이터가 없습니다.
+                                  </p>
+                                )}
+                              </section>
+
+                              <details
+                                className={`rounded-lg border text-sm ${
+                                  isDarkMode
+                                    ? "border-[#343434] bg-[#181818]"
+                                    : "border-[#dedbd5] bg-white"
+                                }`}
+                              >
+                                <summary className="cursor-pointer px-3 py-2 font-medium">
+                                  AI 분석 컨텍스트
+                                </summary>
+                                <div className="space-y-2 px-3 pb-3 text-xs">
+                                  {studentAiContextLoading ? (
+                                    <p className="opacity-70">컨텍스트 불러오는 중...</p>
+                                  ) : studentAiContextError ? (
+                                    <p
+                                      className={
+                                        isDarkMode ? "text-red-300" : "text-red-600"
+                                      }
+                                    >
+                                      {studentAiContextError}
+                                    </p>
+                                  ) : studentAiContext ? (
+                                    <>
+                                      <p>
+                                        과제·평가{" "}
+                                        {studentAiContext.activitySummary
+                                          ?.totalAssessments ?? "-"}
+                                        개 · 제출{" "}
+                                        {studentAiContext.activitySummary
+                                          ?.submittedCount ?? "-"}
+                                        개 · 미제출{" "}
+                                        {studentAiContext.activitySummary
+                                          ?.missingCount ?? "-"}
+                                        개
+                                      </p>
+                                      <p>
+                                        추세{" "}
+                                        {studentAiContext.scoreSummary?.trend ?? "-"}
+                                      </p>
+                                    </>
+                                  ) : (
+                                    <p className="opacity-70">컨텍스트가 없습니다.</p>
+                                  )}
+                                </div>
+                              </details>
+                            </div>
+                          ) : (
+                            <div className="flex min-h-[16rem] items-center justify-center text-sm opacity-70">
+                              학생을 선택하면 상세 리포트가 표시됩니다.
+                            </div>
+                          )}
+                        </div>
+
+                        <div
+                          className={`flex min-h-[30rem] flex-col rounded-xl border ${
+                            isDarkMode
+                              ? "border-[#2b2b2b] bg-[#202020]"
+                              : "border-[#dedbd5] bg-[#fbfaf7]"
+                          }`}
+                        >
+                          <div className="border-b border-inherit px-4 py-3">
+                            <p className="text-sm font-semibold">리포트 챗봇</p>
+                            <p className="mt-1 text-xs opacity-70">
+                              선택한 학생의 리포트와 AI context를 기반으로 답변합니다.
+                            </p>
+                          </div>
+                          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+                            {reportChatMessages.length === 0 ? (
+                              <div className="flex h-full items-center justify-center px-4 text-center text-sm opacity-70">
+                                예: 이 학생의 보완점과 다음 학습 우선순위를 알려줘.
+                              </div>
+                            ) : (
+                              reportChatMessages.map((message) => (
+                                <div
+                                  key={message.id}
+                                  className={`flex ${
+                                    message.role === "user"
+                                      ? "justify-end"
+                                      : "justify-start"
+                                  }`}
+                                >
+                                  <div
+                                    className={`max-w-[84%] rounded-xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
+                                      message.role === "user"
+                                        ? "bg-[#ff824d] text-white"
+                                        : isDarkMode
+                                          ? "border border-[#343434] bg-[#181818] text-gray-100"
+                                          : "border border-[#dedbd5] bg-white text-[#212121]"
+                                    }`}
+                                  >
+                                    <p className="mb-1 text-[11px] font-semibold opacity-70">
+                                      {message.role === "user" ? "나" : "AI Tutor"}
+                                    </p>
+                                    {message.text ||
+                                      (message.role === "assistant" ? "응답 생성 중..." : "")}
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                          <form
+                            className="flex shrink-0 gap-2 border-t border-inherit p-3"
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              void submitStudentReportChatQuestion();
+                            }}
+                          >
+                            <input
+                              type="text"
+                              value={reportChatInput}
+                              onChange={(event) =>
+                                setReportChatInput(event.target.value)
+                              }
+                              disabled={
+                                reportChatSending ||
+                                selectedStudentReportId == null ||
+                                !studentReportDetail
+                              }
+                              placeholder={
+                                selectedStudentReportId == null
+                                  ? "학생을 먼저 선택하세요"
+                                  : "리포트에 대해 질문하세요"
+                              }
+                              className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm ${
+                                isDarkMode
+                                  ? "border-[#343434] bg-[#181818] text-white placeholder:text-gray-500"
+                                  : "border-[#dedbd5] bg-white text-[#212121] placeholder:text-gray-400"
+                              } disabled:opacity-50`}
+                            />
+                            {reportChatSending ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  reportChatAbortRef.current?.abort();
+                                }}
+                                className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                                  isDarkMode
+                                    ? "border-[#343434] text-gray-200 hover:bg-white/[0.06]"
+                                    : "border-[#dedbd5] text-[#212121] hover:bg-[#f7f5f1]"
+                                }`}
+                              >
+                                중지
+                              </button>
+                            ) : (
+                              <button
+                                type="submit"
+                                disabled={
+                                  !reportChatInput.trim() ||
+                                  selectedStudentReportId == null ||
+                                  !studentReportDetail
+                                }
+                                className="rounded-lg bg-[#ff824d] px-3 py-2 text-sm font-semibold text-white hover:bg-[#f26f37] disabled:opacity-50"
+                              >
+                                전송
+                              </button>
+                            )}
+                          </form>
+                        </div>
+                      </div>
+	                    </div>
+	                  </section>
+	                  <ReportCriteriaPanel
+	                    courseId={courseDetail.courseId}
+	                    isDarkMode={isDarkMode}
+	                  />
+	                </div>
+	              ) : isTeacher && teacherMainPanel === "studentManagement" ? (
                 <TeacherStudentManagementPanel
                   courseId={courseDetail.courseId}
                   isDarkMode={isDarkMode}
@@ -7740,15 +8534,26 @@ const MainContent: React.FC<MainContentProps> = ({
                   isTeacher={isTeacher}
                 />
               ) : !isTeacher && teacherMainPanel === "attendance" ? (
-                <AttendanceSessionsPanel
-                  courseId={courseDetail.courseId}
-                  lectures={courseDetail.lectures}
-                  isDarkMode={isDarkMode}
-                  isTeacher={isTeacher}
-                />
-              ) : teacherMainPanel === "notices" ? (
-                <CourseBoardsPanel
-                  key={`boards-${courseDetail.courseId}-notices`}
+	                <AttendanceSessionsPanel
+	                  courseId={courseDetail.courseId}
+	                  lectures={courseDetail.lectures}
+	                  isDarkMode={isDarkMode}
+	                  isTeacher={isTeacher}
+	                />
+	              ) : teacherMainPanel === "materials" && weekBoardTab && selectedLecture ? (
+	                <CourseBoardsPanel
+	                  key={`week-boards-${courseDetail.courseId}-${selectedLecture.lectureId}-${weekBoardTab}`}
+	                  courseId={courseDetail.courseId}
+	                  isTeacher={isTeacher}
+	                  isDarkMode={isDarkMode}
+	                  initialTab={weekBoardTab}
+	                  selectedLectureId={selectedLecture.lectureId}
+	                  selectedWeekNumber={selectedLecture.weekNumber}
+	                  scopedToLecture
+	                />
+	              ) : teacherMainPanel === "notices" ? (
+	                <CourseBoardsPanel
+	                  key={`boards-${courseDetail.courseId}-notices`}
                   courseId={courseDetail.courseId}
                   isTeacher={isTeacher}
                   isDarkMode={isDarkMode}
@@ -7762,12 +8567,7 @@ const MainContent: React.FC<MainContentProps> = ({
                   isDarkMode={isDarkMode}
                   initialTab="discussions"
                 />
-              ) : isTeacher && teacherMainPanel === "reportCriteria" ? (
-                <ReportCriteriaPanel
-                  courseId={courseDetail.courseId}
-                  isDarkMode={isDarkMode}
-                />
-              ) : assessmentsLoading ? (
+	              ) : assessmentsLoading ? (
                 <div className="flex flex-1 min-h-[12rem] items-center justify-center text-sm opacity-70">
                   목록 불러오는 중...
                 </div>
@@ -7830,7 +8630,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                 : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
                             }`}
                           >
-                            <UploadTrayIcon className="h-4 w-4" />
+                            <UploadTrayIcon className="h-4 w-4 text-[#ff824d]" />
                             자료 업로드
                           </button>
                           <button
@@ -8056,7 +8856,11 @@ const MainContent: React.FC<MainContentProps> = ({
                                       aria-label={`${item.title} 수정`}
                                       title="수정"
                                     >
-                                      <EditIcon className="h-3 w-3" />
+                                      <EditIcon
+                                        className={`h-3 w-3 ${
+                                          isDarkMode ? "text-[#ff824d]" : ""
+                                        }`}
+                                      />
                                       <span>수정</span>
                                     </button>
                                   </>
@@ -8090,7 +8894,11 @@ const MainContent: React.FC<MainContentProps> = ({
                                   {resourceActionsOpen ? (
                                     <CheckIcon className="h-3 w-3" />
                                   ) : (
-                                    <EditIcon className="h-3 w-3" />
+                                    <EditIcon
+                                      className={`h-3 w-3 ${
+                                        isDarkMode ? "text-[#ff824d]" : ""
+                                      }`}
+                                    />
                                   )}
                                   <span>{resourceActionsOpen ? "완료" : "편집"}</span>
                                 </button>
@@ -9765,7 +10573,7 @@ const MainContent: React.FC<MainContentProps> = ({
       )}
 
       {/* 시험 세션 상세 모달 */}
-      {examDetailSessionId && examDetail && (
+      {false && examDetailSessionId && examDetail && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
           role="dialog"

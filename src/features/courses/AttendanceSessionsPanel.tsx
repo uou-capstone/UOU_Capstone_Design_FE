@@ -52,14 +52,9 @@ function localTimeToInput(time: LocalTimeDto | undefined): string {
   return `${pad2(Number(time?.hour ?? 0))}:${pad2(Number(time?.minute ?? 0))}`;
 }
 
-function timeInputToLocalTime(value: string): LocalTimeDto {
+function timeInputToRequestTime(value: string): string {
   const [hour = "0", minute = "0"] = value.split(":");
-  return {
-    hour: Number(hour) || 0,
-    minute: Number(minute) || 0,
-    second: 0,
-    nano: 0,
-  };
+  return `${pad2(Number(hour) || 0)}:${pad2(Number(minute) || 0)}:00`;
 }
 
 function formatDate(value: string): string {
@@ -111,10 +106,12 @@ function formToPayload(form: SessionFormState): AttendanceSessionPayload {
   return {
     title: form.title.trim(),
     sessionDate: form.sessionDate,
-    startTime: timeInputToLocalTime(form.startTime),
-    endTime: timeInputToLocalTime(form.endTime),
+    startTime: timeInputToRequestTime(form.startTime),
+    endTime: timeInputToRequestTime(form.endTime),
     lectureId:
-      typeof parsedLectureId === "number" && Number.isFinite(parsedLectureId)
+      typeof parsedLectureId === "number" &&
+      Number.isFinite(parsedLectureId) &&
+      parsedLectureId > 0
         ? parsedLectureId
         : null,
   };
@@ -425,7 +422,7 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
   return (
     <div className="flex min-h-full flex-col gap-4 pb-6">
       <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
-        <div className="mb-4 flex min-h-10 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="mb-4 flex min-h-10 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="text-xl font-semibold">출석 회차 관리</h2>
           </div>

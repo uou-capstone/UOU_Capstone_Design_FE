@@ -22,6 +22,10 @@ interface CourseBoardsPanelProps {
   isTeacher: boolean;
   isDarkMode: boolean;
   initialTab?: BoardTab;
+  selectedLectureId?: number | null;
+  selectedWeekNumber?: number | null;
+  scopedToLecture?: boolean;
+  onClose?: () => void;
 }
 
 type BoardForm = {
@@ -32,6 +36,21 @@ type BoardForm = {
   discussionCategory: DiscussionCategory;
   pinned: boolean;
   allowComments: boolean;
+  scheduledDate: string;
+  scheduledTime: string;
+  immediateSend: boolean;
+};
+
+type ScheduledBoardJob = {
+  id: string;
+  tab: BoardTab;
+  title: string;
+  scheduledAt: string;
+};
+
+type BoardWeekScope = {
+  lectureId: number;
+  weekNumber: number | null;
 };
 
 const NOTICE_CATEGORY_LABEL: Record<NoticeCategory, string> = {
@@ -47,7 +66,21 @@ const DISCUSSION_CATEGORY_LABEL: Record<DiscussionCategory, string> = {
   RESOURCE: "자료",
 };
 
+function dateInputValue(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function timeInputValue(date: Date): string {
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${hour}:${minute}`;
+}
+
 function emptyForm(): BoardForm {
+  const now = new Date();
   return {
     title: "",
     contentMarkdown: "",
@@ -56,7 +89,45 @@ function emptyForm(): BoardForm {
     discussionCategory: "FREE",
     pinned: false,
     allowComments: true,
+    scheduledDate: dateInputValue(now),
+    scheduledTime: timeInputValue(now),
+    immediateSend: true,
   };
+}
+
+const BOARD_WEEK_SCOPE_PATTERN =
+  /<!--\s*ai-tutor-week-resource:({[\s\S]*?})\s*-->\s*/;
+
+function buildBoardWeekScopeMarker(scope: BoardWeekScope): string {
+  return `<!-- ai-tutor-week-resource:${JSON.stringify(scope)} -->\n`;
+}
+
+function extractBoardWeekScope(value: string | undefined): BoardWeekScope | null {
+  if (!value) return null;
+  const match = value.match(BOARD_WEEK_SCOPE_PATTERN);
+  if (!match?.[1]) return null;
+  try {
+    const parsed = JSON.parse(match[1]) as Partial<BoardWeekScope>;
+    if (typeof parsed.lectureId !== "number") return null;
+    return {
+      lectureId: parsed.lectureId,
+      weekNumber:
+        typeof parsed.weekNumber === "number" || parsed.weekNumber === null
+          ? parsed.weekNumber
+          : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function stripBoardWeekScopeMarker(value: string): string {
+  return value.replace(BOARD_WEEK_SCOPE_PATTERN, "");
+}
+
+function withBoardWeekScopeMarker(value: string, scope: BoardWeekScope | null): string {
+  const content = stripBoardWeekScopeMarker(value).trim();
+  return scope ? `${buildBoardWeekScopeMarker(scope)}${content}` : content;
 }
 
 function formatInstant(value: string | undefined): string {
@@ -66,11 +137,54 @@ function formatInstant(value: string | undefined): string {
   return new Date(time).toLocaleString("ko-KR");
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function looksLikeHtml(value: string): boolean {
+  return /<\/?[a-z][\s\S]*>/i.test(value);
+}
+
+function plainTextToEditorHtml(value: string): string {
+  return escapeHtml(value).replace(/\n/g, "<br>");
+}
+
+function editorHtmlFromStored(value: string): string {
+  return looksLikeHtml(value) ? value : plainTextToEditorHtml(value);
+}
+
+function sanitizeRichContent(value: string): string {
+  return value
+    .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
+    .replace(/<\/?(iframe|object|embed|link|meta)[^>]*>/gi, "")
+    .replace(/\son\w+=(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+    .replace(/\s(href|src)=(["'])\s*javascript:[\s\S]*?\2/gi, "");
+}
+
+function isRichContentEmpty(value: string): boolean {
+  const text = value
+    .replace(/<br\s*\/?>/gi, "")
+    .replace(/<\/?(p|div|h[1-6]|ul|ol|li|strong|b|em|i|u|span)[^>]*>/gi, "")
+    .replace(/&nbsp;/gi, "")
+    .trim();
+  return text.length === 0;
+}
+
 export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
   courseId,
   isTeacher,
   isDarkMode,
   initialTab = "notices",
+  selectedLectureId = null,
+  selectedWeekNumber = null,
+  scopedToLecture = false,
+  onClose,
 }) => {
   const { user } = useAuth();
   const [tab, setTab] = React.useState<BoardTab>(initialTab);
@@ -91,10 +205,26 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
   const [editingCommentId, setEditingCommentId] = React.useState<number | null>(null);
   const [assistantTopic, setAssistantTopic] = React.useState("");
   const [assistantLoading, setAssistantLoading] = React.useState(false);
+  const [scheduledJobs, setScheduledJobs] = React.useState<ScheduledBoardJob[]>([]);
+  const scheduledTimersRef = React.useRef<Map<string, number>>(new Map());
+  const contentEditorRef = React.useRef<HTMLDivElement | null>(null);
+  const editorHtmlRef = React.useRef("");
 
   const canCreate = tab === "notices" ? isTeacher : true;
   const selectedId =
     tab === "notices" ? selectedNotice?.noticeId : selectedDiscussion?.discussionId;
+  const scopedWeekTarget = React.useMemo<BoardWeekScope | null>(() => {
+    if (!scopedToLecture || selectedLectureId == null) return null;
+    return { lectureId: selectedLectureId, weekNumber: selectedWeekNumber };
+  }, [scopedToLecture, selectedLectureId, selectedWeekNumber]);
+  const scopedWeekLabel =
+    scopedWeekTarget == null
+      ? null
+      : scopedWeekTarget.weekNumber === 0
+        ? "OT"
+        : scopedWeekTarget.weekNumber != null
+          ? `${scopedWeekTarget.weekNumber}주차`
+          : "선택 주차";
 
   React.useEffect(() => {
     setTab(initialTab);
@@ -106,20 +236,46 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
     try {
       if (tab === "notices") {
         const res = await noticeApi.listNotices(courseId, {
-          page,
-          size: 12,
+          page: scopedWeekTarget ? 0 : page,
+          size: scopedWeekTarget ? 100 : 12,
           sort: "pinned,desc",
         });
-        setNotices(res.content ?? []);
-        setTotalPages(Math.max(res.totalPages ?? 1, 1));
+        let content = res.content ?? [];
+        if (scopedWeekTarget) {
+          const details = await Promise.all(
+            content.map((item) =>
+              noticeApi.getNotice(courseId, item.noticeId).catch(() => null),
+            ),
+          );
+          content = content.filter((_, index) => {
+            const scope = extractBoardWeekScope(details[index]?.contentMarkdown);
+            return scope?.lectureId === scopedWeekTarget.lectureId;
+          });
+        }
+        setNotices(content);
+        setTotalPages(scopedWeekTarget ? 1 : Math.max(res.totalPages ?? 1, 1));
       } else {
         const res = await discussionApi.listDiscussions(courseId, {
-          page,
-          size: 12,
+          page: scopedWeekTarget ? 0 : page,
+          size: scopedWeekTarget ? 100 : 12,
           sort: "pinned,desc",
         });
-        setDiscussions(res.content ?? []);
-        setTotalPages(Math.max(res.totalPages ?? 1, 1));
+        let content = res.content ?? [];
+        if (scopedWeekTarget) {
+          const details = await Promise.all(
+            content.map((item) =>
+              discussionApi
+                .getDiscussion(courseId, item.discussionId)
+                .catch(() => null),
+            ),
+          );
+          content = content.filter((_, index) => {
+            const scope = extractBoardWeekScope(details[index]?.contentMarkdown);
+            return scope?.lectureId === scopedWeekTarget.lectureId;
+          });
+        }
+        setDiscussions(content);
+        setTotalPages(scopedWeekTarget ? 1 : Math.max(res.totalPages ?? 1, 1));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "목록을 불러오지 못했습니다.");
@@ -129,7 +285,7 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [courseId, page, tab]);
+  }, [courseId, page, scopedWeekTarget, tab]);
 
   const loadComments = React.useCallback(
     async (id: number) => {
@@ -164,18 +320,25 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
   React.useEffect(() => {
     setPage(0);
     setForm(emptyForm());
+    editorHtmlRef.current = "";
+    if (contentEditorRef.current) {
+      contentEditorRef.current.innerHTML = "";
+    }
     setEditingId(null);
     setSelectedNotice(null);
     setSelectedDiscussion(null);
     setComments([]);
-  }, [courseId, tab]);
+  }, [courseId, scopedToLecture, selectedLectureId, tab]);
 
   const selectNotice = React.useCallback(
     async (noticeId: number) => {
       setError(null);
       try {
         const detail = await noticeApi.getNotice(courseId, noticeId);
-        setSelectedNotice(detail);
+        setSelectedNotice({
+          ...detail,
+          contentMarkdown: stripBoardWeekScopeMarker(detail.contentMarkdown),
+        });
         setSelectedDiscussion(null);
         await loadComments(noticeId);
       } catch (err) {
@@ -190,7 +353,10 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
       setError(null);
       try {
         const detail = await discussionApi.getDiscussion(courseId, discussionId);
-        setSelectedDiscussion(detail);
+        setSelectedDiscussion({
+          ...detail,
+          contentMarkdown: stripBoardWeekScopeMarker(detail.contentMarkdown),
+        });
         setSelectedNotice(null);
         await loadComments(discussionId);
       } catch (err) {
@@ -202,8 +368,136 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
 
   const resetForm = () => {
     setForm(emptyForm());
+    editorHtmlRef.current = "";
+    if (contentEditorRef.current) {
+      contentEditorRef.current.innerHTML = "";
+    }
     setEditingId(null);
   };
+
+  React.useEffect(() => {
+    const editor = contentEditorRef.current;
+    if (!editor) return;
+    if (document.activeElement === editor) return;
+    const nextHtml = editorHtmlFromStored(form.contentMarkdown);
+    if (editor.innerHTML !== nextHtml) {
+      editor.innerHTML = nextHtml;
+    }
+    editorHtmlRef.current = nextHtml;
+  }, [form.contentMarkdown, editingId, tab]);
+
+  const readEditorHtml = React.useCallback(() => {
+    const html = contentEditorRef.current?.innerHTML ?? editorHtmlRef.current;
+    editorHtmlRef.current = html;
+    return html;
+  }, []);
+
+  React.useEffect(() => {
+    return () => {
+      for (const timerId of scheduledTimersRef.current.values()) {
+        window.clearTimeout(timerId);
+      }
+      scheduledTimersRef.current.clear();
+    };
+  }, []);
+
+  const publishPost = React.useCallback(
+	    async (
+      targetTab: BoardTab,
+      snapshot: BoardForm,
+      targetEditingId: number | null,
+    ) => {
+      const contentMarkdown = withBoardWeekScopeMarker(
+        snapshot.contentMarkdown,
+        scopedWeekTarget,
+      );
+      if (targetTab === "notices") {
+        const payload = {
+          title: snapshot.title.trim(),
+          contentMarkdown,
+          category: snapshot.noticeCategory,
+          priority: snapshot.priority,
+          pinned: snapshot.pinned,
+        };
+        const saved =
+          targetEditingId == null
+            ? await noticeApi.createNotice(courseId, payload)
+            : await noticeApi.updateNotice(courseId, targetEditingId, payload);
+        setSelectedNotice({
+          ...saved,
+          contentMarkdown: stripBoardWeekScopeMarker(saved.contentMarkdown),
+        });
+        setSelectedDiscussion(null);
+        await loadComments(saved.noticeId);
+      } else {
+        const payload = {
+          title: snapshot.title.trim(),
+          contentMarkdown,
+          category: snapshot.discussionCategory,
+          pinned: snapshot.pinned,
+          allowComments: snapshot.allowComments,
+        };
+        const saved =
+          targetEditingId == null
+            ? await discussionApi.createDiscussion(courseId, payload)
+            : await discussionApi.updateDiscussion(courseId, targetEditingId, payload);
+        setSelectedDiscussion({
+          ...saved,
+          contentMarkdown: stripBoardWeekScopeMarker(saved.contentMarkdown),
+        });
+        setSelectedNotice(null);
+        await loadComments(saved.discussionId);
+      }
+    },
+    [courseId, loadComments, scopedWeekTarget],
+  );
+
+  const cancelScheduledJob = React.useCallback((jobId: string) => {
+    const timerId = scheduledTimersRef.current.get(jobId);
+    if (timerId != null) {
+      window.clearTimeout(timerId);
+      scheduledTimersRef.current.delete(jobId);
+    }
+    setScheduledJobs((prev) => prev.filter((job) => job.id !== jobId));
+  }, []);
+
+  const applyEditorCommand = React.useCallback(
+    (
+      kind:
+        | "bold"
+        | "italic"
+        | "underline"
+        | "bullet"
+        | "heading"
+        | "paragraph"
+        | "undo",
+    ) => {
+      const editor = contentEditorRef.current;
+      if (!editor) return;
+      editor.focus();
+      try {
+        if (kind === "bold") {
+          document.execCommand("bold");
+        } else if (kind === "italic") {
+          document.execCommand("italic");
+        } else if (kind === "underline") {
+          document.execCommand("underline");
+        } else if (kind === "bullet") {
+          document.execCommand("insertUnorderedList");
+        } else if (kind === "heading") {
+          document.execCommand("formatBlock", false, "h3");
+        } else if (kind === "paragraph") {
+          document.execCommand("formatBlock", false, "p");
+        } else if (kind === "undo") {
+          document.execCommand("undo");
+        }
+        editorHtmlRef.current = editor.innerHTML;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "편집 명령을 적용하지 못했습니다.");
+      }
+    },
+    [],
+  );
 
   const beginEdit = () => {
     if (tab === "notices" && selectedNotice) {
@@ -232,43 +526,66 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
 
   const submitPost = React.useCallback(async () => {
     if (!canCreate && editingId == null) return;
-    if (!form.title.trim() || !form.contentMarkdown.trim()) {
+    const contentMarkdown = readEditorHtml();
+    const snapshot = {
+      ...form,
+      contentMarkdown,
+    };
+    if (!snapshot.title.trim() || isRichContentEmpty(snapshot.contentMarkdown)) {
       window.alert("제목과 내용을 입력해주세요.");
+      return;
+    }
+
+    if (!snapshot.immediateSend && editingId == null) {
+      const scheduledAt = new Date(
+        `${snapshot.scheduledDate}T${snapshot.scheduledTime || "00:00"}`,
+      );
+      const delay = scheduledAt.getTime() - Date.now();
+      if (!snapshot.scheduledDate || Number.isNaN(scheduledAt.getTime()) || delay <= 0) {
+        window.alert("현재보다 이후의 예약 발송 시간을 선택해주세요.");
+        return;
+      }
+      const targetTab = tab;
+      const jobId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `scheduled-${Date.now()}`;
+      const timerId = window.setTimeout(() => {
+        void (async () => {
+          try {
+            await publishPost(targetTab, snapshot, null);
+            await loadList();
+          } catch (err) {
+            setError(
+              err instanceof Error
+                ? `예약 발송 실패: ${err.message}`
+                : "예약 발송에 실패했습니다.",
+            );
+          } finally {
+            scheduledTimersRef.current.delete(jobId);
+            setScheduledJobs((prev) => prev.filter((job) => job.id !== jobId));
+          }
+        })();
+      }, delay);
+      scheduledTimersRef.current.set(jobId, timerId);
+      setScheduledJobs((prev) => [
+        ...prev,
+        {
+          id: jobId,
+          tab: targetTab,
+          title: snapshot.title.trim(),
+          scheduledAt: scheduledAt.toISOString(),
+        },
+      ]);
+      resetForm();
+      window.alert("예약 발송이 등록되었습니다. 이 브라우저 세션이 유지되는 동안 예약 시각에 발송됩니다.");
       return;
     }
 
     setSaving(true);
     setError(null);
     try {
-      if (tab === "notices") {
-        const payload = {
-          title: form.title.trim(),
-          contentMarkdown: form.contentMarkdown.trim(),
-          category: form.noticeCategory,
-          priority: form.priority,
-          pinned: form.pinned,
-        };
-        const saved =
-          editingId == null
-            ? await noticeApi.createNotice(courseId, payload)
-            : await noticeApi.updateNotice(courseId, editingId, payload);
-        setSelectedNotice(saved);
-        await loadComments(saved.noticeId);
-      } else {
-        const payload = {
-          title: form.title.trim(),
-          contentMarkdown: form.contentMarkdown.trim(),
-          category: form.discussionCategory,
-          pinned: form.pinned,
-          allowComments: form.allowComments,
-        };
-        const saved =
-          editingId == null
-            ? await discussionApi.createDiscussion(courseId, payload)
-            : await discussionApi.updateDiscussion(courseId, editingId, payload);
-        setSelectedDiscussion(saved);
-        await loadComments(saved.discussionId);
-      }
+      await publishPost(tab, snapshot, editingId);
       resetForm();
       await loadList();
     } catch (err) {
@@ -276,7 +593,7 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
     } finally {
       setSaving(false);
     }
-  }, [canCreate, courseId, editingId, form, loadComments, loadList, tab]);
+  }, [canCreate, editingId, form, loadList, publishPost, readEditorHtml, tab]);
 
   const deleteSelected = React.useCallback(async () => {
     if (selectedId == null) return;
@@ -407,35 +724,63 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
       ? "border-[#1b3443] bg-[#102a35] text-gray-100 placeholder:text-gray-500 focus:border-[#ffad9b] focus:ring-[#ffad9b]/20"
       : "border-[#d9d9dd] bg-white text-gray-900 placeholder:text-gray-400 focus:border-[#1863dc] focus:ring-[#1863dc]/20"
   }`;
+  const toggleOptionClass = `flex h-4 items-center gap-1.5 text-xs font-semibold leading-none ${
+    isDarkMode ? "text-gray-100" : "text-gray-900"
+  }`;
+  const toolbarButtonClass = `inline-flex h-8 min-w-8 items-center justify-center border-r px-2 text-xs font-semibold transition-colors ${
+    isDarkMode
+      ? "border-[#343434] text-gray-100 hover:bg-[#252525]"
+      : "border-[#dedbd5] text-[#212121] hover:bg-[#f7f5f1]"
+  }`;
+  const editorSurfaceClass = isDarkMode
+    ? "border-[#343434] bg-[#202020] text-gray-100"
+    : "border-[#dedbd5] bg-white text-[#212121]";
 
   return (
     <div className="flex min-h-full flex-col gap-4 pb-6">
       <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
-        <div className="flex min-h-10 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="mb-4 flex min-h-10 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h2 className="text-xl font-semibold">
+              {scopedWeekLabel ? `${scopedWeekLabel} ` : ""}
               {tab === "notices" ? "공지사항" : "토론게시판"}
             </h2>
+            {scopedWeekLabel ? (
+              <p className={`mt-1 text-sm ${mutedClass}`}>
+                선택한 주차에 연결되는 글로 저장됩니다.
+              </p>
+            ) : null}
           </div>
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className={`inline-flex h-9 items-center justify-center rounded-lg border px-3 text-sm font-semibold ${
+                isDarkMode
+                  ? "border-[#343434] text-gray-100 hover:bg-white/[0.06]"
+                  : "border-[#dedbd5] text-[#212121] hover:bg-[#f7f5f1]"
+              }`}
+            >
+              자료 목록으로
+            </button>
+          ) : null}
         </div>
 
         {canCreate || editingId != null ? (
           <form
-            className="mt-4 grid gap-3"
+            className="grid gap-3"
             onSubmit={(event) => {
               event.preventDefault();
               void submitPost();
             }}
           >
-            <div className="grid gap-3 lg:grid-cols-[1fr_auto_auto_auto]">
-              <input
-                className={inputClass}
-                value={form.title}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, title: event.target.value }))
-                }
-                placeholder={tab === "notices" ? "공지 제목" : "토론 제목"}
-              />
+            <div
+              className={`grid gap-3 ${
+                tab === "notices"
+                  ? "lg:grid-cols-[9rem_minmax(0,1fr)_8.5rem]"
+                  : "lg:grid-cols-[9rem_minmax(0,1fr)_8.5rem]"
+              }`}
+            >
               {tab === "notices" ? (
                 <>
                   <select
@@ -454,70 +799,107 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                       </option>
                     ))}
                   </select>
+                  <input
+                    className={inputClass}
+                    value={form.title}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, title: event.target.value }))
+                    }
+                    placeholder="공지 제목"
+                  />
+                  <div className="flex h-10 flex-col justify-center gap-1">
+                    <label className={toggleOptionClass}>
+                      <input
+                        type="radio"
+                        checked={form.pinned}
+                        onClick={() =>
+                          setForm((prev) => ({ ...prev, pinned: !prev.pinned }))
+                        }
+                        onChange={() => undefined}
+                      />
+                      상단 고정
+                    </label>
+                    <label className={toggleOptionClass}>
+                      <input
+                        type="radio"
+                        checked={form.priority === "IMPORTANT"}
+                        onClick={() =>
+                          setForm((prev) => ({
+                            ...prev,
+                            priority:
+                              prev.priority === "IMPORTANT" ? "NORMAL" : "IMPORTANT",
+                          }))
+                        }
+                        onChange={() => undefined}
+                      />
+                      중요
+                    </label>
+                  </div>
+                </>
+              ) : (
+                <>
                   <select
                     className={inputClass}
-                    value={form.priority}
+                    value={form.discussionCategory}
                     onChange={(event) =>
                       setForm((prev) => ({
                         ...prev,
-                        priority: event.target.value as NoticePriority,
+                        discussionCategory: event.target.value as DiscussionCategory,
                       }))
                     }
                   >
-                    <option value="NORMAL">일반</option>
-                    <option value="IMPORTANT">중요</option>
+                    {Object.entries(DISCUSSION_CATEGORY_LABEL).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
                   </select>
+                  <input
+                    className={inputClass}
+                    value={form.title}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, title: event.target.value }))
+                    }
+                    placeholder="토론 제목"
+                  />
+                  <div className="flex h-10 flex-col justify-center gap-1">
+                    <label className={toggleOptionClass}>
+                      <input
+                        type="radio"
+                        checked={form.pinned}
+                        onClick={() =>
+                          setForm((prev) => ({ ...prev, pinned: !prev.pinned }))
+                        }
+                        onChange={() => undefined}
+                      />
+                      상단 고정
+                    </label>
+                    <label className={toggleOptionClass}>
+                      <input
+                        type="radio"
+                        checked={form.allowComments}
+                        onClick={() =>
+                          setForm((prev) => ({
+                            ...prev,
+                            allowComments: !prev.allowComments,
+                          }))
+                        }
+                        onChange={() => undefined}
+                      />
+                      댓글 허용
+                    </label>
+                  </div>
                 </>
-              ) : (
-                <select
-                  className={inputClass}
-                  value={form.discussionCategory}
-                  onChange={(event) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      discussionCategory: event.target.value as DiscussionCategory,
-                    }))
-                  }
-                >
-                  {Object.entries(DISCUSSION_CATEGORY_LABEL).map(([value, label]) => (
-                    <option key={value} value={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
               )}
-              <label className="flex h-10 items-center gap-2 text-xs font-semibold">
-                <input
-                  type="checkbox"
-                  checked={form.pinned}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, pinned: event.target.checked }))
-                  }
-                />
-                상단 고정
-              </label>
             </div>
             {tab === "discussions" ? (
-              <div className="grid gap-2 lg:grid-cols-[1fr_auto_auto]">
+              <div className="grid gap-2 lg:grid-cols-[1fr_auto]">
                 <input
                   className={inputClass}
                   value={assistantTopic}
                   onChange={(event) => setAssistantTopic(event.target.value)}
                   placeholder="AI 초안 주제"
                 />
-                <label className="flex h-10 items-center gap-2 text-xs font-semibold">
-                  <input
-                    type="checkbox"
-                    checked={form.allowComments}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        allowComments: event.target.checked,
-                      }))
-                    }
-                  />
-                  댓글 허용
-                </label>
                 <button
                   type="button"
                   onClick={() => void runDiscussionAssistant()}
@@ -530,14 +912,143 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                 </button>
               </div>
             ) : null}
-            <textarea
-              className={`${inputClass} min-h-32 resize-y`}
-              value={form.contentMarkdown}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, contentMarkdown: event.target.value }))
-              }
-              placeholder="마크다운 내용을 입력하세요"
-            />
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_8.5rem]">
+              <label className="flex min-w-0 flex-col gap-1.5">
+                <span className={`text-xs font-semibold ${mutedClass}`}>예약 발송</span>
+                <input
+                  type="date"
+                  className={inputClass}
+                  value={form.scheduledDate}
+                  disabled={form.immediateSend}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      scheduledDate: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="flex min-w-0 flex-col gap-1.5">
+                <span className={`text-xs font-semibold ${mutedClass}`}>시간</span>
+                <input
+                  type="time"
+                  className={inputClass}
+                  value={form.scheduledTime}
+                  disabled={form.immediateSend}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      scheduledTime: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label className="flex h-10 items-end gap-2 text-xs font-semibold leading-none">
+                <input
+                  type="radio"
+                  checked={form.immediateSend}
+                  onClick={() =>
+                    setForm((prev) => ({
+                      ...prev,
+                      immediateSend: !prev.immediateSend,
+                    }))
+                  }
+                  onChange={() => undefined}
+                />
+                즉시 발송
+              </label>
+            </div>
+            {scheduledJobs.length > 0 ? (
+              <div
+                className={`rounded-lg border px-3 py-2 text-xs ${
+                  isDarkMode
+                    ? "border-[#1b3443] bg-white/[0.03] text-gray-200"
+                    : "border-[#d9d9dd] bg-[#f7f5f1] text-gray-700"
+                }`}
+              >
+                <p className="font-semibold">예약 대기</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {scheduledJobs.map((job) => (
+                    <span
+                      key={job.id}
+                      className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 ${
+                        isDarkMode ? "bg-white/[0.06]" : "bg-white"
+                      }`}
+                    >
+                      {job.tab === "notices" ? "공지" : "토론"} · {job.title} ·{" "}
+                      {formatInstant(job.scheduledAt)}
+                      <button
+                        type="button"
+                        onClick={() => cancelScheduledJob(job.id)}
+                        className="font-semibold text-[#ff824d]"
+                      >
+                        취소
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <div className={`overflow-hidden rounded-lg border ${editorSurfaceClass}`}>
+              <div
+                className={`flex h-10 items-center border-b ${
+                  isDarkMode
+                    ? "border-[#343434] bg-[#181818]"
+                    : "border-[#dedbd5] bg-white"
+                }`}
+              >
+                {[
+                  ["paragraph", "본문"],
+                  ["bold", "B"],
+                  ["italic", "/"],
+                  ["underline", "U"],
+                  ["bullet", "•"],
+                  ["heading", "#"],
+                  ["undo", "↶"],
+                ].map(([kind, label]) => (
+                  <button
+                    key={kind}
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() =>
+                      applyEditorCommand(
+                        kind as
+                          | "bold"
+                          | "italic"
+                          | "underline"
+                          | "bullet"
+                          | "heading"
+                          | "paragraph"
+                          | "undo",
+                      )
+                    }
+                    className={toolbarButtonClass}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div
+                ref={contentEditorRef}
+                contentEditable
+                suppressContentEditableWarning
+                data-placeholder="내용을 입력하세요."
+                className={`min-h-56 w-full overflow-y-auto px-3 py-3 text-sm leading-7 outline-none empty:before:pointer-events-none empty:before:text-gray-400 empty:before:content-[attr(data-placeholder)] [&_h3]:mb-2 [&_h3]:text-lg [&_h3]:font-semibold [&_li]:ml-5 [&_li]:list-disc ${
+                  isDarkMode
+                    ? "bg-[#202020] text-gray-100"
+                    : "bg-white text-[#212121]"
+                }`}
+                onInput={(event) => {
+                  editorHtmlRef.current = event.currentTarget.innerHTML;
+                }}
+                onBlur={(event) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    contentMarkdown: event.currentTarget.innerHTML,
+                  }))
+                }
+              />
+            </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="submit"
@@ -574,10 +1085,17 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
         </div>
       ) : null}
 
-      <div className="grid min-h-0 gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+      <div className="grid min-h-0 gap-4 xl:grid-cols-[0.37fr_1.63fr]">
         <section className={`rounded-xl border ${surfaceClass}`}>
           <div className="flex items-center justify-between border-b border-inherit px-4 py-3">
-            <h3 className="text-base font-semibold">목록</h3>
+            <div>
+              <h3 className="text-base font-semibold">목록</h3>
+              {scopedWeekLabel ? (
+                <p className={`mt-0.5 text-xs ${mutedClass}`}>
+                  {scopedWeekLabel}에 연결된 글만 표시합니다.
+                </p>
+              ) : null}
+            </div>
             <button
               type="button"
               onClick={() => void loadList()}
@@ -597,7 +1115,9 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
             </div>
           ) : activeList.length === 0 ? (
             <div className={`px-5 py-16 text-center text-sm ${mutedClass}`}>
-              등록된 글이 없습니다.
+              {scopedWeekLabel
+                ? `${scopedWeekLabel}에 등록된 글이 없습니다.`
+                : "등록된 글이 없습니다."}
             </div>
           ) : (
             <ul className="divide-y divide-inherit">
@@ -712,11 +1232,25 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                 </div>
               </div>
               <div className="border-b border-inherit px-5 py-5">
-                <div className="whitespace-pre-wrap text-sm leading-7">
-                  {tab === "notices"
-                    ? selectedNotice?.contentMarkdown
-                    : selectedDiscussion?.contentMarkdown}
-                </div>
+                {(() => {
+                  const content = stripBoardWeekScopeMarker(
+                    tab === "notices"
+                      ? selectedNotice?.contentMarkdown ?? ""
+                      : selectedDiscussion?.contentMarkdown ?? "",
+                  );
+                  return looksLikeHtml(content) ? (
+                    <div
+                      className="text-sm leading-7 [&_h3]:mb-2 [&_h3]:text-lg [&_h3]:font-semibold [&_li]:ml-5 [&_li]:list-disc"
+                      dangerouslySetInnerHTML={{
+                        __html: sanitizeRichContent(content),
+                      }}
+                    />
+                  ) : (
+                    <div className="whitespace-pre-wrap text-sm leading-7">
+                      {content}
+                    </div>
+                  );
+                })()}
               </div>
               <div className="px-5 py-5">
                 <h4 className="text-sm font-semibold">댓글</h4>

@@ -12,8 +12,60 @@ type MenuItem = "lectures" | "settings" | "report" | "updates";
 type CourseLecture = NonNullable<NonNullable<CourseDetail["lectures"]>[number]>;
 
 const getLastLectureStorageKey = (courseId: number) => `course_${courseId}_last_lecture`;
+const LECTURE_DISPLAY_OVERRIDES_STORAGE_KEY = "lecture_display_overrides_v1";
 const MAX_COURSE_TITLE_LEN = 100;
 const MAX_COURSE_DESCRIPTION_LEN = 500;
+
+type LectureDisplayOverride = {
+  title?: string;
+  description?: string;
+};
+
+function getLectureOverrideKey(courseId: number, lectureId: number): string {
+  return `${courseId}:${lectureId}`;
+}
+
+function readLectureDisplayOverrides(): Record<string, LectureDisplayOverride> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(LECTURE_DISPLAY_OVERRIDES_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveLectureDisplayOverride(
+  courseId: number,
+  lectureId: number,
+  override: LectureDisplayOverride,
+) {
+  if (typeof window === "undefined") return;
+  try {
+    const overrides = readLectureDisplayOverrides();
+    overrides[getLectureOverrideKey(courseId, lectureId)] = override;
+    window.localStorage.setItem(
+      LECTURE_DISPLAY_OVERRIDES_STORAGE_KEY,
+      JSON.stringify(overrides),
+    );
+  } catch {
+    // ignore local storage errors
+  }
+}
+
+function applyLectureDisplayOverrides(detail: CourseDetail): CourseDetail {
+  if (!detail.lectures?.length) return detail;
+  const overrides = readLectureDisplayOverrides();
+  return {
+    ...detail,
+    lectures: detail.lectures.map((lecture) => {
+      const override = overrides[getLectureOverrideKey(detail.courseId, lecture.lectureId)];
+      return override ? { ...lecture, ...override } : lecture;
+    }),
+  };
+}
 
 const AppLayout: React.FC = () => {
   const { isDarkMode } = useTheme();
@@ -72,7 +124,7 @@ const AppLayout: React.FC = () => {
       try {
         const detail = await getCourseDetail(courseId);
         if (detail) {
-          setCourseDetail(detail);
+          setCourseDetail(applyLectureDisplayOverrides(detail));
         } else {
           setCourseDetail(null);
           setCourseDetailError("강의실 정보를 불러오지 못했습니다.");
@@ -336,19 +388,9 @@ const AppLayout: React.FC = () => {
     async (lecture: CourseLecture) => {
       if (!selectedCourseId) return;
 
-      const initialTitle = lecture.title ?? "";
-      const titleInput = window.prompt("새 강의 제목을 입력해주세요.", initialTitle);
-      if (titleInput === null) {
-        return;
-      }
-      const trimmedTitle = titleInput.trim();
-      if (!trimmedTitle) {
-        window.alert("강의 제목은 비워둘 수 없습니다.");
-        return;
-      }
-
+      const isOtLecture = lecture.weekNumber === 0;
       const weekInput = window.prompt(
-        "새 주차 번호를 입력해주세요. (0 이상의 숫자)",
+        "새 주차 번호를 입력해주세요. (OT는 0, 일반 주차는 1 이상)",
         lecture.weekNumber.toString()
       );
       if (weekInput === null) {
@@ -359,17 +401,19 @@ const AppLayout: React.FC = () => {
         window.alert("주차 번호는 0 이상의 숫자여야 합니다.");
         return;
       }
-
-      const descriptionInput = window.prompt(
-        "새 강의 설명을 입력해주세요.",
-        lecture.description ?? ""
-      );
-      if (descriptionInput === null) {
+      if (!isOtLecture && parsedWeek === 0) {
+        window.alert("일반 주차를 OT로 변경할 수 없습니다.");
         return;
       }
-      const trimmedDescription = descriptionInput.trim();
-      if (!trimmedDescription) {
-        window.alert("강의 설명은 비워둘 수 없습니다.");
+
+      const initialTitle = lecture.title ?? "";
+      const titleInput = window.prompt("새 주차 제목을 입력해주세요.", initialTitle);
+      if (titleInput === null) {
+        return;
+      }
+      const trimmedTitle = titleInput.trim();
+      if (!trimmedTitle) {
+        window.alert("주차 제목은 비워둘 수 없습니다.");
         return;
       }
 
@@ -383,12 +427,37 @@ const AppLayout: React.FC = () => {
         }
       }
 
+      if (isOtLecture) {
+        if (parsedWeek !== 0) {
+          window.alert("OT는 0으로만 유지할 수 있습니다.");
+          return;
+        }
+        const nextDescription = lecture.description?.trim() || "오리엔테이션";
+        saveLectureDisplayOverride(selectedCourseId, lecture.lectureId, {
+          title: trimmedTitle,
+          description: nextDescription,
+        });
+        setCourseDetail((prev) => {
+          if (!prev?.lectures) return prev;
+          return {
+            ...prev,
+            lectures: prev.lectures.map((item) =>
+              item.lectureId === lecture.lectureId
+                ? { ...item, title: trimmedTitle, description: nextDescription }
+                : item,
+            ),
+          };
+        });
+        window.alert("OT 정보가 수정되었습니다.");
+        return;
+      }
+
       try {
         const { lectureApi } = await import("../../services/api");
         await lectureApi.updateLecture(lecture.lectureId, {
           title: trimmedTitle,
           weekNumber: parsedWeek,
-          description: trimmedDescription,
+          description: lecture.description?.trim() || "설명 없음",
         });
         await loadCourseDetail(selectedCourseId);
         window.alert("강의 정보가 수정되었습니다.");
@@ -410,14 +479,14 @@ const AppLayout: React.FC = () => {
         return;
       }
 
-      const trimmedTitle = titleInput.trim();
-      if (!trimmedTitle) {
+      const rawTitle = titleInput;
+      if (!rawTitle.trim()) {
         window.alert("강의실 제목은 비워둘 수 없습니다.");
         return;
       }
-      if (trimmedTitle.length > MAX_COURSE_TITLE_LEN) {
+      if (rawTitle.length > MAX_COURSE_TITLE_LEN) {
         window.alert(
-          `강의실 제목은 ${MAX_COURSE_TITLE_LEN}자 이내로 입력해주세요. (현재 ${trimmedTitle.length}자)`,
+          `강의실 제목은 ${MAX_COURSE_TITLE_LEN}자 이내로 입력해주세요. (현재 ${rawTitle.length}자)`,
         );
         return;
       }
@@ -431,16 +500,16 @@ const AppLayout: React.FC = () => {
         return;
       }
 
-      const trimmedDescription = descriptionInput.trim();
-      if (trimmedDescription.length > MAX_COURSE_DESCRIPTION_LEN) {
+      const rawDescription = descriptionInput;
+      if (rawDescription.length > MAX_COURSE_DESCRIPTION_LEN) {
         window.alert(
-          `강의실 설명은 ${MAX_COURSE_DESCRIPTION_LEN}자 이내로 입력해주세요. (현재 ${trimmedDescription.length}자)`,
+          `강의실 설명은 ${MAX_COURSE_DESCRIPTION_LEN}자 이내로 입력해주세요. (현재 ${rawDescription.length}자)`,
         );
         return;
       }
       const result = await updateCourse(course.courseId, {
-        title: trimmedTitle,
-        description: trimmedDescription,
+        title: rawTitle,
+        description: rawDescription,
       });
 
       if (!result.success) {

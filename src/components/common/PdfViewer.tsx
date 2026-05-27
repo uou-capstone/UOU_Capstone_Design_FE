@@ -70,7 +70,8 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollProgrammaticRef = useRef(false);
   const observerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastFileUrlRef = useRef<string>("");
+  const userAdjustedZoomRef = useRef(false);
+  const autoFitFrameRef = useRef<number | null>(null);
   const viewerBackground = isDarkMode ? "#313130" : "#F5F1EC";
   const viewerSurface = isDarkMode ? "#313130" : "#FFFFFF";
   const viewerElevatedSurface = isDarkMode ? "#3A3A38" : "#FFFFFF";
@@ -114,6 +115,12 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
     return () => ro.disconnect();
   }, [numPages]);
 
+  useEffect(() => {
+    userAdjustedZoomRef.current = false;
+    setZoom(1);
+    setPageAspectRatio(297 / 210);
+  }, [fileUrl]);
+
   const onDocumentLoadSuccess = useCallback(
     ({ numPages: n }: { numPages: number }) => {
       setNumPages(n);
@@ -125,39 +132,61 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
     [onPageChange, onDocumentLoad]
   );
 
-  // PDF 로드 시 세로가 길어 잘리는 경우 배율 자동 조정 (세로 기준 fit) + 한 페이지만 보이도록
+  const handleFirstPageLoadSuccess = useCallback((page: {
+    getViewport: (params: { scale: number }) => { width: number; height: number };
+  }) => {
+    const viewport = page.getViewport({ scale: 1 });
+    if (viewport.width > 0 && viewport.height > 0) {
+      setPageAspectRatio(viewport.height / viewport.width);
+    }
+  }, []);
+
+  // PDF 로드/패널 리사이즈 시 첫 화면은 뷰어 영역에 맞게 자동 fit.
+  // 사용자가 줌을 직접 조작한 뒤에는 자동 보정으로 덮어쓰지 않는다.
   useEffect(() => {
     if (!numPages || !fileUrl) return;
     const root = scrollRef.current;
     if (!root) return;
-    if (lastFileUrlRef.current === fileUrl) return;
-    lastFileUrlRef.current = fileUrl;
+    if (userAdjustedZoomRef.current) return;
 
-    const fitZoomToView = async () => {
-      // blob: URL은 pdf.js 내부 네트워크 레이어에서 재요청될 때 브라우저/환경에 따라 실패할 수 있어,
-      // 자동 fit 계산에서는 getDocument(fileUrl) 호출을 피합니다.
+    if (autoFitFrameRef.current != null) {
+      window.cancelAnimationFrame(autoFitFrameRef.current);
+    }
+    autoFitFrameRef.current = window.requestAnimationFrame(() => {
+      autoFitFrameRef.current = null;
       const scrollEl = scrollRef.current;
-      const containerH = (scrollEl?.clientHeight ?? 600) - 24;
-      const containerW = (scrollEl?.clientWidth ?? 800) - 16;
+      if (!scrollEl) return;
+      const containerH = Math.max(1, (scrollEl.clientHeight || scrollAreaHeight || 600) - 40);
+      const containerW = Math.max(1, (scrollEl.clientWidth || scrollAreaWidth || 800) - 48);
       const aspect = pageAspectRatio || 1.414; // A4 비율 fallback
-      const pageW = baseWidth || 700;
-      const pageH = pageW * aspect;
-
-      const maxWidthFromHeight = (containerH * pageW) / pageH;
-      const fitPageWidth = Math.min(containerW, maxWidthFromHeight);
-      const fitZoom = fitPageWidth / (baseWidth || 700);
-      const maxByViewport = Math.min(
-        containerW / (baseWidth || 700),
-        containerH / ((baseWidth || 700) * aspect),
+      const renderWidth = pageWidth || baseWidth || 700;
+      const renderHeight = renderWidth * aspect;
+      const fitZoom = Math.min(
+        containerW / renderWidth,
+        containerH / renderHeight,
       );
       const newZoom = Math.max(
         MIN_ZOOM,
-        Math.min(ABSOLUTE_MAX_ZOOM, fitZoom * 1.15, maxByViewport),
+        Math.min(ABSOLUTE_MAX_ZOOM, fitZoom),
       );
-      setZoom(newZoom);
+      setZoom((prev) => (Math.abs(prev - newZoom) < 0.01 ? prev : newZoom));
+    });
+
+    return () => {
+      if (autoFitFrameRef.current != null) {
+        window.cancelAnimationFrame(autoFitFrameRef.current);
+        autoFitFrameRef.current = null;
+      }
     };
-    fitZoomToView();
-  }, [numPages, fileUrl, baseWidth, pageAspectRatio]);
+  }, [
+    numPages,
+    fileUrl,
+    baseWidth,
+    pageWidth,
+    pageAspectRatio,
+    scrollAreaWidth,
+    scrollAreaHeight,
+  ]);
 
   const scrollToPage = useCallback(
     (page: number, source: PdfViewerPageChangeSource = "programmatic") => {
@@ -205,9 +234,11 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
         scrollToPage(currentPage + 1, "user");
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
+        userAdjustedZoomRef.current = true;
         setZoom((z) => Math.min(z + ZOOM_STEP, ABSOLUTE_MAX_ZOOM));
       } else if (e.key === "ArrowDown") {
         e.preventDefault();
+        userAdjustedZoomRef.current = true;
         setZoom((z) => Math.max(z - ZOOM_STEP, MIN_ZOOM));
       }
     };
@@ -237,8 +268,10 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
           const pending = zoomThrottleRef.current.pending;
           zoomThrottleRef.current.pending = null;
           if (pending === "in") {
+            userAdjustedZoomRef.current = true;
             setZoom((z) => Math.min(z + ZOOM_STEP, ABSOLUTE_MAX_ZOOM));
           } else if (pending === "out") {
+            userAdjustedZoomRef.current = true;
             setZoom((z) => Math.max(z - ZOOM_STEP, MIN_ZOOM));
           }
         };
@@ -320,10 +353,12 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
   };
 
   const handleZoomIn = () => {
+    userAdjustedZoomRef.current = true;
     setZoom((z) => Math.min(z + ZOOM_STEP, ABSOLUTE_MAX_ZOOM));
   };
 
   const handleZoomOut = () => {
+    userAdjustedZoomRef.current = true;
     setZoom((z) => Math.max(z - ZOOM_STEP, MIN_ZOOM));
   };
 
@@ -336,6 +371,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
   const applyZoomInput = () => {
     const n = parseInt(zoomInputValue.replace(/%/g, ""), 10);
     if (Number.isFinite(n) && n >= MIN_ZOOM * 100 && n <= ABSOLUTE_MAX_ZOOM * 100) {
+      userAdjustedZoomRef.current = true;
       setZoom(Math.min(n / 100, ABSOLUTE_MAX_ZOOM));
     }
     setZoomInputOpen(false);
@@ -643,6 +679,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
                         width={pageWidth}
                         renderTextLayer
                         renderAnnotationLayer
+                        onLoadSuccess={pageNum === 1 ? handleFirstPageLoadSuccess : undefined}
                         className="shadow-[0_18px_45px_rgba(15,23,42,0.16)]"
                       />
                     </div>

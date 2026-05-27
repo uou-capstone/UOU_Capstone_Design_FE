@@ -345,20 +345,26 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const pdfLearningPanel = fillContainer && viewMode === "course-detail";
   const sidebarBackground = pdfLearningPanel
     ? isDarkMode
-      ? "#313130"
-      : "#FFFFFF"
+      ? "#181818"
+      : "#fbfaf7"
     : isDarkMode
       ? "#313130"
       : "#FFFFFF";
   const sidebarTextColor = isDarkMode ? "#FFFFFF" : "#000000";
   const sidebarBorderColor = pdfLearningPanel
     ? isDarkMode
-      ? "rgba(255, 255, 255, 0.16)"
-      : "#D3CEC6"
+      ? "#2b2b2b"
+      : "#dedbd5"
     : isDarkMode
       ? "rgba(255, 255, 255, 0.16)"
       : "#D3CEC6";
-  const panelSurface = isDarkMode ? "#313130" : "#FFFFFF";
+  const panelSurface = pdfLearningPanel
+    ? isDarkMode
+      ? "#181818"
+      : "#fbfaf7"
+    : isDarkMode
+      ? "#313130"
+      : "#FFFFFF";
   const controlSurface = isDarkMode ? "#3A3A38" : "#FFFFFF";
   const controlBorder = isDarkMode ? "rgba(255, 255, 255, 0.16)" : "#D3CEC6";
   const examControlStyle: React.CSSProperties = {
@@ -1334,7 +1340,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         fillContainer ? "w-full min-w-0" : "flex-shrink-0"
       }`}
       style={{
-        width: fillContainer ? "100%" : `${width / 16}rem`,
+        width: fillContainer ? "100%" : `${width}px`,
         minWidth: fillContainer ? 0 : undefined,
         backgroundColor: sidebarBackground,
         color: sidebarTextColor,
@@ -1368,7 +1374,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         <nav
           className={
             pdfLearningPanel
-              ? "shrink-0 border-b px-4 py-2"
+              ? "shrink-0 h-12 min-h-12 max-h-12 flex items-center border-b px-4 box-border"
               : "pl-3 shrink-0 h-10 min-h-10 max-h-10 flex items-center border-b box-border"
           }
           style={{ borderColor: sidebarBorderColor }}
@@ -1376,7 +1382,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           <ul
             className={
               pdfLearningPanel
-                ? "flex w-full items-center gap-2"
+                ? "flex h-full w-full items-center gap-2"
                 : "w-full flex items-center gap-4 min-h-0"
             }
           >

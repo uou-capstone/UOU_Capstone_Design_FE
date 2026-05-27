@@ -405,19 +405,62 @@ function normalizeStudentReportDetail(
             competencyId:
               typeof obj.competencyId === "number" ? obj.competencyId : undefined,
             competencyName,
-            scorePercent: n(obj.scorePercent ?? obj.score_percent ?? obj.score),
+            scorePercent: n(
+              obj.scorePercent ??
+                obj.score_percent ??
+                obj.averageScorePercent ??
+                obj.average_score_percent ??
+                obj.score,
+            ),
             level:
               typeof obj.level === "string" && obj.level.trim() !== ""
                 ? obj.level
+                : typeof obj.status === "string" && obj.status.trim() !== ""
+                  ? obj.status
                 : undefined,
             feedback:
               typeof obj.feedback === "string" && obj.feedback.trim() !== ""
                 ? obj.feedback
+                : typeof obj.latestFeedback === "string" && obj.latestFeedback.trim() !== ""
+                  ? obj.latestFeedback
+                  : typeof obj.latest_feedback === "string" && obj.latest_feedback.trim() !== ""
+                    ? obj.latest_feedback
                 : undefined,
           };
         })
         .filter((x): x is StudentReportCompetency => x != null)
     : [];
+  const narrativeRaw = raw.narrativeReport ?? raw.narrative_report;
+  let narrativeReport: string | undefined;
+  if (typeof narrativeRaw === "string" && narrativeRaw.trim() !== "") {
+    narrativeReport = narrativeRaw;
+  } else if (
+    narrativeRaw != null &&
+    typeof narrativeRaw === "object" &&
+    !Array.isArray(narrativeRaw)
+  ) {
+    const narrativeObj = narrativeRaw as Record<string, unknown>;
+    const lines: string[] = [];
+    const pushSection = (title: string, value: unknown) => {
+      if (typeof value === "string" && value.trim() !== "") {
+        lines.push(`${title}\n${value.trim()}`);
+        return;
+      }
+      if (Array.isArray(value)) {
+        const items = value
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter(Boolean);
+        if (items.length > 0) {
+          lines.push(`${title}\n${items.map((item) => `- ${item}`).join("\n")}`);
+        }
+      }
+    };
+    pushSection("요약", narrativeObj.summary);
+    pushSection("강점", narrativeObj.strengths);
+    pushSection("보완점", narrativeObj.improvements ?? narrativeObj.weaknesses);
+    pushSection("다음 단계", narrativeObj.nextSteps ?? narrativeObj.next_steps);
+    narrativeReport = lines.length > 0 ? lines.join("\n\n") : undefined;
+  }
 
   return {
     studentId: Number(raw.studentId ?? raw.student_id ?? studentObj?.studentId ?? 0),
@@ -426,13 +469,7 @@ function normalizeStudentReportDetail(
     email: typeof email === "string" && email.trim() !== "" ? email : undefined,
     reportStatus,
     averageScorePercent: n(avg),
-    narrativeReport:
-      typeof raw.narrativeReport === "string" && raw.narrativeReport.trim() !== ""
-        ? raw.narrativeReport
-        : typeof raw.narrative_report === "string" &&
-            String(raw.narrative_report).trim() !== ""
-          ? String(raw.narrative_report)
-          : undefined,
+    narrativeReport,
     competencies,
     latestActivityAt:
       typeof latestActivityAt === "string" && latestActivityAt.trim() !== ""
@@ -628,8 +665,8 @@ export interface AttendanceSession {
 export interface AttendanceSessionPayload {
   title: string;
   sessionDate: string;
-  startTime: LocalTimeDto;
-  endTime: LocalTimeDto;
+  startTime: string;
+  endTime: string;
   lectureId?: number | null;
 }
 
@@ -822,6 +859,87 @@ function pickFirstNonEmptyString(
   return "";
 }
 
+function pickFirstNonBlankStringPreserveWhitespace(
+  raw: Record<string, unknown>,
+  keys: string[],
+): string {
+  for (const key of keys) {
+    const value = raw[key];
+    if (value == null) continue;
+    const text = String(value);
+    if (text.trim() !== "") return text;
+  }
+  return "";
+}
+
+function normalizeLecture(raw: Record<string, unknown>): Lecture {
+  const status = String(raw.aiGeneratedStatus ?? raw.ai_generated_status ?? "PENDING");
+  const normalizedStatus =
+    status === "PROCESSING" || status === "COMPLETED" || status === "FAILED"
+      ? status
+      : "PENDING";
+
+  return {
+    lectureId: Number(raw.lectureId ?? raw.lecture_id ?? raw.id ?? 0),
+    title: String(raw.title ?? raw.lectureTitle ?? raw.lecture_title ?? ""),
+    weekNumber: Number(raw.weekNumber ?? raw.week_number ?? 0),
+    description:
+      pickFirstNonBlankStringPreserveWhitespace(raw, [
+        "description",
+        "lectureDescription",
+        "lecture_description",
+      ]) || undefined,
+    aiGeneratedStatus: normalizedStatus,
+    contents: Array.isArray(raw.contents) ? (raw.contents as LectureContent[]) : undefined,
+  };
+}
+
+function normalizeCourseResponse(raw: Record<string, unknown>): CourseDetail {
+  const lecturesRaw = Array.isArray(raw.lectures)
+    ? raw.lectures
+    : Array.isArray(raw.lectureList)
+      ? raw.lectureList
+      : Array.isArray(raw.lecture_list)
+        ? raw.lecture_list
+        : [];
+
+  return {
+    courseId: Number(raw.courseId ?? raw.course_id ?? raw.id ?? 0),
+    title: String(raw.title ?? raw.courseTitle ?? raw.course_title ?? ""),
+    teacherName: String(raw.teacherName ?? raw.teacher_name ?? ""),
+    description:
+      pickFirstNonBlankStringPreserveWhitespace(raw, [
+        "description",
+        "courseDescription",
+        "course_description",
+      ]) || undefined,
+    createdAt:
+      pickFirstNonEmptyString(raw, [
+        "createdAt",
+        "created_at",
+        "createdDate",
+        "created_date",
+        "createdTime",
+        "created_time",
+        "openedAt",
+        "opened_at",
+      ]) || undefined,
+    updatedAt:
+      pickFirstNonEmptyString(raw, [
+        "updatedAt",
+        "updated_at",
+        "updatedDate",
+        "updated_date",
+        "updatedTime",
+        "updated_time",
+      ]) || undefined,
+    invitationCode:
+      pickFirstNonEmptyString(raw, ["invitationCode", "invitation_code", "inviteCode", "invite_code"]) ||
+      undefined,
+    lectures: lecturesRaw.map((item) => normalizeLecture(item as Record<string, unknown>)),
+  };
+}
+
 function normalizeCourseJoinRequestListItem(
   raw: Record<string, unknown>,
 ): CourseJoinRequestListItem {
@@ -902,6 +1020,18 @@ function normalizeLocalTime(raw: unknown): LocalTimeDto {
   return { hour: 0, minute: 0, second: 0, nano: 0 };
 }
 
+function localTimeRequestValue(raw: string | LocalTimeDto): string {
+  if (typeof raw === "string") {
+    const [hour = "0", minute = "0", second = "0"] = raw.split(":");
+    return `${String(Number(hour) || 0).padStart(2, "0")}:${String(
+      Number(minute) || 0,
+    ).padStart(2, "0")}:${String(Number(second) || 0).padStart(2, "0")}`;
+  }
+  return `${String(Number(raw.hour) || 0).padStart(2, "0")}:${String(
+    Number(raw.minute) || 0,
+  ).padStart(2, "0")}:${String(Number(raw.second) || 0).padStart(2, "0")}`;
+}
+
 function normalizeAttendanceSession(
   raw: Record<string, unknown>,
 ): AttendanceSession {
@@ -947,19 +1077,14 @@ function attendanceSessionPayloadToRequest(
   return {
     title: payload.title,
     sessionDate: payload.sessionDate,
-    startTime: {
-      hour: payload.startTime.hour,
-      minute: payload.startTime.minute,
-      second: payload.startTime.second ?? 0,
-      nano: payload.startTime.nano ?? 0,
-    },
-    endTime: {
-      hour: payload.endTime.hour,
-      minute: payload.endTime.minute,
-      second: payload.endTime.second ?? 0,
-      nano: payload.endTime.nano ?? 0,
-    },
-    lectureId: payload.lectureId ?? null,
+    startTime: localTimeRequestValue(payload.startTime),
+    endTime: localTimeRequestValue(payload.endTime),
+    lectureId:
+      typeof payload.lectureId === "number" &&
+      Number.isFinite(payload.lectureId) &&
+      payload.lectureId > 0
+        ? payload.lectureId
+        : null,
   };
 }
 
@@ -2174,10 +2299,11 @@ export const courseApi = {
     title: string;
     description: string;
   }): Promise<CourseDetail> => {
-    return apiRequest<CourseDetail>('/api/courses', {
+    const res = await apiRequest<Record<string, unknown>>('/api/courses', {
       method: 'POST',
       body: JSON.stringify(courseData),
     });
+    return normalizeCourseResponse(res);
   },
 
   // 강의실 전체 조회
@@ -2189,7 +2315,7 @@ export const courseApi = {
     const qs = searchParams.toString();
     const res = await apiRequest<unknown>(`/api/courses${qs ? `?${qs}` : ''}`);
     if (Array.isArray(res)) {
-      const content = res as Course[];
+      const content = res.map((item) => normalizeCourseResponse(item as Record<string, unknown>));
       return {
         content,
         page: 0,
@@ -2200,12 +2326,17 @@ export const courseApi = {
         last: true,
       };
     }
-    return res as PageResponse<Course>;
+    const pageRes = res as PageResponse<Record<string, unknown>>;
+    const content = Array.isArray(pageRes.content)
+      ? pageRes.content.map((item) => normalizeCourseResponse(item as Record<string, unknown>))
+      : [];
+    return { ...(pageRes as unknown as PageResponse<Course>), content };
   },
 
   // 강의실 상세 조회
   getCourseDetail: async (courseId: number): Promise<CourseDetail> => {
-    return apiRequest<CourseDetail>(`/api/courses/${courseId}`);
+    const res = await apiRequest<Record<string, unknown>>(`/api/courses/${courseId}`);
+    return normalizeCourseResponse(res);
   },
 
   // 강의실 수정 (선생님)
@@ -2213,10 +2344,11 @@ export const courseApi = {
     title: string;
     description: string;
   }): Promise<CourseDetail> => {
-    return apiRequest<CourseDetail>(`/api/courses/${courseId}`, {
+    const res = await apiRequest<Record<string, unknown>>(`/api/courses/${courseId}`, {
       method: 'PUT',
       body: JSON.stringify(courseData),
     });
+    return normalizeCourseResponse(res);
   },
 
   // 강의실 삭제 (선생님)
@@ -5745,6 +5877,7 @@ export interface ExamProfileGenerationResponse {
 
 // 시험 세션 상세 조회 응답 (/api/exams/generation/{examSessionId})
 export interface ExamFlashCard {
+  id?: number;
   categoryTag: string;
   frontContent: string;
   backContent: string;
@@ -5752,6 +5885,7 @@ export interface ExamFlashCard {
 }
 
 export interface ExamOxProblem {
+  id?: number;
   questionContent: string;
   correctAnswer: string;
   explanation: string;
@@ -5766,6 +5900,7 @@ export interface ExamFiveChoiceOption {
 }
 
 export interface ExamFiveChoiceProblem {
+  id?: number;
   questionContent: string;
   options: ExamFiveChoiceOption[];
   correctAnswer: string;
@@ -5773,6 +5908,7 @@ export interface ExamFiveChoiceProblem {
 }
 
 export interface ExamShortAnswerProblem {
+  id?: number;
   questionContent: string;
   relatedKeywords: string[];
   bestAnswer: string;
@@ -5782,6 +5918,7 @@ export interface ExamShortAnswerProblem {
 }
 
 export interface ExamDebateTopic {
+  id?: number;
   topic: string;
   context: string;
   proSideStand: string;
@@ -5812,6 +5949,8 @@ export interface ExamUsedProfile {
 
 export interface ExamSessionDetailResponse {
   examSessionId: number;
+  materialId?: number;
+  displayName?: string;
   examType: string;
   flashCards: ExamFlashCard[];
   oxProblems: ExamOxProblem[];
@@ -5830,12 +5969,89 @@ function normalizeExamSessionDetail(raw: Record<string, unknown>): ExamSessionDe
   };
   return {
     examSessionId: Number(raw.examSessionId ?? raw.exam_session_id ?? 0),
+    materialId:
+      raw.materialId == null && raw.material_id == null
+        ? undefined
+        : Number(raw.materialId ?? raw.material_id),
+    displayName:
+      typeof raw.displayName === "string"
+        ? raw.displayName
+        : typeof raw.display_name === "string"
+          ? raw.display_name
+          : undefined,
     examType: String(raw.examType ?? raw.exam_type ?? ''),
-    flashCards: arr('flashCards', 'flash_cards') as ExamFlashCard[],
-    oxProblems: arr('oxProblems', 'ox_problems') as ExamOxProblem[],
-    fiveChoiceProblems: arr('fiveChoiceProblems', 'five_choice_problems') as ExamFiveChoiceProblem[],
-    shortAnswerProblems: arr('shortAnswerProblems', 'short_answer_problems') as ExamShortAnswerProblem[],
-    debateTopics: arr('debateTopics', 'debate_topics') as ExamDebateTopic[],
+    flashCards: (arr('flashCards', 'flash_cards') as Record<string, unknown>[]).map((item) => ({
+      id:
+        item.id == null && item.questionId == null && item.question_id == null
+          ? undefined
+          : Number(item.id ?? item.questionId ?? item.question_id),
+      categoryTag: String(item.categoryTag ?? item.category_tag ?? ""),
+      frontContent: String(item.frontContent ?? item.front_content ?? ""),
+      backContent: String(item.backContent ?? item.back_content ?? ""),
+      complexityLevel: String(item.complexityLevel ?? item.complexity_level ?? ""),
+    })),
+    oxProblems: (arr('oxProblems', 'ox_problems') as Record<string, unknown>[]).map((item) => ({
+      id:
+        item.id == null && item.questionId == null && item.question_id == null
+          ? undefined
+          : Number(item.id ?? item.questionId ?? item.question_id),
+      questionContent: String(item.questionContent ?? item.question_content ?? ""),
+      correctAnswer: String(item.correctAnswer ?? item.correct_answer ?? ""),
+      explanation: String(item.explanation ?? ""),
+      intentType: String(item.intentType ?? item.intent_type ?? ""),
+    })),
+    fiveChoiceProblems: (arr('fiveChoiceProblems', 'five_choice_problems') as Record<string, unknown>[]).map((item) => ({
+      id:
+        item.id == null && item.questionId == null && item.question_id == null
+          ? undefined
+          : Number(item.id ?? item.questionId ?? item.question_id),
+      questionContent: String(item.questionContent ?? item.question_content ?? ""),
+      options: Array.isArray(item.options)
+        ? (item.options as Record<string, unknown>[]).map((option, index) => ({
+            id: String(option.id ?? option.key ?? index + 1),
+            content: String(option.content ?? option.text ?? ""),
+            intent: String(option.intent ?? ""),
+            isCorrect: Boolean(option.isCorrect ?? option.is_correct ?? false),
+          }))
+        : [],
+      correctAnswer: String(item.correctAnswer ?? item.correct_answer ?? ""),
+      intentDiagnosis: String(item.intentDiagnosis ?? item.intent_diagnosis ?? ""),
+    })),
+    shortAnswerProblems: (arr('shortAnswerProblems', 'short_answer_problems') as Record<string, unknown>[]).map((item) => ({
+      id:
+        item.id == null && item.questionId == null && item.question_id == null
+          ? undefined
+          : Number(item.id ?? item.questionId ?? item.question_id),
+      questionContent: String(item.questionContent ?? item.question_content ?? ""),
+      relatedKeywords: Array.isArray(item.relatedKeywords)
+        ? (item.relatedKeywords as unknown[]).map(String)
+        : Array.isArray(item.related_keywords)
+          ? (item.related_keywords as unknown[]).map(String)
+          : [],
+      bestAnswer: String(item.bestAnswer ?? item.best_answer ?? ""),
+      evaluationCriteria: String(item.evaluationCriteria ?? item.evaluation_criteria ?? ""),
+      intentDiagnosis:
+        typeof item.intentDiagnosis === "string"
+          ? item.intentDiagnosis
+          : typeof item.intent_diagnosis === "string"
+            ? item.intent_diagnosis
+            : undefined,
+    })),
+    debateTopics: (arr('debateTopics', 'debate_topics') as Record<string, unknown>[]).map((item) => ({
+      id:
+        item.id == null && item.questionId == null && item.question_id == null
+          ? undefined
+          : Number(item.id ?? item.questionId ?? item.question_id),
+      topic: String(item.topic ?? ""),
+      context: String(item.context ?? ""),
+      proSideStand: String(item.proSideStand ?? item.pro_side_stand ?? ""),
+      conSideStand: String(item.conSideStand ?? item.con_side_stand ?? ""),
+      evaluationCriteria: Array.isArray(item.evaluationCriteria)
+        ? (item.evaluationCriteria as unknown[]).map(String)
+        : Array.isArray(item.evaluation_criteria)
+          ? (item.evaluation_criteria as unknown[]).map(String)
+          : [],
+    })),
     usedProfile: (raw.usedProfile ?? raw.used_profile) as ExamUsedProfile | undefined,
     totalCount: Number(raw.totalCount ?? raw.total_count ?? 0),
   };
@@ -6057,6 +6273,14 @@ export const examGenerationApi = {
     const raw = await apiRequest<Record<string, unknown>>(`/api/exams/generation/${encodeURIComponent(examSessionId)}`, {
       method: 'GET',
     });
+    return normalizeExamSessionDetail(raw as Record<string, unknown>);
+  },
+  /** 학생용 시험 상세 조회. 정답·해설이 제거된 응시용 payload를 기존 시험 뷰 모델로 정규화한다. */
+  getStudentSession: async (examSessionId: number): Promise<ExamSessionDetailResponse> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/exams/student/${encodeURIComponent(examSessionId)}`,
+      { method: 'GET' },
+    );
     return normalizeExamSessionDetail(raw as Record<string, unknown>);
   },
   /** [삭제] 시험 세션 삭제. 해당 강의 소유 교사만 삭제 가능. DELETE /api/exams/generation/{examSessionId} */

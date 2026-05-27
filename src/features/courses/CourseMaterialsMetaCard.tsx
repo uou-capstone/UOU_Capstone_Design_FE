@@ -1,21 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ClipboardIcon, CheckIcon, EditIcon } from "@/components/common/Icons";
 
-function formatCourseCreatedDate(iso?: string): string | null {
-  if (!iso?.trim()) return null;
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return null;
-    return d.toLocaleDateString("ko-KR", { dateStyle: "long" });
-  } catch {
-    return null;
-  }
-}
-
 export interface CourseMaterialsMetaCardProps {
   title: string;
   description?: string;
-  createdAt?: string;
   invitationCode?: string;
   progressMetrics?: Array<{
     label: string;
@@ -25,18 +13,19 @@ export interface CourseMaterialsMetaCardProps {
   isTeacher: boolean;
   onCopyInvitationCode: () => Promise<boolean>;
   onEditCourseMeta?: () => void;
+  resourceActions?: React.ReactNode;
 }
 
 export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = ({
   title,
   description,
-  createdAt,
   invitationCode,
   progressMetrics = [],
   isDarkMode,
   isTeacher,
   onCopyInvitationCode,
   onEditCourseMeta,
+  resourceActions,
 }) => {
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -49,10 +38,8 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
     };
   }, []);
 
-  const desc = description?.trim();
-  const dateLine = formatCourseCreatedDate(createdAt);
-  const dateMent =
-    dateLine ?? "강의실 개설 일자를 불러오지 못했습니다.";
+  const hasDescription =
+    typeof description === "string" && description.length > 0;
 
   const handleCopy = async () => {
     const ok = await onCopyInvitationCode();
@@ -66,17 +53,17 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
 
   return (
     <section
-      className={`mb-3 flex shrink-0 flex-col rounded-2xl border px-5 py-3.5 lg:px-6 ${
+      className={`mb-3 flex shrink-0 flex-col rounded-2xl border px-5 py-5 lg:px-6 ${
         isDarkMode
           ? "border-[#2b2b2b] bg-[#202020]"
           : "border-[#dedbd5] bg-white"
       }`}
     >
-      <div className="flex min-w-0 flex-col gap-3">
+      <div className="flex min-w-0 flex-col gap-4">
         <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="flex min-w-0 flex-1 items-start gap-3">
           <h1
-            className={`min-w-0 flex-1 truncate text-2xl font-semibold leading-tight ${
+            className={`min-w-0 flex-1 whitespace-pre-wrap break-words text-2xl font-semibold leading-tight ${
               isDarkMode ? "text-gray-50" : "text-gray-950"
             }`}
           >
@@ -88,7 +75,7 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
               onClick={onEditCourseMeta}
               className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-colors ${
                 isDarkMode
-                  ? "border-[#3a3a3a] text-gray-200 hover:bg-white/10"
+                  ? "border-[#3a3a3a] text-[#ff824d] hover:bg-white/10"
                   : "border-[#dedbd5] text-gray-700 hover:bg-[#f7f5f1]"
               }`}
               aria-label="강의실 정보 수정"
@@ -118,7 +105,7 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
                   onClick={() => void handleCopy()}
                   className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-colors ${
                     isDarkMode
-                      ? "border-[#3a3a3a] text-gray-300 hover:bg-white/10 hover:text-white"
+                      ? "border-[#3a3a3a] text-[#ff824d] hover:bg-white/10"
                       : "border-[#dedbd5] text-gray-600 hover:bg-[#f7f5f1] hover:text-gray-950"
                   }`}
                   aria-label={copied ? "복사됨" : "초대 코드 복사"}
@@ -147,22 +134,19 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
         <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0 flex-1">
             <p
-              className={`line-clamp-2 max-w-5xl text-sm leading-5 ${
+              className={`max-w-5xl whitespace-pre-wrap break-words text-sm leading-5 ${
                 isDarkMode ? "text-gray-300" : "text-gray-600"
               }`}
             >
-              {desc ? desc : "등록된 설명이 없습니다."}
-            </p>
-            <p
-              className={`mt-1 text-xs ${
-                isDarkMode ? "text-gray-500" : "text-gray-500"
-              }`}
-            >
-              {dateMent}
+              {hasDescription ? description : "등록된 설명이 없습니다."}
             </p>
           </div>
 
-          {progressMetrics.length > 0 ? (
+          {resourceActions ? (
+            <div className="flex shrink-0 flex-wrap items-center justify-start gap-1.5 lg:max-w-[30rem] lg:justify-end">
+              {resourceActions}
+            </div>
+          ) : progressMetrics.length > 0 ? (
             <div className="grid shrink-0 grid-cols-3 gap-2">
               {progressMetrics.map((metric) => (
                 <div

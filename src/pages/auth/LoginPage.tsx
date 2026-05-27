@@ -113,10 +113,10 @@ const LoginPage: React.FC = () => {
         <div className={`mb-3 text-xs sm:text-sm md:text-base ${
           isDarkMode ? 'text-gray-400' : 'text-gray-600'
         }`}>
-          <div className="flex items-center min-h-8 w-full">
-            <span>서버:</span>
+          <div className="flex items-center min-h-8 w-full min-w-0">
+            <span className="shrink-0 whitespace-nowrap">서버:</span>
             <span
-              className={`text-base font-semibold tracking-wide pl-1 rounded ${
+              className={`shrink-0 whitespace-nowrap text-base font-semibold tracking-wide pl-1 rounded ${
                 isCheckingServer
                   ? `animate-pulse ${isDarkMode ? 'text-yellow-200' : 'text-yellow-700'}`
                   : serverStatus?.online

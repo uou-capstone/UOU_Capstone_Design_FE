@@ -134,7 +134,7 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
   return (
     <div className="flex min-h-full flex-col gap-4 pb-6">
       <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
-        <div className="flex min-h-10 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="mb-4 flex min-h-10 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-xl font-semibold">리포트 평가 기준</h2>
             <p className={`mt-2 text-sm ${mutedClass}`}>
@@ -154,7 +154,7 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
         </div>
 
         <form
-          className="mt-4 grid gap-3 lg:grid-cols-[0.9fr_1.3fr_8rem_auto]"
+          className="grid gap-3 lg:grid-cols-[0.9fr_1.3fr_8rem_auto]"
           onSubmit={(event) => {
             event.preventDefault();
             void submit();
