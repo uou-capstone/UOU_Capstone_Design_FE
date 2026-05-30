@@ -7,7 +7,7 @@ import { useCourses } from "@/features/courses/useCourses";
 import type { Course, CourseDetail, LectureResponseDto } from "../../services/api";
 
 type ViewMode = "course-list" | "course-detail";
-type MenuItem = "lectures" | "settings" | "report" | "updates";
+type MenuItem = "lectures" | "settings" | "updates";
 
 type CourseLecture = NonNullable<NonNullable<CourseDetail["lectures"]>[number]>;
 
@@ -166,10 +166,9 @@ const AppLayout: React.FC = () => {
       setCurrentCourseId(null);
       setCurrentLectureId(null);
       resetLectureOutputs();
-      // 설정/신고 페이지로 이동한 경우 메뉴는 pathname effect에서 처리, 그 외에만 "강의"로
+      // 설정/업데이트 페이지로 이동한 경우 메뉴는 pathname effect에서 처리, 그 외에만 "강의"로
       if (
         pathname !== "/settings" &&
-        pathname !== "/report" &&
         pathname !== "/updates"
       ) {
         setSelectedMenu("lectures");
@@ -183,15 +182,13 @@ const AppLayout: React.FC = () => {
   // URL 경로에 따라 메뉴 동기화
   useEffect(() => {
     if (pathname === "/settings") setSelectedMenu("settings");
-    else if (pathname === "/report") setSelectedMenu("report");
     else if (pathname === "/updates") setSelectedMenu("updates");
   }, [pathname]);
 
-  // 설정/신고 페이지로 전환 시 미리보기 상태(뒤로가기 버튼, 파일 제목) 초기화
+  // 설정/업데이트 페이지로 전환 시 미리보기 상태(뒤로가기 버튼, 파일 제목) 초기화
   useEffect(() => {
     if (
       selectedMenu === "settings" ||
-      selectedMenu === "report" ||
       selectedMenu === "updates"
     ) {
       setPreviewFileName(null);
@@ -559,7 +556,7 @@ const AppLayout: React.FC = () => {
   return (
     <div
       className={`h-screen w-full max-w-full flex flex-col transition-colors overflow-hidden ${
-        isDarkMode ? "bg-[#313130] text-white" : "bg-[#f5f1ec] text-[#111111]"
+        isDarkMode ? "bg-[#1A1A1A] text-white" : "bg-[#f5f1ec] text-[#111111]"
       }`}
     >
       <TopNav
@@ -567,10 +564,6 @@ const AppLayout: React.FC = () => {
         onOpenSettings={() => {
           setSelectedMenu("settings");
           navigate("/settings");
-        }}
-        onOpenReport={() => {
-          setSelectedMenu("report");
-          navigate("/report");
         }}
         onOpenUpdates={() => {
           setSelectedMenu("updates");

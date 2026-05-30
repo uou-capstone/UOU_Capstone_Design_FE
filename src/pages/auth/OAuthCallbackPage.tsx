@@ -77,7 +77,7 @@ const OAuthCallbackPage: React.FC = () => {
   return (
     <div
       className={`min-h-screen flex items-center justify-center px-4 ${
-        isDarkMode ? 'bg-[#313130]' : 'bg-gray-100'
+        isDarkMode ? 'bg-[#1A1A1A]' : 'bg-gray-100'
       }`}
     >
       <div

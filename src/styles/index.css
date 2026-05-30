@@ -130,8 +130,10 @@ body {
   --intercom-canvas: #f5f1ec;
   --intercom-surface-1: #ffffff;
   --intercom-surface-2: #ebe7e1;
-  --intercom-inverse-canvas: #000000;
-  --intercom-inverse-surface-1: #313130;
+  --intercom-inverse-canvas: #1a1a1a;
+  --intercom-inverse-surface-1: #242424;
+  --intercom-inverse-surface-2: #2b2b2b;
+  --intercom-inverse-surface-3: #313130;
   --intercom-inverse-ink: #ffffff;
   --intercom-inverse-ink-muted: #9c9fa5;
   --intercom-hairline: #d3cec6;
@@ -175,11 +177,34 @@ button.rounded-md,
 button.rounded-lg,
 button.rounded-xl,
 button.rounded-2xl,
+button.rounded-full,
 [role="button"].rounded,
 [role="button"].rounded-md,
 [role="button"].rounded-lg,
 [role="button"].rounded-xl,
-[role="button"].rounded-2xl {
+[role="button"].rounded-2xl,
+[role="button"].rounded-full,
+input.rounded,
+input.rounded-md,
+input.rounded-lg,
+input.rounded-xl,
+input.rounded-2xl,
+input.rounded-full,
+select.rounded,
+select.rounded-md,
+select.rounded-lg,
+select.rounded-xl,
+select.rounded-2xl,
+select.rounded-full,
+textarea.rounded,
+textarea.rounded-md,
+textarea.rounded-lg,
+textarea.rounded-xl,
+textarea.rounded-2xl,
+textarea.rounded-full,
+[role="menu"],
+[role="listbox"],
+.profile-dropdown-glass {
   border-radius: var(--app-control-radius) !important;
 }
 
@@ -250,7 +275,9 @@ body.dark .dark\:bg-\[\#141414\] {
 
 .bg-\[\#181818\],
 .bg-\[\#202020\],
+.bg-\[\#242220\],
 .bg-\[\#252525\],
+.bg-\[\#2b2825\],
 .bg-\[\#313130\],
 .bg-\[\#071829\],
 .bg-\[\#0b241f\],
@@ -318,12 +345,28 @@ body.dark .bg-gray-100,
 body.dark .bg-gray-200,
 body.dark .bg-zinc-50,
 body.dark .bg-zinc-100,
+body.dark .bg-zinc-800,
+body.dark .bg-zinc-900,
+body.dark .bg-zinc-950,
+body.dark .bg-zinc-800\/40,
+body.dark .bg-zinc-800\/50,
+body.dark .bg-zinc-900\/20,
+body.dark .bg-zinc-900\/30,
+body.dark .bg-zinc-900\/40,
+body.dark .bg-zinc-900\/60,
+body.dark .bg-zinc-900\/70,
+body.dark .bg-zinc-900\/90,
+body.dark .bg-zinc-900\/95,
 html.dark .hover\:bg-gray-50:hover,
 html.dark .hover\:bg-gray-100:hover,
 html.dark .hover\:bg-gray-200:hover,
+html.dark .hover\:bg-zinc-700:hover,
+html.dark .hover\:bg-zinc-800:hover,
 body.dark .hover\:bg-gray-50:hover,
 body.dark .hover\:bg-gray-100:hover,
-body.dark .hover\:bg-gray-200:hover {
+body.dark .hover\:bg-gray-200:hover,
+body.dark .hover\:bg-zinc-700:hover,
+body.dark .hover\:bg-zinc-800:hover {
   background-color: var(--intercom-inverse-surface-1) !important;
 }
 
@@ -630,7 +673,7 @@ html.theme-transition-disabled [class*="transition-colors"] {
 /* 다크모드 스타일 */
 body.dark,
 html.dark body {
-  background-color: var(--intercom-inverse-surface-1);
+  background-color: var(--intercom-inverse-canvas);
   color: var(--intercom-inverse-ink);
 }
 
@@ -908,7 +951,7 @@ body.dark .exam-select-arrow-left select {
 
 /* 글래스모피즘 (반투명) 프로필 드롭다운 - 테마 상관없이 항상 다크 스타일 */
 .profile-dropdown-glass {
-  background: rgba(49, 49, 48, 0.94);
+  background: rgba(36, 36, 36, 0.94);
   backdrop-filter: blur(0.75rem);
   -webkit-backdrop-filter: blur(0.75rem);
   border: 0.0625rem solid rgba(255, 255, 255, 0.16);

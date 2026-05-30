@@ -72,9 +72,9 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
   const observerDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const userAdjustedZoomRef = useRef(false);
   const autoFitFrameRef = useRef<number | null>(null);
-  const viewerBackground = isDarkMode ? "#313130" : "#F5F1EC";
-  const viewerSurface = isDarkMode ? "#313130" : "#FFFFFF";
-  const viewerElevatedSurface = isDarkMode ? "#3A3A38" : "#FFFFFF";
+  const viewerBackground = isDarkMode ? "#1A1A1A" : "#F5F1EC";
+  const viewerSurface = isDarkMode ? "#242424" : "#FFFFFF";
+  const viewerElevatedSurface = isDarkMode ? "#2B2B2B" : "#FFFFFF";
   const viewerBorder = isDarkMode ? "rgba(255, 255, 255, 0.16)" : "#D3CEC6";
   const viewerMutedBorder = isDarkMode ? "rgba(255, 255, 255, 0.12)" : "#EBE7E1";
 
@@ -596,7 +596,7 @@ const PdfViewer = forwardRef<PdfViewerHandle, PdfViewerProps>(function PdfViewer
                 className="page-list-scroll flex-1 min-h-0 overflow-y-scroll overflow-x-hidden pl-1.5 pr-3 py-1.5 space-y-1"
                 style={{
                   scrollbarWidth: "thin",
-                  scrollbarColor: isDarkMode ? "#ff824d #313130" : "#ff824d #F5F1EC",
+                  scrollbarColor: isDarkMode ? "#ff824d #1A1A1A" : "#ff824d #F5F1EC",
                   scrollbarGutter: "stable both-edges",
                 }}
               >

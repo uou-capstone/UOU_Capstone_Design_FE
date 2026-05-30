@@ -91,7 +91,7 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
             {invitationCode ? (
               <>
                 <code
-                  className={`max-w-[18rem] truncate rounded-xl border px-3 py-2 font-mono text-xs tabular-nums ${
+                  className={`max-w-[18rem] truncate rounded-[var(--app-control-radius)] border px-3 py-2 font-mono text-xs tabular-nums ${
                     isDarkMode
                       ? "border-[#3a3a3a] bg-[#181818] text-[#ffad9b]"
                       : "border-[#dedbd5] bg-[#fbfaf7] text-[#ff824d]"
@@ -103,7 +103,7 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
                 <button
                   type="button"
                   onClick={() => void handleCopy()}
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border transition-colors ${
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--app-control-radius)] border transition-colors ${
                     isDarkMode
                       ? "border-[#3a3a3a] text-[#ff824d] hover:bg-white/10"
                       : "border-[#dedbd5] text-gray-600 hover:bg-[#f7f5f1] hover:text-gray-950"

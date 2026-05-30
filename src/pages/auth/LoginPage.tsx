@@ -91,7 +91,7 @@ const LoginPage: React.FC = () => {
 
   return (
     <div className={`min-h-screen flex items-center justify-center transition-colors px-4 py-6 sm:py-8 ${
-      isDarkMode ? 'bg-[#313130]' : 'bg-gray-100'
+      isDarkMode ? 'bg-[#1A1A1A]' : 'bg-gray-100'
     }`}>
       <div className={`w-full max-w-md max-h-[calc(100vh-3rem)] overflow-y-auto p-6 sm:p-8 rounded-lg shadow-lg ${
         isDarkMode ? 'bg-zinc-800' : 'bg-white'
@@ -228,4 +228,3 @@ const LoginPage: React.FC = () => {
 };
 
 export default LoginPage;
-

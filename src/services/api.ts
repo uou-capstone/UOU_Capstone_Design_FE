@@ -3069,7 +3069,7 @@ export const studentReportApi = {
   analyzeClassroomSync: async (courseId: number): Promise<Record<string, unknown>> => {
     return apiRequest<Record<string, unknown>>(
       `/api/courses/${encodeURIComponent(courseId)}/reports/classroom/analyze`,
-      { method: "POST", body: "{}" },
+      { method: "POST" },
     );
   },
 
@@ -3087,13 +3087,11 @@ export const studentReportApi = {
     const token = getAuthToken();
     const headers: Record<string, string> = {
       Accept: "text/event-stream",
-      "Content-Type": "application/json",
     };
     if (token) headers.Authorization = `Bearer ${token}`;
     const res = await fetch(url, {
       method: "POST",
       headers,
-      body: "{}",
       mode: "cors",
       credentials: "omit",
       signal: options?.signal,
@@ -6074,13 +6072,32 @@ export interface ExamSubmissionRequest {
   answers: ExamAnswerSubmission[];
 }
 
+export interface ExamQuestionGrading {
+  questionId: number;
+  userAnswer?: string;
+  correctAnswer?: string;
+  isCorrect?: boolean;
+  score?: number;
+  feedback?: string;
+  evaluationDetails?: Record<string, unknown>;
+}
+
+export interface ExamGradingDetails {
+  examSessionId?: number;
+  totalScore?: number;
+  maxScore?: number;
+  questionGradings: ExamQuestionGrading[];
+  overallFeedback?: string;
+  evaluationMetadata?: Record<string, unknown>;
+}
+
 export interface ExamSubmissionResponse {
   examResultId: number;
   examSessionId: number;
   totalScore?: number;
   maxScore?: number;
   overallFeedback?: string;
-  gradingDetails?: Record<string, unknown>;
+  gradingDetails?: ExamGradingDetails;
 }
 
 export interface DebateStartRequest {
@@ -6195,6 +6212,83 @@ function normalizeExamShortAnswerGradeResponse(
     };
   });
   return { results };
+}
+
+function normalizeExamSubmissionResponse(
+  raw: Record<string, unknown>,
+): ExamSubmissionResponse {
+  const num = (value: unknown): number | undefined => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const str = (value: unknown): string | undefined =>
+    typeof value === "string" && value.trim() !== "" ? value : undefined;
+  const detailsRaw = raw.gradingDetails ?? raw.grading_details;
+  const detailsObj =
+    detailsRaw != null && typeof detailsRaw === "object" && !Array.isArray(detailsRaw)
+      ? (detailsRaw as Record<string, unknown>)
+      : null;
+  const questionGradingsRaw =
+    detailsObj?.questionGradings ?? detailsObj?.question_gradings;
+  const questionGradings: ExamQuestionGrading[] = Array.isArray(questionGradingsRaw)
+    ? questionGradingsRaw
+        .filter((item) => item != null && typeof item === "object" && !Array.isArray(item))
+        .map((item) => {
+          const obj = item as Record<string, unknown>;
+          return {
+            questionId: Number(obj.questionId ?? obj.question_id ?? 0),
+            userAnswer: str(obj.userAnswer ?? obj.user_answer),
+            correctAnswer: str(obj.correctAnswer ?? obj.correct_answer),
+            isCorrect:
+              typeof obj.isCorrect === "boolean"
+                ? obj.isCorrect
+                : typeof obj.is_correct === "boolean"
+                  ? obj.is_correct
+                  : undefined,
+            score: num(obj.score),
+            feedback: str(obj.feedback),
+            evaluationDetails:
+              obj.evaluationDetails != null &&
+              typeof obj.evaluationDetails === "object" &&
+              !Array.isArray(obj.evaluationDetails)
+                ? (obj.evaluationDetails as Record<string, unknown>)
+                : obj.evaluation_details != null &&
+                    typeof obj.evaluation_details === "object" &&
+                    !Array.isArray(obj.evaluation_details)
+                  ? (obj.evaluation_details as Record<string, unknown>)
+                  : undefined,
+          };
+        })
+    : [];
+  const gradingDetails: ExamGradingDetails | undefined = detailsObj
+    ? {
+        examSessionId: num(detailsObj.examSessionId ?? detailsObj.exam_session_id),
+        totalScore: num(detailsObj.totalScore ?? detailsObj.total_score),
+        maxScore: num(detailsObj.maxScore ?? detailsObj.max_score),
+        questionGradings,
+        overallFeedback: str(detailsObj.overallFeedback ?? detailsObj.overall_feedback),
+        evaluationMetadata:
+          detailsObj.evaluationMetadata != null &&
+          typeof detailsObj.evaluationMetadata === "object" &&
+          !Array.isArray(detailsObj.evaluationMetadata)
+            ? (detailsObj.evaluationMetadata as Record<string, unknown>)
+            : detailsObj.evaluation_metadata != null &&
+                typeof detailsObj.evaluation_metadata === "object" &&
+                !Array.isArray(detailsObj.evaluation_metadata)
+              ? (detailsObj.evaluation_metadata as Record<string, unknown>)
+              : undefined,
+      }
+    : undefined;
+  return {
+    examResultId: Number(raw.examResultId ?? raw.exam_result_id ?? 0),
+    examSessionId: Number(raw.examSessionId ?? raw.exam_session_id ?? 0),
+    totalScore: num(raw.totalScore ?? raw.total_score ?? gradingDetails?.totalScore),
+    maxScore: num(raw.maxScore ?? raw.max_score ?? gradingDetails?.maxScore),
+    overallFeedback: str(
+      raw.overallFeedback ?? raw.overall_feedback ?? gradingDetails?.overallFeedback,
+    ),
+    gradingDetails,
+  };
 }
 
 /** 시험 생성 API 요청 본문: API 문서 기준 camelCase */
@@ -6318,16 +6412,18 @@ export const examGenerationApi = {
   submitExam: async (
     payload: ExamSubmissionRequest,
   ): Promise<ExamSubmissionResponse> => {
-    return apiRequest<ExamSubmissionResponse>('/api/exams/submission', {
+    const raw = await apiRequest<Record<string, unknown>>('/api/exams/submission', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+    return normalizeExamSubmissionResponse(raw);
   },
 
   getExamResult: async (examResultId: number): Promise<ExamSubmissionResponse> => {
-    return apiRequest<ExamSubmissionResponse>(
+    const raw = await apiRequest<Record<string, unknown>>(
       `/api/exams/submission/${encodeURIComponent(examResultId)}`,
     );
+    return normalizeExamSubmissionResponse(raw);
   },
 
   streamExamGeneration: async (

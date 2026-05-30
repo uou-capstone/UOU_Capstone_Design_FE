@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { RefreshIcon } from "@/components/common/Icons";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
@@ -7,7 +7,6 @@ import { monitoringApi, notificationsApi, userApi, type TeacherNotificationPrefe
 const SettingsPage: React.FC = () => {
   const { isDarkMode } = useTheme();
   const { user, refreshUser } = useAuth();
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [nickname, setNickname] = useState(user?.fullName || "");
   const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber || "");
@@ -15,7 +14,6 @@ const SettingsPage: React.FC = () => {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [profileImage, setProfileImage] = useState<string | null>(user?.profileImageUrl || null);
   const [isSaving, setIsSaving] = useState(false);
   const [isMonitoringLoading, setIsMonitoringLoading] = useState(false);
   const [monitoringError, setMonitoringError] = useState<string | null>(null);
@@ -34,7 +32,6 @@ const SettingsPage: React.FC = () => {
       setNickname(user.fullName || "");
       setPhoneNumber(user.phoneNumber || "");
       setBirthDate(user.birthDate || "");
-      setProfileImage(user.profileImageUrl || null);
     }
   }, [user]);
 
@@ -90,18 +87,6 @@ const SettingsPage: React.FC = () => {
     }
   }, [user]);
 
-  const handleProfileImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      // 이미지 미리보기
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProfileImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
   const handleChangePassword = async () => {
     if (newPassword !== confirmPassword) {
       window.alert("새 비밀번호가 일치하지 않습니다.");
@@ -136,54 +121,21 @@ const SettingsPage: React.FC = () => {
   const [draftName, setDraftName] = useState(nickname);
   const [draftPhoneNumber, setDraftPhoneNumber] = useState(phoneNumber);
   const [draftBirthDate, setDraftBirthDate] = useState(birthDate);
+  const accountInputClass = `w-full px-3 py-2 rounded-lg border text-sm ${
+    isDarkMode
+      ? "border-[#343434] bg-[#202020] text-white placeholder-gray-500"
+      : "border-[#dedbd5] bg-white text-gray-900 placeholder-gray-500"
+  } focus:outline-none focus:ring-1 focus:ring-[#ff824d]/40`;
+  const accountSaveButtonClass = (disabled: boolean) =>
+    `px-4 py-1.5 rounded-lg text-xs font-medium ${
+      disabled
+        ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+        : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+    }`;
 
   const renderAccountSection = () => (
     <div className="flex flex-col w-full">
-      {/* 프로필 */}
-      <div className="flex flex-col items-start gap-4">
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          className="relative group focus:outline-none focus:ring-2 focus:ring-[#ff824d] rounded-full cursor-pointer"
-        >
-          {profileImage ? (
-            <img
-              src={profileImage}
-              alt="Profile"
-              className="size-30 rounded-full object-cover transition-opacity group-hover:opacity-80"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src =
-                  "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='100'%3E%3Ccircle cx='50' cy='50' r='50' fill='%23e5e7eb'/%3E%3Ctext x='50' y='60' text-anchor='middle' font-size='40' fill='%239ca3af'%3E%3F%3C/text%3E%3C/svg%3E";
-              }}
-            />
-          ) : (
-            <div
-              className={`size-30 rounded-full flex items-center justify-center text-white font-semibold text-3xl ${
-                isDarkMode ? "bg-gray-700" : "bg-gray-500"
-              }`}
-            >
-              {user?.fullName?.charAt(0).toUpperCase() || "?"}
-            </div>
-          )}
-          <div
-            className={`absolute inset-0 rounded-full opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white ${
-              isDarkMode ? "bg-zinc-700" : "bg-zinc-200"
-            }`}
-          >
-            <span className="text-xs font-medium">변경</span>
-          </div>
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/jpg,image/png"
-          onChange={handleProfileImageChange}
-          className="hidden"
-        />
-      </div>
-
-      {/* 상단 사용자 정보 (이름, 이메일) - 프로필과 gap-6 */}
-      <div className="flex flex-col gap-1 mt-6">
+      <div className="flex flex-col gap-1">
         <h1
           className={`text-2xl font-semibold ${
             isDarkMode ? "text-white" : "text-gray-900"
@@ -227,64 +179,49 @@ const SettingsPage: React.FC = () => {
                 {editingField === "name" ? "Cancel" : "Edit"}
               </button>
             </div>
-            <div className={`mt-1 text-sm ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>{nickname || "-"}</div>
-          </div>
-
-          {editingField === "name" && (
-            <div className="mt-4 space-y-3 text-sm">
-              <div className={isDarkMode ? "text-gray-400" : "text-gray-500"}>
-                프로필과 팀 구성원에게 보이는 이름입니다.
-              </div>
-              <div>
-                <div className={isDarkMode ? "text-gray-300 mb-1" : "text-gray-700 mb-1"}>
-                  이름
-                </div>
+            {editingField === "name" ? (
+              <div className="mt-2 space-y-2">
                 <input
+                  autoFocus
                   type="text"
                   value={draftName}
                   onChange={(e) => setDraftName(e.target.value)}
-                  className={`w-full px-4 py-2 rounded-full text-sm ${
-                    isDarkMode
-                      ? "bg-zinc-800 text-white placeholder-gray-500"
-                      : "bg-gray-100 text-gray-900 placeholder-gray-500"
-                  } focus:outline-none`}
+                  className={accountInputClass}
                   placeholder="이름을 입력하세요"
                 />
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        setIsSaving(true);
+                        await userApi.updateProfile({
+                          fullName: draftName,
+                          phoneNumber: phoneNumber || undefined,
+                          birthDate: birthDate || undefined,
+                        });
+                        setNickname(draftName);
+                        await refreshUser();
+                        setEditingField(null);
+                      } catch (error) {
+                        const msg =
+                          error instanceof Error ? error.message : "이름을 저장하는 데 실패했습니다.";
+                        window.alert(msg);
+                      } finally {
+                        setIsSaving(false);
+                      }
+                    }}
+                    disabled={isSaving || !draftName}
+                    className={accountSaveButtonClass(isSaving || !draftName)}
+                  >
+                    {isSaving ? "저장 중..." : "Save"}
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center justify-between mt-2">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      setIsSaving(true);
-                      await userApi.updateProfile({
-                        fullName: draftName,
-                        phoneNumber: phoneNumber || undefined,
-                        birthDate: birthDate || undefined,
-                      });
-                      setNickname(draftName);
-                      await refreshUser();
-                      setEditingField(null);
-                    } catch (error) {
-                      const msg =
-                        error instanceof Error ? error.message : "이름을 저장하는 데 실패했습니다.";
-                      window.alert(msg);
-                    } finally {
-                      setIsSaving(false);
-                    }
-                  }}
-                  disabled={isSaving || !draftName}
-                  className={`px-4 py-1.5 rounded-full text-xs font-medium ${
-                    isSaving || !draftName
-                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                      : "bg-black text-white"
-                  }`}
-                >
-                  {isSaving ? "저장 중..." : "Save"}
-                </button>
-              </div>
-            </div>
-          )}
+            ) : (
+              <div className={`mt-1 text-sm ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>{nickname || "-"}</div>
+            )}
+          </div>
         </div>
 
         {/* 전화번호 행 */}
@@ -307,68 +244,49 @@ const SettingsPage: React.FC = () => {
                 {editingField === "phone" ? "Cancel" : "Edit"}
               </button>
             </div>
-            <div className={`mt-1 text-sm ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>{phoneNumber || "-"}</div>
-          </div>
-
-          {editingField === "phone" && (
-            <div className="mt-4 space-y-3 text-sm">
-              <div>
-                <div className={isDarkMode ? "text-gray-300 mb-1" : "text-gray-700 mb-1"}>
-                  전화번호
-                </div>
+            {editingField === "phone" ? (
+              <div className="mt-2 space-y-2">
                 <input
+                  autoFocus
                   type="tel"
                   value={draftPhoneNumber}
                   onChange={(e) => setDraftPhoneNumber(e.target.value)}
-                  className={`w-full px-4 py-2 rounded-full text-sm ${
-                    isDarkMode
-                      ? "bg-zinc-800 text-white placeholder-gray-500"
-                      : "bg-gray-100 text-gray-900 placeholder-gray-500"
-                  } focus:outline-none`}
+                  className={accountInputClass}
                   placeholder="010-0000-0000"
                 />
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        setIsSaving(true);
+                        await userApi.updateProfile({
+                          fullName: nickname,
+                          phoneNumber: draftPhoneNumber || undefined,
+                          birthDate: birthDate || undefined,
+                        });
+                        setPhoneNumber(draftPhoneNumber);
+                        await refreshUser();
+                        setEditingField(null);
+                      } catch (error) {
+                        const msg =
+                          error instanceof Error ? error.message : "전화번호를 저장하는 데 실패했습니다.";
+                        window.alert(msg);
+                      } finally {
+                        setIsSaving(false);
+                      }
+                    }}
+                    disabled={isSaving}
+                    className={accountSaveButtonClass(isSaving)}
+                  >
+                    {isSaving ? "저장 중..." : "Save"}
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center justify-between mt-2">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      setIsSaving(true);
-                      await userApi.updateProfile({
-                        fullName: nickname,
-                        phoneNumber: draftPhoneNumber || undefined,
-                        birthDate: birthDate || undefined,
-                      });
-                      setPhoneNumber(draftPhoneNumber);
-                      await refreshUser();
-                      setEditingField(null);
-                    } catch (error) {
-                      const msg =
-                        error instanceof Error ? error.message : "전화번호를 저장하는 데 실패했습니다.";
-                      window.alert(msg);
-                    } finally {
-                      setIsSaving(false);
-                    }
-                  }}
-                  disabled={isSaving}
-                  className={`px-4 py-1.5 rounded-full text-xs font-medium ${
-                    isSaving
-                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                      : "bg-black text-white"
-                  }`}
-                >
-                  {isSaving ? "저장 중..." : "Save"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEditingField(null)}
-                  className="text-xs text-gray-500 hover:text-gray-800"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
+            ) : (
+              <div className={`mt-1 text-sm ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>{phoneNumber || "-"}</div>
+            )}
+          </div>
         </div>
 
         {/* 생년월일 행 */}
@@ -391,60 +309,48 @@ const SettingsPage: React.FC = () => {
                 {editingField === "birth" ? "Cancel" : "Edit"}
               </button>
             </div>
-            <div className={`mt-1 text-sm ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>{birthDate || "-"}</div>
-          </div>
-
-          {editingField === "birth" && (
-            <div className="mt-4 space-y-3 text-sm">
-              <div>
-                <div className={isDarkMode ? "text-gray-300 mb-1" : "text-gray-700 mb-1"}>
-                  생년월일
-                </div>
+            {editingField === "birth" ? (
+              <div className="mt-2 space-y-2">
                 <input
+                  autoFocus
                   type="date"
                   value={draftBirthDate}
                   onChange={(e) => setDraftBirthDate(e.target.value)}
-                  className={`w-full px-4 py-2 rounded-full text-sm ${
-                    isDarkMode
-                      ? "bg-zinc-800 text-white placeholder-gray-500"
-                      : "bg-gray-100 text-gray-900 placeholder-gray-500"
-                  } focus:outline-none`}
+                  className={accountInputClass}
                 />
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        setIsSaving(true);
+                        await userApi.updateProfile({
+                          fullName: nickname,
+                          phoneNumber: phoneNumber || undefined,
+                          birthDate: draftBirthDate || undefined,
+                        });
+                        setBirthDate(draftBirthDate);
+                        await refreshUser();
+                        setEditingField(null);
+                      } catch (error) {
+                        const msg =
+                          error instanceof Error ? error.message : "생년월일을 저장하는 데 실패했습니다.";
+                        window.alert(msg);
+                      } finally {
+                        setIsSaving(false);
+                      }
+                    }}
+                    disabled={isSaving}
+                    className={accountSaveButtonClass(isSaving)}
+                  >
+                    {isSaving ? "저장 중..." : "Save"}
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center justify-between mt-2">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    try {
-                      setIsSaving(true);
-                      await userApi.updateProfile({
-                        fullName: nickname,
-                        phoneNumber: phoneNumber || undefined,
-                        birthDate: draftBirthDate || undefined,
-                      });
-                      setBirthDate(draftBirthDate);
-                      await refreshUser();
-                      setEditingField(null);
-                    } catch (error) {
-                      const msg =
-                        error instanceof Error ? error.message : "생년월일을 저장하는 데 실패했습니다.";
-                      window.alert(msg);
-                    } finally {
-                      setIsSaving(false);
-                    }
-                  }}
-                  disabled={isSaving}
-                  className={`px-4 py-1.5 rounded-full text-xs font-medium ${
-                    isSaving
-                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                      : "bg-black text-white"
-                  }`}
-                >
-                  {isSaving ? "저장 중..." : "Save"}
-                </button>
-              </div>
-            </div>
-          )}
+            ) : (
+              <div className={`mt-1 text-sm ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>{birthDate || "-"}</div>
+            )}
+          </div>
         </div>
 
         {/* 비밀번호 행 */}
@@ -469,63 +375,45 @@ const SettingsPage: React.FC = () => {
                 {editingField === "password" ? "Cancel" : "Edit"}
               </button>
             </div>
-            <div className={`mt-1 text-sm ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>••••••••</div>
-          </div>
-
-          {editingField === "password" && (
-            <div className="mt-4 space-y-3 text-sm">
-              <div className={isDarkMode ? "text-gray-400" : "text-gray-500"}>
-                새 비밀번호를 입력하세요. 최소 8자 이상이어야 합니다.
-              </div>
+            {editingField === "password" ? (
+              <div className="mt-2 space-y-2">
               <input
+                autoFocus
                 type="password"
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
-                className={`w-full px-4 py-2 rounded-full text-sm ${
-                  isDarkMode
-                    ? "bg-zinc-800 text-white placeholder-gray-500"
-                    : "bg-gray-100 text-gray-900 placeholder-gray-500"
-                } focus:outline-none`}
+                className={accountInputClass}
                 placeholder="현재 비밀번호"
               />
               <input
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className={`w-full px-4 py-2 rounded-full text-sm ${
-                  isDarkMode
-                    ? "bg-zinc-800 text-white placeholder-gray-500"
-                    : "bg-gray-100 text-gray-900 placeholder-gray-500"
-                } focus:outline-none`}
+                className={accountInputClass}
                 placeholder="새 비밀번호"
               />
               <input
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className={`w-full px-4 py-2 rounded-full text-sm ${
-                  isDarkMode
-                    ? "bg-zinc-800 text-white placeholder-gray-500"
-                    : "bg-gray-100 text-gray-900 placeholder-gray-500"
-                } focus:outline-none`}
+                className={accountInputClass}
                 placeholder="새 비밀번호 확인"
               />
-              <div className="flex items-center justify-between mt-2">
+              <div className="flex items-center justify-end">
                 <button
                   type="button"
                   onClick={handleChangePassword}
                   disabled={isSaving || !currentPassword || !newPassword || !confirmPassword}
-                  className={`px-4 py-1.5 rounded-full text-xs font-medium ${
-                    isSaving || !currentPassword || !newPassword || !confirmPassword
-                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                      : "bg-black text-white"
-                  }`}
+                  className={accountSaveButtonClass(isSaving || !currentPassword || !newPassword || !confirmPassword)}
                 >
                   {isSaving ? "변경 중..." : "Save"}
                 </button>
               </div>
-            </div>
-          )}
+              </div>
+            ) : (
+              <div className={`mt-1 text-sm ${isDarkMode ? "text-[#adadad]" : "text-[#707070]"}`}>••••••••</div>
+            )}
+          </div>
         </div>
 
         {/* 계정 관리 */}

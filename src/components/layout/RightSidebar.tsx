@@ -6,7 +6,7 @@ import React, {
   useLayoutEffect,
   useMemo,
 } from "react";
-import { CloseIcon, EditIcon, TrashIcon } from "../common/Icons";
+import { CheckIcon, CloseIcon, EditIcon, TrashIcon } from "../common/Icons";
 import { useParams } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
@@ -345,10 +345,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const pdfLearningPanel = fillContainer && viewMode === "course-detail";
   const sidebarBackground = pdfLearningPanel
     ? isDarkMode
-      ? "#181818"
+      ? "#242424"
       : "#fbfaf7"
     : isDarkMode
-      ? "#313130"
+      ? "#242424"
       : "#FFFFFF";
   const sidebarTextColor = isDarkMode ? "#FFFFFF" : "#000000";
   const sidebarBorderColor = pdfLearningPanel
@@ -360,33 +360,52 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       : "#D3CEC6";
   const panelSurface = pdfLearningPanel
     ? isDarkMode
-      ? "#181818"
+      ? "#242424"
       : "#fbfaf7"
     : isDarkMode
-      ? "#313130"
+      ? "#242424"
       : "#FFFFFF";
-  const controlSurface = isDarkMode ? "#3A3A38" : "#FFFFFF";
+  const controlSurface = isDarkMode ? "#2B2B2B" : "#FFFFFF";
   const controlBorder = isDarkMode ? "rgba(255, 255, 255, 0.16)" : "#D3CEC6";
   const examControlStyle: React.CSSProperties = {
     backgroundColor: controlSurface,
     borderColor: controlBorder,
     color: sidebarTextColor,
   };
-  const examControlClass = `w-full min-w-0 rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:ring-1 ${
+  const examControlClass = `w-full min-w-0 rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors focus:ring-1 ${
     isDarkMode
       ? "focus:border-[#ffad9b] focus:ring-[#ffad9b]/20"
-      : "focus:border-[#1863dc] focus:ring-[#1863dc]/20"
+      : "focus:border-[#ff824d] focus:ring-[#ff824d]/20"
   }`;
-  const examFieldShellClass = `min-w-0 rounded-xl border p-2.5 ${
+  const examFieldShellClass = "min-w-0";
+  const examCardClass = `rounded-xl border p-3 ${
     isDarkMode
-      ? "border-[#1b4d44] bg-[#0b241f]"
-      : "border-[#d9d9dd] bg-white"
+      ? "border-[#343434] bg-[#202020]"
+      : "border-[#dedbd5] bg-white"
   }`;
-  const examLabelClass = `block text-xs font-semibold uppercase tracking-[0.08em] ${
+  const examLabelClass = `block text-xs font-semibold ${
     isDarkMode ? "text-zinc-400" : "text-gray-500"
   }`;
   const examSectionTitleClass = `text-sm font-semibold ${
     isDarkMode ? "text-white" : "text-gray-950"
+  }`;
+  const examSectionCaptionClass = `text-xs ${
+    isDarkMode ? "text-zinc-400" : "text-gray-500"
+  }`;
+  const examSecondaryButtonClass = `inline-flex items-center justify-center rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
+    isDarkMode
+      ? "border-[#343434] text-zinc-200 hover:bg-white/5"
+      : "border-[#dedbd5] text-gray-700 hover:bg-[#f7f5f1]"
+  }`;
+  const examPrimaryButtonClass = `inline-flex items-center justify-center rounded-lg px-3 py-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+    isDarkMode
+      ? "bg-[#ffad9b] text-[#181818] hover:bg-[#ffd0c6]"
+      : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
+  }`;
+  const examIconButtonClass = `inline-flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
+    isDarkMode
+      ? "text-zinc-300 hover:bg-white/10 hover:text-white"
+      : "text-gray-600 hover:bg-[#f7f5f1] hover:text-gray-950"
   }`;
   const tabButtonClass = (active: boolean) =>
     pdfLearningPanel
@@ -1429,7 +1448,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       {examProps?.examMode ? (
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden exam-select-arrow-left">
           {examProps.recoverOpen && (
-            <div className={`shrink-0 flex items-center gap-2 px-4 py-3 border-b ${isDarkMode ? "border-[#1b3443]" : "border-[#d9d9dd]"}`}
+            <div className={`shrink-0 flex items-center gap-2 px-4 py-3 border-b ${isDarkMode ? "border-[#2b2b2b]" : "border-[#dedbd5]"}`}
             style={{ backgroundColor: panelSurface }}
             >
               <span className="text-xs" style={{ color: sidebarTextColor }}>복구할 시험:</span>
@@ -1445,86 +1464,118 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   </option>
                 ))}
               </select>
-              <button type="button" onClick={examProps.onRecoverSubmit} className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors cursor-pointer ${isDarkMode ? "bg-[#ffad9b] text-[#071829]" : "bg-[#003c33] text-white hover:bg-[#071829]"}`}>복구 실행</button>
-              <button type="button" onClick={() => examProps.setRecoverOpen(false)} className={`rounded-lg border px-3 py-2 text-xs font-semibold cursor-pointer transition-colors ${isDarkMode ? "border-[#2c5a50] text-zinc-200 hover:bg-white/5" : "border-[#d9d9dd] text-gray-700 hover:bg-[#eeece7]"}`}>취소</button>
+              <button type="button" onClick={examProps.onRecoverSubmit} className={examPrimaryButtonClass}>복구 실행</button>
+              <button type="button" onClick={() => examProps.setRecoverOpen(false)} className={examSecondaryButtonClass}>취소</button>
             </div>
           )}
           <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-4 [scrollbar-gutter:stable]">
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-              <div className={examFieldShellClass}>
-                <label className={examLabelClass}>시험 유형</label>
-                <select value={examProps.examType} onChange={(e) => examProps.setExamType(e.target.value)} className={`${examControlClass} mt-2`} style={examControlStyle}>
-                  <option value="FLASH_CARD">플래시카드</option>
-                  <option value="OX_PROBLEM">OX 문제</option>
-                  <option value="FIVE_CHOICE">5지선다</option>
-                  <option value="SHORT_ANSWER">단답/서술형</option>
-                </select>
+            <section className={examCardClass}>
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3 className={examSectionTitleClass}>시험 설정</h3>
+                  <p className={`mt-1 ${examSectionCaptionClass}`}>
+                    유형과 문항 수를 먼저 정한 뒤 시험 내용을 입력합니다.
+                  </p>
+                </div>
+                <span
+                  className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
+                    isDarkMode
+                      ? "bg-[#ffad9b]/15 text-[#ffad9b]"
+                      : "bg-[#fff2eb] text-[#ff824d]"
+                  }`}
+                >
+                  {examProps.examCount}문항
+                </span>
               </div>
-              <div className={examFieldShellClass}>
-                <label className={examLabelClass}>문항 수</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  value={
-                    examCountFieldFocused
-                      ? examCountDraft
-                      : String(examProps.examCount)
-                  }
-                  onFocus={() => {
-                    examCountFieldFocusedRef.current = true;
-                    setExamCountFieldFocused(true);
-                    setExamCountDraft(String(examProps.examCount));
-                  }}
-                  onChange={(e) => {
-                    if (!examCountFieldFocusedRef.current) return;
-                    setExamCountDraft(e.target.value.replace(/\D/g, ""));
-                  }}
-                  onBlur={(e) => {
-                    examCountFieldFocusedRef.current = false;
-                    setExamCountFieldFocused(false);
-                    commitExamQuestionCountInput(
-                      e.target.value,
-                      examProps.examType,
-                      examProps.setExamCount,
-                    );
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key !== "Enter") return;
-                    e.preventDefault();
-                    (e.currentTarget as HTMLInputElement).blur();
-                  }}
-                  className={`${examControlClass} mt-2`}
-                  style={examControlStyle}
-                />
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                <div className={examFieldShellClass}>
+                  <label className={examLabelClass}>시험 유형</label>
+                  <select value={examProps.examType} onChange={(e) => examProps.setExamType(e.target.value)} className={`${examControlClass} mt-1.5`} style={examControlStyle}>
+                    <option value="FLASH_CARD">플래시카드</option>
+                    <option value="OX_PROBLEM">OX 문제</option>
+                    <option value="FIVE_CHOICE">5지선다</option>
+                    <option value="SHORT_ANSWER">단답/서술형</option>
+                  </select>
+                </div>
+                <div className={examFieldShellClass}>
+                  <label className={examLabelClass}>문항 수</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={
+                      examCountFieldFocused
+                        ? examCountDraft
+                        : String(examProps.examCount)
+                    }
+                    onFocus={() => {
+                      examCountFieldFocusedRef.current = true;
+                      setExamCountFieldFocused(true);
+                      setExamCountDraft(String(examProps.examCount));
+                    }}
+                    onChange={(e) => {
+                      if (!examCountFieldFocusedRef.current) return;
+                      setExamCountDraft(e.target.value.replace(/\D/g, ""));
+                    }}
+                    onBlur={(e) => {
+                      examCountFieldFocusedRef.current = false;
+                      setExamCountFieldFocused(false);
+                      commitExamQuestionCountInput(
+                        e.target.value,
+                        examProps.examType,
+                        examProps.setExamCount,
+                      );
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      e.preventDefault();
+                      (e.currentTarget as HTMLInputElement).blur();
+                    }}
+                    className={`${examControlClass} mt-1.5`}
+                    style={examControlStyle}
+                  />
+                </div>
               </div>
-              <div className={examFieldShellClass}>
-                <label className={examLabelClass}>난이도</label>
-                <select value={examProps.profileProficiencyLevel} onChange={(e) => examProps.setProfileProficiencyLevel(e.target.value as "Beginner" | "Intermediate" | "Advanced")} className={`${examControlClass} mt-2`} style={examControlStyle}>
-                  <option value="Beginner">초급</option>
-                  <option value="Intermediate">중급</option>
-                  <option value="Advanced">고급</option>
-                </select>
+            </section>
+
+            <section className={examCardClass}>
+              <div className="mb-3">
+                <h3 className={examSectionTitleClass}>출제 방향</h3>
+                <p className={`mt-1 ${examSectionCaptionClass}`}>
+                  난이도, 깊이, 문제 스타일을 조합해 시험 성격을 맞춥니다.
+                </p>
               </div>
-              <div className={examFieldShellClass}>
-                <label className={examLabelClass}>평가 중점</label>
-                <select value={examProps.profileTargetDepth} onChange={(e) => examProps.setProfileTargetDepth(e.target.value as "Concept" | "Application" | "Derivation" | "Deep Understanding")} className={`${examControlClass} mt-2`} style={examControlStyle}>
-                  <option value="Concept">개념 이해</option>
-                  <option value="Application">응용</option>
-                  <option value="Derivation">증명/유도</option>
-                  <option value="Deep Understanding">심화 이해</option>
-                </select>
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                <div className={examFieldShellClass}>
+                  <label className={examLabelClass}>난이도</label>
+                  <select value={examProps.profileProficiencyLevel} onChange={(e) => examProps.setProfileProficiencyLevel(e.target.value as "Beginner" | "Intermediate" | "Advanced")} className={`${examControlClass} mt-1.5`} style={examControlStyle}>
+                    <option value="Beginner">초급</option>
+                    <option value="Intermediate">중급</option>
+                    <option value="Advanced">고급</option>
+                  </select>
+                </div>
+                <div className={examFieldShellClass}>
+                  <label className={examLabelClass}>평가 중점</label>
+                  <select value={examProps.profileTargetDepth} onChange={(e) => examProps.setProfileTargetDepth(e.target.value as "Concept" | "Application" | "Derivation" | "Deep Understanding")} className={`${examControlClass} mt-1.5`} style={examControlStyle}>
+                    <option value="Concept">개념 이해</option>
+                    <option value="Application">응용</option>
+                    <option value="Derivation">증명/유도</option>
+                    <option value="Deep Understanding">심화 이해</option>
+                  </select>
+                </div>
+                <div className={examFieldShellClass}>
+                  <label className={examLabelClass}>문제 스타일</label>
+                  <select value={examProps.profileQuestionModality} onChange={(e) => examProps.setProfileQuestionModality(e.target.value as "Mathematical" | "Theoretical" | "Balance")} className={`${examControlClass} mt-1.5`} style={examControlStyle}>
+                    <option value="Mathematical">수학적</option>
+                    <option value="Theoretical">이론적</option>
+                    <option value="Balance">균형</option>
+                  </select>
+                </div>
               </div>
-              <div className={examFieldShellClass}>
-                <label className={examLabelClass}>문제 스타일</label>
-                <select value={examProps.profileQuestionModality} onChange={(e) => examProps.setProfileQuestionModality(e.target.value as "Mathematical" | "Theoretical" | "Balance")} className={`${examControlClass} mt-2`} style={examControlStyle}>
-                  <option value="Mathematical">수학적</option>
-                  <option value="Theoretical">이론적</option>
-                  <option value="Balance">균형</option>
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+            </section>
+
+            <section className={examCardClass}>
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               <div className={examFieldShellClass}>
                 <div className="relative" ref={examNameInfoRef}>
                   <div className="flex items-center gap-1">
@@ -1568,7 +1619,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   value={localExamDisplayName}
                   onChange={(e) => setLocalExamDisplayName(e.target.value)}
                   placeholder="시험 이름 (선택)"
-                  className={`${examControlClass} mt-2 block`}
+                  className={`${examControlClass} mt-1.5 block`}
                   style={examControlStyle}
                 />
               </div>
@@ -1579,18 +1630,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   value={localExamTopic}
                   onChange={(e) => setLocalExamTopic(e.target.value)}
                   placeholder="이 시험이 다룰 내용"
-                  className={`${examControlClass} mt-2 block resize-none`}
+                  className={`${examControlClass} mt-1.5 block resize-none`}
                   style={examControlStyle}
                 />
               </div>
             </div>
+            </section>
             {examProps.isTeacher ? (
               <div
-                className={`flex flex-col gap-3 rounded-xl border p-3 ${
-                  isDarkMode
-                    ? "border-[#1b4d44] bg-[#0b241f]"
-                    : "border-[#d9d9dd] bg-white"
-                }`}
+                className={`flex flex-col gap-3 ${examCardClass}`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className={examSectionTitleClass}>AI 시험 작성 도우미</span>
@@ -1627,7 +1675,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     type="button"
                     onClick={() => void handleExamStudioPrompt()}
                     disabled={!canUseExamStudio || examStudioLoading || !examStudioPrompt.trim()}
-                    className={`rounded-lg px-3 py-2 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${isDarkMode ? "bg-[#ffad9b] text-[#071829]" : "bg-[#003c33] text-white hover:bg-[#071829]"}`}
+                    className={examPrimaryButtonClass}
                   >
                     {examStudioLoading ? "작성 중..." : "요청"}
                   </button>
@@ -1648,23 +1696,20 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 ) : null}
               </div>
             ) : null}
-            <div className={`flex flex-col gap-3 rounded-xl border p-3 ${
-              isDarkMode
-                ? "border-[#1b4d44] bg-[#0b241f]"
-                : "border-[#d9d9dd] bg-white"
-            }`}>
+            <div className={`flex flex-col gap-3 ${examCardClass}`}>
               <div className="flex items-center justify-between mb-0.5">
-                <span className={examSectionTitleClass}>시험목록</span>
+                <div>
+                  <span className={examSectionTitleClass}>시험 목록</span>
+                  <p className={`mt-1 ${examSectionCaptionClass}`}>
+                    생성된 시험을 열거나 편집 모드에서 정리합니다.
+                  </p>
+                </div>
                 <div className="flex items-center gap-1">
                   {!examProps.examEditMode ? (
                     <button
                       type="button"
                       onClick={() => examProps.onExamEditModeChange?.(true)}
-                      className={`flex items-center justify-center size-6 rounded-full cursor-pointer transition-colors ${
-                        isDarkMode
-                          ? "text-gray-400 hover:text-gray-200 hover:bg-white/10"
-                          : "text-gray-500 hover:text-gray-700 hover:bg-[#eeece7]"
-                      }`}
+                      className={examIconButtonClass}
                       aria-label="수정/삭제 모드"
                       title="수정/삭제 모드"
                     >
@@ -1683,11 +1728,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                           const exam = examProps.recoverExams.find((e) => e.id === ids[0]);
                           if (exam?.examSessionId) examProps.onExamClick?.(exam.examSessionId);
                         }}
-                        className={`flex items-center justify-center size-6 rounded-full cursor-pointer transition-colors ${
-                          isDarkMode
-                            ? "text-gray-400 hover:text-gray-200 hover:bg-zinc-700"
-                            : "text-gray-500 hover:text-gray-700 hover:bg-zinc-200"
-                        }`}
+                        className={examIconButtonClass}
                         aria-label="수정"
                         title="수정"
                       >
@@ -1696,7 +1737,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                       <button
                         type="button"
                         onClick={examProps.onDeleteSelectedExams}
-                        className="flex items-center justify-center size-6 rounded-full cursor-pointer text-red-500 hover:opacity-80"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-500/10"
                         aria-label="삭제"
                         title="삭제"
                       >
@@ -1705,10 +1746,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                       <button
                         type="button"
                         onClick={() => examProps.onExamEditModeChange?.(false)}
-                        className={`flex items-center justify-center size-6 rounded-full cursor-pointer transition-colors ${
+                        className={`inline-flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
                           isDarkMode
-                            ? "bg-[#ffad9b] text-[#071829] hover:opacity-90"
-                            : "bg-[#003c33] text-[#FFFFFF] hover:opacity-90"
+                            ? "bg-[#ffad9b] text-[#181818] hover:bg-[#ffd0c6]"
+                            : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
                         }`}
                         aria-label="취소"
                         title="취소"
@@ -1748,21 +1789,48 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                         }
                       }
                     }}
-                    className={`flex items-center w-full text-left rounded-xl truncate cursor-pointer transition-colors ${
+                    className={`flex min-h-12 items-center gap-2 w-full text-left rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
                       isDarkMode
-                        ? "border border-[#1b4d44] bg-[#102a35] hover:border-[#ffad9b] hover:bg-white/5"
-                        : "border border-[#d9d9dd] bg-white hover:border-[#1863dc] hover:bg-[#f1f5ff]"
+                        ? "border-[#343434] bg-[#181818] hover:border-[#ffad9b] hover:bg-white/5"
+                        : "border-[#dedbd5] bg-[#fbfaf7] hover:border-[#ff824d] hover:bg-[#fff8f4]"
                     } ${
                       inBulkMode && checked
                         ? isDarkMode
-                          ? "shadow-[inset_0_0_0_0.125rem_#ffffff]"
-                          : "shadow-[inset_0_0_0_0.125rem_#181818]"
+                          ? "shadow-[inset_0_0_0_0.125rem_#ffad9b]"
+                          : "shadow-[inset_0_0_0_0.125rem_#ff824d]"
                         : ""
                     }`}
                     style={{ color: sidebarTextColor }}
                   >
-                    <span className="flex-1 min-w-0 px-3 py-2 text-sm truncate">
-                      {exam.title || `시험 ${exam.id}`}
+                    <span
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                        checked
+                          ? isDarkMode
+                            ? "bg-[#ffad9b] text-[#181818]"
+                            : "bg-[#ff824d] text-white"
+                          : isDarkMode
+                            ? "bg-white/10 text-[#ffad9b]"
+                            : "bg-white text-[#ff824d]"
+                      }`}
+                      aria-hidden="true"
+                    >
+                      {checked ? (
+                        <CheckIcon className="h-3.5 w-3.5" />
+                      ) : (
+                        <span className="text-xs font-bold">Q</span>
+                      )}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-semibold">
+                        {exam.title || `시험 ${exam.id}`}
+                      </span>
+                      <span
+                        className={`mt-0.5 block truncate text-xs ${
+                          isDarkMode ? "text-zinc-400" : "text-gray-500"
+                        }`}
+                      >
+                        {inBulkMode ? "선택하여 수정 또는 삭제" : "클릭하여 시험 열기"}
+                      </span>
                     </span>
                   </div>
                 );})}
@@ -1773,14 +1841,14 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 )}
                 {examProps.submitting && (
                   <div
-                      className={`flex items-center gap-2 px-3 py-2 rounded-xl ${
-                      isDarkMode ? "bg-white/5 border border-[#1b4d44]" : "bg-[#eeece7] border border-[#d9d9dd]"
+                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
+                      isDarkMode ? "border-[#343434] bg-[#181818]" : "border-[#dedbd5] bg-[#fbfaf7]"
                     }`}
                     style={{ color: sidebarTextColor }}
                   >
                     <div
                       className={`animate-spin rounded-full h-4 w-4 border-2 border-t-transparent shrink-0 ${
-                        isDarkMode ? "border-[#ffad9b]" : "border-[#003c33]"
+                        isDarkMode ? "border-[#ffad9b]" : "border-[#ff824d]"
                       }`}
                     />
                     <span className="text-sm font-medium">시험 생성중</span>
@@ -1789,11 +1857,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               </div>
             </div>
           </div>
-          <div className={`shrink-0 border-t px-4 py-3 flex justify-between items-center gap-2 flex-wrap ${isDarkMode ? "border-[#1b3443]" : "border-[#d9d9dd]"}`} style={{ backgroundColor: panelSurface }}>
+          <div className={`shrink-0 border-t px-4 py-3 flex justify-between items-center gap-2 flex-wrap ${isDarkMode ? "border-[#2b2b2b]" : "border-[#dedbd5]"}`} style={{ backgroundColor: panelSurface }}>
             <button
               type="button"
               onClick={examProps.onRecoverSession}
-              className={`shrink-0 rounded-xl border px-4 py-2.5 text-sm font-semibold cursor-pointer transition-colors ${isDarkMode ? "border-[#2c5a50] text-zinc-200 hover:bg-white/5" : "border-[#d9d9dd] text-gray-700 hover:bg-[#eeece7]"}`}
+              className={`${examSecondaryButtonClass} shrink-0 px-4 py-2.5 text-sm`}
             >
               세션 복구
             </button>
@@ -1806,7 +1874,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                 )
               }
               disabled={examProps.submitting || !localExamTopic.trim()}
-              className={`shrink-0 rounded-lg px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer ${isDarkMode ? "bg-[#ffad9b] text-[#071829]" : "bg-[#003c33] text-white hover:bg-[#071829]"}`}
+              className={`${examPrimaryButtonClass} shrink-0 px-4 py-2.5 text-sm`}
             >
               {examProps.submitting ? "생성 시작 중..." : "시험 생성"}
             </button>
@@ -1827,7 +1895,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             : undefined,
           scrollbarWidth: "thin" as const,
           scrollbarColor: isDarkMode
-            ? "#ff824d #313130"
+            ? "#ff824d #1A1A1A"
             : "#ff824d #F5F1EC",
         }}
       >

@@ -77,11 +77,11 @@ const STUDENT_PDF_SIDEBAR_EXAM_PROPS: RightSidebarExamProps = {
   setRecoverOpen: () => {},
 };
 import SettingsPage from "@/pages/dashboard/SettingsPage";
-import ReportPage from "@/pages/dashboard/ReportPage";
 import UpdatesPage from "@/pages/dashboard/UpdatesPage";
 import PdfViewer, { type PdfViewerHandle } from "../common/PdfViewer";
 import {
   CheckIcon,
+  ClipboardIcon,
   CloseIcon,
   EditIcon,
   RefreshIcon,
@@ -92,8 +92,8 @@ import {
 } from "../common/Icons";
 
 type ViewMode = "course-list" | "course-detail";
-// 메인 메뉴는 강의/설정/신고/업데이트 사용
-type MenuItem = "lectures" | "settings" | "report" | "updates";
+// 메인 메뉴는 강의/설정/업데이트 사용
+type MenuItem = "lectures" | "settings" | "updates";
 
 const courseCardIconPalette = [
   {
@@ -201,6 +201,52 @@ function formatIsoInstantForKo(iso: string | undefined): string {
   return new Date(t).toLocaleString("ko-KR");
 }
 
+function formatActivityMonthForKo(value: string | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "-";
+  const t = Date.parse(raw);
+  if (Number.isNaN(t)) return raw;
+  const date = new Date(t);
+  return `${date.getFullYear()}년 ${String(date.getMonth() + 1).padStart(2, "0")}월 ${String(date.getDate()).padStart(2, "0")}일 ${String(date.getHours()).padStart(2, "0")}시 ${String(date.getMinutes()).padStart(2, "0")}분`;
+}
+
+function formatReportPercent(value: number | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "-";
+  return `${Math.round(value)}%`;
+}
+
+function formatReportCount(value: number | undefined, suffix = "회"): string {
+  if (value == null || !Number.isFinite(value)) return "-";
+  return `${Math.round(value)}${suffix}`;
+}
+
+function sanitizeDownloadFileName(name: string | null | undefined): string {
+  const base = String(name ?? "ai-lecture-material")
+    .replace(/\.[^/.]+$/, "")
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .trim();
+  return base || "ai-lecture-material";
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      case "'":
+        return "&#39;";
+      default:
+        return char;
+    }
+  });
+}
+
 function joinRequestStatusLabel(status: CourseJoinRequestStatus | string): string {
   const s = String(status ?? "").toUpperCase();
   if (s === "PENDING") return "대기";
@@ -252,6 +298,33 @@ const studentReportStatusLabel = (status: string): string => {
   const matched = STUDENT_REPORT_STATUS_OPTIONS.find((option) => option.value === status);
   return matched?.label ?? status;
 };
+
+function ReportDashboardStatIcon({ name }: { name: string }) {
+  const path =
+    name === "users"
+      ? "M17 20h5v-2a3 3 0 0 0-5.36-1.86M17 20H7m10 0v-2a5 5 0 0 0-10 0v2m10-13a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM7 10a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z"
+      : name === "selected"
+        ? "M9 12l2 2 4-5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+        : name === "alert"
+          ? "M12 9v4m0 4h.01M10.3 4.3 2.2 18h15L13.7 4.3a2 2 0 0 0-3.4 0Z"
+          : "M7 4h7l3 3v13H7V4Zm7 0v4h4M9 13h6M9 17h4";
+  return (
+    <svg
+      className="h-4 w-4"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        d={path}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+      />
+    </svg>
+  );
+}
 
 /** 강의 리소스 그리드: PDF·마크다운(인라인) 및 동일 취급 API 경로만 노출 */
 function isPdfOrMarkdownResourceItem(item: CenterItem): boolean {
@@ -1200,6 +1273,76 @@ const MainContent: React.FC<MainContentProps> = ({
   const [previewRetryKey, setPreviewRetryKey] = React.useState(0);
   const previewMarkdownScrollRef = React.useRef<HTMLDivElement | null>(null);
   const pdfViewerRef = React.useRef<PdfViewerHandle | null>(null);
+  const handleCopyAiDocument = React.useCallback(async () => {
+    const content = previewMarkdownContent?.trim();
+    if (!content) return;
+    try {
+      await navigator.clipboard.writeText(content);
+      window.alert("AI 문서 내용을 복사했습니다.");
+    } catch {
+      window.alert("클립보드 복사에 실패했습니다.");
+    }
+  }, [previewMarkdownContent]);
+  const handleDownloadAiDocumentMarkdown = React.useCallback(() => {
+    const content = previewMarkdownContent ?? "";
+    if (!content.trim()) return;
+    const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${sanitizeDownloadFileName(previewFileName)}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [previewMarkdownContent, previewFileName]);
+  const handlePrintAiDocumentAsPdf = React.useCallback(() => {
+    const content = previewMarkdownContent?.trim();
+    if (!content) return;
+    const title = sanitizeDownloadFileName(previewFileName);
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+    if (!printWindow) {
+      window.print();
+      return;
+    }
+    printWindow.document.write(`<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <title>${escapeHtml(title)}</title>
+    <style>
+      @page { margin: 18mm; }
+      body {
+        margin: 0;
+        color: #111111;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.65;
+      }
+      h1 {
+        margin: 0 0 18px;
+        font-size: 22px;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        font: inherit;
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>${escapeHtml(title)}</h1>
+    <pre>${escapeHtml(content)}</pre>
+    <script>
+      window.addEventListener("load", () => {
+        window.focus();
+        window.print();
+      });
+    </script>
+  </body>
+</html>`);
+    printWindow.document.close();
+  }, [previewMarkdownContent, previewFileName]);
   const [userPdfNav, setUserPdfNav] = React.useState<{
     page: number;
     at: number;
@@ -1441,6 +1584,48 @@ const MainContent: React.FC<MainContentProps> = ({
   const classroomReportVisible =
     classroomReportPageOpen ||
     (studentReportModalOpen && studentReportModalTab === "classroom");
+  const studentReportDashboardStats = React.useMemo(() => {
+    const rows = studentReportList?.content ?? [];
+    const needsAttention = rows.filter(
+      (item) => String(item.reportStatus).toLowerCase() === "needs_attention",
+    ).length;
+    const insufficient = rows.filter(
+      (item) => String(item.reportStatus).toLowerCase() === "insufficient_data",
+    ).length;
+    return [
+      {
+        label: "참여 학생",
+        value: `${studentReportList?.totalElements ?? rows.length}명`,
+        helper: "리포트 대상",
+        icon: "users",
+      },
+      {
+        label: "선택 학생",
+        value: selectedStudentReportId != null ? "1명" : "0명",
+        helper: "상세 분석",
+        icon: "selected",
+      },
+      {
+        label: "주의 필요",
+        value: `${needsAttention}명`,
+        helper: "현재 목록 기준",
+        icon: "alert",
+      },
+      {
+        label: "데이터 부족",
+        value: `${insufficient}명`,
+        helper: "현재 목록 기준",
+        icon: "missing",
+      },
+    ];
+  }, [selectedStudentReportId, studentReportList]);
+  const selectedStudentReportSummary = React.useMemo(
+    () =>
+      (studentReportList?.content ?? []).find(
+        (item) => item.studentId === selectedStudentReportId,
+      ),
+    [selectedStudentReportId, studentReportList],
+  );
   const loadStudentReportList = React.useCallback(async () => {
     if (!studentReportListVisible || courseDetail?.courseId == null) return;
     setStudentReportListLoading(true);
@@ -3358,21 +3543,13 @@ const MainContent: React.FC<MainContentProps> = ({
           ? { sourcePdfPage: sourcePdfPageForAsync }
           : {}),
       });
-      const lines = [
-        "시험이 백그라운드에서 생성 중입니다.",
-        "",
-        "완료되면 시험 목록이 자동으로 갱신됩니다. 다른 페이지로 이동하거나 새로고침·로그아웃을 해도 서버에서 계속 생성됩니다.",
-      ];
-      if (res.taskId) {
-        lines.push("", `작업 ID: ${res.taskId}`);
-      }
-      if (res.status) {
-        lines.push(`상태: ${res.status}`);
-      }
-      if (res.message) {
-        lines.push("", res.message);
-      }
-      window.alert(lines.join("\n"));
+      window.alert(
+        [
+          "시험 생성을 시작했습니다.",
+          "완료되면 우측 사이드바의 시험 탭 목록에 자동으로 추가됩니다.",
+          "생성 중에도 다른 작업을 계속할 수 있습니다.",
+        ].join("\n"),
+      );
       if (courseDetail?.courseId) refetchCourseContents(courseDetail.courseId);
       setExamFormKey((k) => k + 1);
       setExamCount(10);
@@ -3931,6 +4108,11 @@ const MainContent: React.FC<MainContentProps> = ({
     };
   }, [examDetail, fiveChoiceUserAnswers, oxUserAnswers, shortAnswerUserAnswers]);
 
+  const examSubmissionQuestionGradings = React.useMemo(
+    () => examSubmissionResult?.gradingDetails?.questionGradings ?? [],
+    [examSubmissionResult],
+  );
+
   const readExamQuestionId = React.useCallback(
     (problem: { id?: number }, fallbackIndex: number): number => {
       return typeof problem.id === "number" && Number.isFinite(problem.id)
@@ -3989,7 +4171,18 @@ const MainContent: React.FC<MainContentProps> = ({
         examSessionId: sessionNum,
         answers,
       });
-      setExamSubmissionResult(result);
+      let resolvedResult = result;
+      const hasFeedback =
+        Boolean(result.overallFeedback?.trim()) ||
+        Boolean(result.gradingDetails?.questionGradings?.length);
+      if (!hasFeedback && result.examResultId > 0) {
+        try {
+          resolvedResult = await examGenerationApi.getExamResult(result.examResultId);
+        } catch {
+          resolvedResult = result;
+        }
+      }
+      setExamSubmissionResult(resolvedResult);
     } catch (e) {
       setExamSubmissionError(
         e instanceof Error ? e.message : "시험 제출에 실패했습니다.",
@@ -5311,89 +5504,6 @@ const MainContent: React.FC<MainContentProps> = ({
         ]
       : [];
 
-    const previewSidebarPanelItems: Array<{
-      key: typeof teacherMainPanel;
-      label: string;
-      iconPath: string;
-    }> = [
-      ...(isTeacher
-        ? [
-            {
-              key: "classroomReport" as const,
-              label: "강의실 리포트",
-              iconPath:
-                "M4 19V5m5 14V9m5 10V4m5 15v-7M3 19h18",
-            },
-          ]
-        : []),
-      {
-        key: "materials",
-        label: "자료 목록",
-        iconPath: "M5 6h14M5 12h14M5 18h9",
-      },
-      ...(isTeacher
-        ? [
-            {
-              key: "attendance" as const,
-              label: "출석 관리",
-              iconPath:
-                "M8 7V4m8 3V4M5 11h14M6 5h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm5 11 2 2 4-5",
-            },
-            {
-              key: "studentManagement" as const,
-              label: "학생 관리",
-              iconPath:
-                "M16 11c1.657 0 3-1.79 3-4s-1.343-4-3-4-3 1.79-3 4 1.343 4 3 4ZM8 11c1.657 0 3-1.79 3-4S9.657 3 8 3 5 4.79 5 7s1.343 4 3 4Zm0 2c-2.761 0-5 1.79-5 4v1h10v-1c0-2.21-2.239-4-5-4Zm8 0c-.735 0-1.424.127-2.03.35A4.93 4.93 0 0 1 16 17v1h8v-1c0-2.21-2.239-4-5-4Z",
-            },
-          ]
-        : []),
-      ...secondaryPanelItems.map((item) => ({
-        ...item,
-        key: item.key as typeof teacherMainPanel,
-      })),
-    ];
-
-    const previewPrimaryPanelItems = previewSidebarPanelItems.filter(
-      (item) => item.key !== "notices" && item.key !== "discussions",
-    );
-    const previewReportPanelItems = previewPrimaryPanelItems.filter(
-      (item) => item.key === "classroomReport",
-    );
-    const previewStudentAttendancePanelItems = previewPrimaryPanelItems
-      .filter((item) => item.key === "studentManagement" || item.key === "attendance")
-      .sort((a, b) => {
-        if (a.key === "studentManagement") return -1;
-        if (b.key === "studentManagement") return 1;
-        return 0;
-      });
-    const previewStandalonePanelItems = previewPrimaryPanelItems.filter(
-      (item) =>
-        item.key !== "studentManagement" &&
-        item.key !== "attendance" &&
-        item.key !== "classroomReport",
-    );
-
-    const previewSidebarButtonClass = (active: boolean) =>
-      `${detailActionBase} border ${
-        active
-          ? isDarkMode
-            ? "border-[#ff9b6a] bg-[#ff9b6a] text-[#181818]"
-            : "border-[#ff824d] bg-[#ff824d] text-white"
-          : isDarkMode
-            ? "border-[#343434] bg-[#202020] text-gray-100 hover:border-[#4a4a4a] hover:bg-[#252525]"
-            : "border-[#dedbd5] bg-white text-[#212121] hover:border-[#cfcac1] hover:bg-[#f7f5f1]"
-      }`;
-
-    const previewSidebarIconClass = (active: boolean) =>
-      `h-3.5 w-3.5 shrink-0 ${
-        active
-          ? isDarkMode
-            ? "text-[#181818]"
-            : "text-white"
-          : isDarkMode
-            ? "text-[#ff824d]"
-            : "text-gray-600"
-      }`;
     const courseSidebarButtonClass = (active: boolean) =>
       `${detailActionBase} border ${
         active
@@ -5415,9 +5525,20 @@ const MainContent: React.FC<MainContentProps> = ({
             : "text-gray-600"
       }`;
 
-    const renderPreviewSidebarIcon = (iconPath: string, active: boolean) => (
+    const openPanelFromPreview = (panel: typeof teacherMainPanel) => {
+      setTeacherMainPanel(panel);
+      exitPreviewAndExamViewer();
+    };
+
+    const selectLectureFromPreview = (lectureId: number) => {
+      setTeacherMainPanel("materials");
+      exitPreviewAndExamViewer();
+      onSelectLecture?.(lectureId);
+    };
+
+    const renderCourseSidebarIcon = (iconPath: string, active: boolean) => (
       <svg
-        className={previewSidebarIconClass(active)}
+        className={courseSidebarIconClass(active)}
         fill="none"
         stroke="currentColor"
         viewBox="0 0 24 24"
@@ -5432,151 +5553,352 @@ const MainContent: React.FC<MainContentProps> = ({
       </svg>
     );
 
-	    const openPanelFromPreview = (panel: typeof teacherMainPanel) => {
-	      setTeacherMainPanel(panel);
-	      exitPreviewAndExamViewer();
-	    };
+    const openSidebarPanel = (
+      panel: typeof teacherMainPanel,
+      source: "detail" | "preview",
+    ) => {
+      if (source === "preview") {
+        openPanelFromPreview(panel);
+        return;
+      }
+      setTeacherMainPanel((current) =>
+        current === panel ? "materials" : panel,
+      );
+    };
 
-	    const selectLectureFromPreview = (lectureId: number) => {
-      setTeacherMainPanel("materials");
-      exitPreviewAndExamViewer();
+    const selectSidebarLecture = (
+      lectureId: number,
+      source: "detail" | "preview",
+    ) => {
+      if (source === "preview") {
+        selectLectureFromPreview(lectureId);
+        return;
+      }
       onSelectLecture?.(lectureId);
     };
 
-    const renderResourcePreviewSidebar = () => (
-      <aside
-        className={`hidden w-[var(--app-resource-preview-sidebar-width)] lg:flex shrink-0 flex-col gap-5 border-r px-3 pb-3 pt-5 ${
-          isDarkMode
-            ? "border-[#2b2b2b] bg-[#181818] text-gray-200"
-            : "border-[#dedbd5] bg-[#fbfaf7] text-[#212121]"
-        }`}
-        aria-label="강의자료 탐색"
-      >
-        <div className="flex shrink-0 flex-col gap-1.5">
-          {previewStandalonePanelItems.map((item) => {
-            const active = teacherMainPanel === item.key;
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => openPanelFromPreview(item.key)}
-                className={previewSidebarButtonClass(active)}
-                aria-pressed={active}
-              >
-                {renderPreviewSidebarIcon(item.iconPath, active)}
-                <span className="truncate">{item.label}</span>
-              </button>
-            );
-          })}
-          {previewReportPanelItems.length > 0 ? (
-            <div
-              className={`grid gap-1.5 ${
-                previewReportPanelItems.length > 1 ? "grid-cols-2" : "grid-cols-1"
-              }`}
-            >
-              {previewReportPanelItems.map((item) => {
-                const active = teacherMainPanel === item.key;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => openPanelFromPreview(item.key)}
-                    className={previewSidebarButtonClass(active)}
-                    aria-pressed={active}
-                  >
-                    {renderPreviewSidebarIcon(item.iconPath, active)}
-                    <span className="truncate">{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-          {previewStudentAttendancePanelItems.length > 0 ? (
-            <div className="grid grid-cols-2 gap-1.5">
-              {previewStudentAttendancePanelItems.map((item) => {
-                const active = teacherMainPanel === item.key;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => openPanelFromPreview(item.key)}
-                    className={previewSidebarButtonClass(active)}
-                    aria-pressed={active}
-                  >
-                    {renderPreviewSidebarIcon(item.iconPath, active)}
-                    <span className="truncate">{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-        </div>
+    const renderCourseNavigationSidebar = (source: "detail" | "preview") => {
+      const isPreview = source === "preview";
+      const asideVisibility = isPreview
+        ? "hidden w-[var(--app-resource-preview-sidebar-width)] lg:flex"
+        : "hidden w-[var(--app-course-detail-sidebar-width)] md:flex";
+      const ariaLabel = isPreview ? "강의자료 탐색" : "강의실 탐색";
 
-        <nav
-          className={`mt-5 flex min-h-0 flex-1 flex-col gap-1 border-t pt-5 ${
-            isDarkMode ? "border-[#2b2b2b]" : "border-[#d9d9dd]"
+      return (
+        <aside
+          className={`${asideVisibility} shrink-0 flex-col gap-5 border-r px-3 pb-3 pt-5 min-h-0 ${
+            isDarkMode
+              ? "border-[#2b2b2b] bg-[#181818] text-gray-200"
+              : "border-[#dedbd5] bg-[#fbfaf7] text-[#212121]"
           }`}
-          aria-label="주차 목록"
+          aria-label={ariaLabel}
         >
-          <p
-            className={`px-1 text-[11px] font-semibold ${
-              isDarkMode ? "text-gray-500" : "text-gray-500"
+          {isTeacher ? (
+            <div className="shrink-0 flex flex-col gap-3">
+              <section className="flex flex-col gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setWeekBoardTab(null);
+                    if (isPreview) {
+                      openPanelFromPreview("materials");
+                    } else {
+                      setTeacherMainPanel("materials");
+                    }
+                  }}
+                  className={courseSidebarButtonClass(
+                    teacherMainPanel === "materials" && weekBoardTab == null,
+                  )}
+                  aria-pressed={
+                    teacherMainPanel === "materials" && weekBoardTab == null
+                  }
+                >
+                  {renderCourseSidebarIcon(
+                    "M5 6h14M5 12h14M5 18h9",
+                    teacherMainPanel === "materials" && weekBoardTab == null,
+                  )}
+                  <span>자료 목록</span>
+                </button>
+                {reportPanelItems.length > 0 ? (
+                  <div
+                    className={`grid gap-2 ${
+                      reportPanelItems.length > 1 ? "grid-cols-2" : "grid-cols-1"
+                    }`}
+                  >
+                    {reportPanelItems.map((item) => {
+                      const active = teacherMainPanel === item.key;
+                      return (
+                        <button
+                          key={item.key}
+                          type="button"
+                          onClick={() => openSidebarPanel(item.key, source)}
+                          className={courseSidebarButtonClass(active)}
+                          aria-pressed={active}
+                        >
+                          {renderCourseSidebarIcon(item.iconPath, active)}
+                          <span className="truncate">{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openSidebarPanel("studentManagement", source)}
+                    className={courseSidebarButtonClass(
+                      teacherMainPanel === "studentManagement",
+                    )}
+                    aria-label="학생 관리"
+                    aria-pressed={teacherMainPanel === "studentManagement"}
+                    title="메인 영역에서 수강 학생을 관리합니다. 다시 누르면 강의 자료로 전환합니다."
+                  >
+                    <UsersIcon
+                      className={courseSidebarIconClass(
+                        teacherMainPanel === "studentManagement",
+                      )}
+                    />
+                    <span className="truncate">학생 관리</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openSidebarPanel("attendance", source)}
+                    className={courseSidebarButtonClass(
+                      teacherMainPanel === "attendance",
+                    )}
+                    aria-label="출석 관리"
+                    aria-pressed={teacherMainPanel === "attendance"}
+                    title="메인 영역에서 출석 회차를 관리합니다. 다시 누르면 강의 자료로 전환합니다."
+                  >
+                    {renderCourseSidebarIcon(
+                      "M8 7V4m8 3V4M5 11h14M6 5h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm5 11 2 2 4-5",
+                      teacherMainPanel === "attendance",
+                    )}
+                    <span className="truncate">출석 관리</span>
+                  </button>
+                </div>
+              </section>
+            </div>
+          ) : null}
+          {otherSecondaryPanelItems.length > 0 ? (
+            <section className="flex shrink-0 flex-col gap-1.5">
+              {otherSecondaryPanelItems.map((item) => {
+                const active = teacherMainPanel === item.key;
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() =>
+                      setTeacherMainPanel(item.key as typeof teacherMainPanel)
+                    }
+                    className={courseSidebarButtonClass(active)}
+                    aria-pressed={active}
+                  >
+                    {renderCourseSidebarIcon(item.iconPath, active)}
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </section>
+          ) : null}
+          <section
+            className={`shrink-0 border-t pt-5 ${
+              isDarkMode ? "border-[#2b2b2b]" : "border-[#dedbd5]"
             }`}
           >
-            주차 목록
-          </p>
-          <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-hidden">
-            {weekNumbers.map((week) => {
-              const label = week === 0 ? "OT" : `${week}주차`;
-              const lecture = courseDetail?.lectures?.find(
-                (item) => item.weekNumber === week,
-              );
-              const lectureTitle = lecture?.title?.trim();
-              const showLectureTitle =
-                !!lectureTitle && lectureTitle !== label;
-              const active =
-                selectedLecture != null &&
-                selectedLecture.weekNumber === week;
-              const rowInactive = isDarkMode
-                ? "border border-[#343434] bg-[#202020] text-gray-200 hover:bg-[#252525]"
-                : "border border-[#dedbd5] bg-white text-[#212121] hover:bg-[#f7f5f1]";
-              const rowActive = isDarkMode
-                ? "border border-[#ff9b6a] bg-[#ff9b6a] text-[#181818]"
-                : "border border-[#ff824d] bg-[#ff824d] text-white";
-              return (
-                <button
-                  key={week}
-                  type="button"
-                  disabled={!lecture}
-                  onClick={() => {
-                    if (lecture) selectLectureFromPreview(lecture.lectureId);
-                  }}
-                  className={`flex h-9 w-full items-center gap-2 rounded-xl px-3 text-left text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                    active ? rowActive : rowInactive
-                  }`}
-                >
-	                          <span className="w-11 shrink-0 text-left tabular-nums">{label}</span>
-                  {showLectureTitle ? (
-                    <span className="min-w-0 truncate text-xs font-medium opacity-75">
-                      {lectureTitle}
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
-            {!weekNumbers.length ? (
-              <p
-                className={`px-2 text-sm ${
-                  isDarkMode ? "text-gray-500" : "text-gray-400"
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span
+                className={`text-xs font-semibold ${
+                  isDarkMode ? "text-gray-400" : "text-gray-600"
                 }`}
               >
-                등록된 주차가 없습니다.
-              </p>
+                주차 목록
+              </span>
+              {isTeacher && !isPreview ? (
+                <button
+                  type="button"
+                  aria-pressed={bulkEditMode}
+                  aria-label={
+                    bulkEditMode
+                      ? "강의·자료 편집 모드 종료"
+                      : "강의·자료 수정/삭제 모드"
+                  }
+                  title={
+                    bulkEditMode
+                      ? "일반 보기로 돌아갑니다"
+                      : "주차·자료를 수정하거나 삭제합니다"
+                  }
+                  onClick={() => setBulkEditMode((v) => !v)}
+                  className={`inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] font-semibold transition-colors ${lectureBulkEditToggleClasses}`}
+                >
+                  {bulkEditMode ? (
+                    <CheckIcon className="h-3 w-3" />
+                  ) : (
+                    <EditIcon
+                      className={`h-3 w-3 ${
+                        isDarkMode ? "text-[#ff824d]" : ""
+                      }`}
+                    />
+                  )}
+                  <span>{bulkEditMode ? "완료" : "편집"}</span>
+                </button>
+              ) : null}
+            </div>
+            <nav
+              className="flex flex-col gap-1 overflow-visible"
+              aria-label="주차"
+            >
+              {weekNumbers.map((week) => {
+                const label = week === 0 ? "OT" : `${week}주차`;
+                const lec = courseDetail?.lectures?.find(
+                  (l) => l.weekNumber === week,
+                );
+                const lectureTitle = lec?.title?.trim();
+                const showLectureTitle = !!lectureTitle && lectureTitle !== label;
+                const weekEditingEnabled = !isPreview && bulkEditMode;
+                const isActiveChip =
+                  !weekEditingEnabled &&
+                  selectedLecture &&
+                  selectedLecture.weekNumber === week;
+                const isActiveWeek =
+                  selectedLecture && selectedLecture.weekNumber === week;
+                const weekEditRow =
+                  isTeacher &&
+                  weekEditingEnabled &&
+                  lec != null &&
+                  onEditLecture &&
+                  onDeleteLecture;
+                const rowInactive = isDarkMode
+                  ? "border border-[#343434] bg-[#202020] text-gray-200 hover:bg-[#252525]"
+                  : "border border-[#dedbd5] bg-white text-[#212121] hover:bg-[#f7f5f1]";
+                const rowActive = isDarkMode
+                  ? "border border-[#ff9b6a] bg-[#ff9b6a] text-[#181818]"
+                  : "border border-[#ff824d] bg-[#ff824d] text-[#FFFFFF]";
+                if (weekEditRow) {
+                  return (
+                    <div
+                      key={week}
+                      className={`flex h-9 w-full items-center gap-1 rounded-xl pl-3 pr-1 text-sm font-semibold transition-colors ${
+                        isActiveWeek ? rowActive : rowInactive
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => lec && selectSidebarLecture(lec.lectureId, source)}
+                        className="flex min-h-0 min-w-0 flex-1 items-center gap-2 truncate py-0 text-left"
+                      >
+                        <span className="w-12 shrink-0 text-left tabular-nums">
+                          {label}
+                        </span>
+                        {showLectureTitle ? (
+                          <span className="min-w-0 truncate text-xs font-medium opacity-75">
+                            {lectureTitle}
+                          </span>
+                        ) : null}
+                      </button>
+                      <div className="flex shrink-0 items-center gap-0.5 pr-0.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onEditLecture?.(lec);
+                          }}
+                          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors ${
+                            isDarkMode
+                              ? "text-[#ff824d] bg-black/35 hover:bg-black/50"
+                              : "text-gray-800 bg-white/80 hover:bg-white"
+                          }`}
+                          aria-label={`${label} 수정`}
+                          title="강의 수정"
+                        >
+                          <EditIcon className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            void onDeleteLecture?.(lec.lectureId);
+                          }}
+                          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors ${
+                            isDarkMode
+                              ? "text-[#ff824d] bg-black/35 hover:bg-black/50"
+                              : "text-[#ff824d] bg-white/80 hover:bg-white"
+                          }`}
+                          aria-label={`${label} 삭제`}
+                          title="강의 삭제"
+                        >
+                          <TrashIcon className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                }
+                return (
+                  <button
+                    key={week}
+                    type="button"
+                    disabled={!lec}
+                    onClick={() => {
+                      if (lec) selectSidebarLecture(lec.lectureId, source);
+                    }}
+                    className={`flex h-9 w-full items-center gap-2 px-3 rounded-xl text-left text-sm font-semibold cursor-pointer transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                      isActiveChip ? rowActive : rowInactive
+                    }`}
+                  >
+                    <span className="w-12 shrink-0 text-left tabular-nums">
+                      {label}
+                    </span>
+                    {showLectureTitle ? (
+                      <span className="min-w-0 truncate text-xs font-medium opacity-75">
+                        {lectureTitle}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+              {!weekNumbers.length && (
+                <p
+                  className={`text-xs xl:text-sm px-2 ${
+                    isDarkMode ? "text-gray-500" : "text-gray-400"
+                  }`}
+                >
+                  등록된 강의가 없습니다.
+                </p>
+              )}
+            </nav>
+            {isTeacher && !isPreview ? (
+              <button
+                type="button"
+                onClick={() => setAddLectureModalOpen(true)}
+                className={`mt-2 flex h-9 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-dashed bg-transparent px-3 text-sm font-semibold transition-colors ${
+                  isDarkMode
+                    ? "border-white/20 text-gray-400 hover:border-white/35 hover:bg-white/[0.03] hover:text-gray-200"
+                    : "border-[#d3cec6] text-gray-500 hover:border-gray-400 hover:bg-[#f5f1ec] hover:text-gray-700"
+                }`}
+              >
+                <svg
+                  className="h-3.5 w-3.5 shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    d="M12 5v14M5 12h14"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                  />
+                </svg>
+                <span>주차 추가</span>
+              </button>
             ) : null}
-          </div>
-        </nav>
-      </aside>
-    );
+          </section>
+        </aside>
+      );
+    };
 
     if (previewFileUrl || previewMaterialId != null || examDetailSessionId) {
       const hasResourcePreviewContext =
@@ -5592,7 +5914,7 @@ const MainContent: React.FC<MainContentProps> = ({
           <div
             className="flex-1 flex min-h-0 min-w-0 overflow-hidden"
           >
-            {showResourcePreviewSidebar ? renderResourcePreviewSidebar() : null}
+            {showResourcePreviewSidebar ? renderCourseNavigationSidebar("preview") : null}
             <div
               ref={resourcePreviewSplitRowRef}
               className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
@@ -5628,7 +5950,7 @@ const MainContent: React.FC<MainContentProps> = ({
                   <div
                     className="shrink-0 h-10 min-h-10 max-h-10 flex items-center justify-between px-3 border-b box-border"
                     style={{
-                      backgroundColor: isDarkMode ? "#313130" : "#FFFFFF",
+                      backgroundColor: isDarkMode ? "#242424" : "#FFFFFF",
                       color: isDarkMode ? "#FFFFFF" : "#000000",
                       borderColor: isDarkMode ? "rgba(255, 255, 255, 0.18)" : "rgba(0, 0, 0, 0.14)",
                     }}
@@ -5768,8 +6090,90 @@ const MainContent: React.FC<MainContentProps> = ({
                               </p>
                             ) : null}
                             {examSubmissionResult?.overallFeedback ? (
-                              <p className="mt-2 text-xs leading-5 opacity-80">
-                                {examSubmissionResult.overallFeedback}
+                              <div
+                                className={`mt-3 rounded-lg border p-3 text-xs leading-5 ${
+                                  isDarkMode
+                                    ? "border-[#343434] bg-[#181818]"
+                                    : "border-[#dedbd5] bg-[#fbfaf7]"
+                                }`}
+                              >
+                                <p className="font-semibold">종합 피드백</p>
+                                <p className="mt-1 opacity-85">
+                                  {examSubmissionResult.overallFeedback}
+                                </p>
+                              </div>
+                            ) : null}
+                            {examSubmissionQuestionGradings.length > 0 ? (
+                              <div
+                                className={`mt-3 rounded-lg border p-3 ${
+                                  isDarkMode
+                                    ? "border-[#343434] bg-[#181818]"
+                                    : "border-[#dedbd5] bg-[#fbfaf7]"
+                                }`}
+                              >
+                                <div className="mb-2 flex items-center justify-between gap-2">
+                                  <p className="text-xs font-semibold">문항별 피드백</p>
+                                  <p className="text-[11px] opacity-70">
+                                    {examSubmissionQuestionGradings.length}개 문항
+                                  </p>
+                                </div>
+                                <div className="space-y-2">
+                                  {examSubmissionQuestionGradings.map((item, index) => (
+                                    <div
+                                      key={`${item.questionId}-${index}`}
+                                      className={`rounded-lg border px-3 py-2 text-xs ${
+                                        isDarkMode
+                                          ? "border-[#343434] bg-[#202020]"
+                                          : "border-[#dedbd5] bg-white"
+                                      }`}
+                                    >
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="font-semibold">
+                                          {index + 1}번
+                                        </span>
+                                        {item.isCorrect != null ? (
+                                          <span
+                                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                              item.isCorrect
+                                                ? isDarkMode
+                                                  ? "bg-emerald-400/15 text-emerald-200"
+                                                  : "bg-emerald-50 text-emerald-700"
+                                                : isDarkMode
+                                                  ? "bg-red-400/15 text-red-200"
+                                                  : "bg-red-50 text-red-700"
+                                            }`}
+                                          >
+                                            {item.isCorrect ? "정답" : "오답"}
+                                          </span>
+                                        ) : null}
+                                        {item.score != null ? (
+                                          <span className="opacity-75">
+                                            점수 {item.score}
+                                          </span>
+                                        ) : null}
+                                      </div>
+                                      {item.feedback ? (
+                                        <p className="mt-1 leading-5 opacity-85">
+                                          {item.feedback}
+                                        </p>
+                                      ) : null}
+                                      {(item.userAnswer || item.correctAnswer) ? (
+                                        <div className="mt-1 grid gap-1 opacity-75">
+                                          {item.userAnswer ? (
+                                            <p>내 답안: {item.userAnswer}</p>
+                                          ) : null}
+                                          {item.correctAnswer ? (
+                                            <p>정답: {item.correctAnswer}</p>
+                                          ) : null}
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : examSubmissionResult ? (
+                              <p className="mt-3 text-xs opacity-70">
+                                서버 응답에 문항별 피드백이 포함되지 않았습니다.
                               </p>
                             ) : null}
                           </section>
@@ -6834,9 +7238,9 @@ const MainContent: React.FC<MainContentProps> = ({
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                   {previewIsAiGenerationDoc ? (
                     <div
-                      className="box-border flex h-10 max-h-10 min-h-10 shrink-0 items-center border-b px-3"
+                      className="box-border flex h-12 max-h-12 min-h-12 shrink-0 items-center gap-3 border-b px-4"
                       style={{
-                        backgroundColor: isDarkMode ? "#313130" : "#FFFFFF",
+                        backgroundColor: isDarkMode ? "#242424" : "#FFFFFF",
                         color: isDarkMode ? "#FFFFFF" : "#000000",
                         borderColor: isDarkMode ? "rgba(255, 255, 255, 0.18)" : "rgba(0, 0, 0, 0.14)",
                       }}
@@ -6845,6 +7249,76 @@ const MainContent: React.FC<MainContentProps> = ({
                         <h2 className="truncate text-sm font-semibold leading-none">
                           AI 생성 자료 (문서)
                         </h2>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={handleCopyAiDocument}
+                          disabled={!previewMarkdownContent?.trim()}
+                          className={`inline-flex h-8 items-center gap-1.5 rounded-[var(--app-control-radius)] border px-2.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+                            isDarkMode
+                              ? "border-white/15 bg-[#2b2b2b] text-gray-100 hover:bg-[#343434]"
+                              : "border-[#dedbd5] bg-white text-[#212121] hover:bg-[#f7f5f1]"
+                          }`}
+                          title="본문 복사"
+                        >
+                          <ClipboardIcon className="h-3.5 w-3.5" />
+                          <span>복사</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDownloadAiDocumentMarkdown}
+                          disabled={!previewMarkdownContent?.trim()}
+                          className={`inline-flex h-8 items-center gap-1.5 rounded-[var(--app-control-radius)] border px-2.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+                            isDarkMode
+                              ? "border-white/15 bg-[#2b2b2b] text-gray-100 hover:bg-[#343434]"
+                              : "border-[#dedbd5] bg-white text-[#212121] hover:bg-[#f7f5f1]"
+                          }`}
+                          title="마크다운 파일로 다운로드"
+                        >
+                          <svg
+                            className="h-3.5 w-3.5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2M8 12l4 4m0 0 4-4m-4 4V4"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                            />
+                          </svg>
+                          <span>MD</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handlePrintAiDocumentAsPdf}
+                          disabled={!previewMarkdownContent?.trim()}
+                          className={`inline-flex h-8 items-center gap-1.5 rounded-[var(--app-control-radius)] border px-2.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-45 ${
+                            isDarkMode
+                              ? "border-white/15 bg-[#2b2b2b] text-gray-100 hover:bg-[#343434]"
+                              : "border-[#dedbd5] bg-white text-[#212121] hover:bg-[#f7f5f1]"
+                          }`}
+                          title="인쇄 대화상자에서 PDF로 저장"
+                        >
+                          <svg
+                            className="h-3.5 w-3.5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M7 8V4h10v4M7 17H5a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2M7 14h10v6H7z"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                            />
+                          </svg>
+                          <span>PDF 저장</span>
+                        </button>
                       </div>
                     </div>
                   ) : null}
@@ -7284,377 +7758,7 @@ const MainContent: React.FC<MainContentProps> = ({
 
           {/* 강의 리소스 박스 그리드 영역 — 데스크톱에서는 주차 헤더 줄이 없어서 상단 구분선만 border-t로 유지 */}
           <div className="flex flex-1 min-h-0 overflow-hidden">
-            <aside
-              className={`hidden w-[var(--app-course-detail-sidebar-width)] md:flex shrink-0 flex-col gap-5 border-r px-3 pb-3 pt-5 min-h-0 ${
-                isDarkMode
-                  ? "border-[#2b2b2b] bg-[#181818] text-gray-200"
-                  : "border-[#dedbd5] bg-[#fbfaf7] text-[#212121]"
-              }`}
-	            >
-	              {isTeacher ? (
-	                <div className="shrink-0 flex flex-col gap-3">
-	                  <section className="flex flex-col gap-1.5">
-	                    <button
-	                      type="button"
-	                      onClick={() => {
-	                        setWeekBoardTab(null);
-	                        setTeacherMainPanel("materials");
-	                      }}
-	                      className={courseSidebarButtonClass(
-	                        teacherMainPanel === "materials" && weekBoardTab == null,
-	                      )}
-	                      aria-pressed={teacherMainPanel === "materials" && weekBoardTab == null}
-	                    >
-                      <svg
-	                        className={courseSidebarIconClass(
-	                          teacherMainPanel === "materials" && weekBoardTab == null,
-	                        )}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M5 6h14M5 12h14M5 18h9"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                        />
-                      </svg>
-                      <span>자료 목록</span>
-                    </button>
-                    {reportPanelItems.length > 0 ? (
-                      <div
-                        className={`grid gap-2 ${
-                          reportPanelItems.length > 1 ? "grid-cols-2" : "grid-cols-1"
-                        }`}
-                      >
-                        {reportPanelItems.map((item) => {
-                          const active = teacherMainPanel === item.key;
-                          return (
-                            <button
-                              key={item.key}
-                              type="button"
-                              onClick={() =>
-                                setTeacherMainPanel((panel) =>
-                                  panel === item.key
-                                    ? "materials"
-                                    : (item.key as typeof teacherMainPanel),
-                                )
-                              }
-                              className={courseSidebarButtonClass(active)}
-                              aria-pressed={active}
-                            >
-                              <svg
-                                className={courseSidebarIconClass(active)}
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                                aria-hidden="true"
-                              >
-                                <path
-                                  d={item.iconPath}
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                />
-                              </svg>
-                              <span className="truncate">{item.label}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setTeacherMainPanel((p) =>
-                            p === "studentManagement"
-                              ? "materials"
-                              : "studentManagement",
-                          )
-                        }
-                        className={courseSidebarButtonClass(teacherMainPanel === "studentManagement")}
-                        aria-label="학생 관리"
-                        aria-pressed={teacherMainPanel === "studentManagement"}
-                        title="메인 영역에서 수강 학생을 관리합니다. 다시 누르면 강의 자료로 전환합니다."
-                      >
-                        <UsersIcon
-                          className={courseSidebarIconClass(teacherMainPanel === "studentManagement")}
-                        />
-                        <span className="truncate">학생 관리</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setTeacherMainPanel((p) =>
-                            p === "attendance" ? "materials" : "attendance",
-                          )
-                        }
-                        className={courseSidebarButtonClass(teacherMainPanel === "attendance")}
-                        aria-label="출석 관리"
-                        aria-pressed={teacherMainPanel === "attendance"}
-                        title="메인 영역에서 출석 회차를 관리합니다. 다시 누르면 강의 자료로 전환합니다."
-                      >
-                        <svg
-                          className={courseSidebarIconClass(teacherMainPanel === "attendance")}
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          aria-hidden="true"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M8 7V4m8 3V4M5 11h14M6 5h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm5 11 2 2 4-5"
-                          />
-                        </svg>
-                        <span className="truncate">출석 관리</span>
-                      </button>
-                    </div>
-                  </section>
-                </div>
-              ) : null}
-              {otherSecondaryPanelItems.length > 0 ? (
-                <section className="flex shrink-0 flex-col gap-1.5">
-                  {otherSecondaryPanelItems.map((item) => {
-                    const active = teacherMainPanel === item.key;
-                    return (
-                      <button
-                        key={item.key}
-                        type="button"
-                        onClick={() =>
-                          setTeacherMainPanel(item.key as typeof teacherMainPanel)
-                        }
-                        className={courseSidebarButtonClass(active)}
-                        aria-pressed={active}
-                      >
-                        <svg
-                          className={courseSidebarIconClass(active)}
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                          aria-hidden="true"
-                        >
-                          <path
-                            d={item.iconPath}
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                          />
-                        </svg>
-                        <span>{item.label}</span>
-                      </button>
-                    );
-                  })}
-                </section>
-              ) : null}
-              <section
-                className={`shrink-0 border-t pt-5 ${
-                  isDarkMode ? "border-[#2b2b2b]" : "border-[#dedbd5]"
-                }`}
-              >
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <span
-                    className={`text-xs font-semibold ${
-                      isDarkMode ? "text-gray-400" : "text-gray-600"
-                    }`}
-                  >
-                    주차 목록
-                  </span>
-                  {isTeacher ? (
-                    <button
-                      type="button"
-                      aria-pressed={bulkEditMode}
-                      aria-label={
-                        bulkEditMode
-                          ? "강의·자료 편집 모드 종료"
-                          : "강의·자료 수정/삭제 모드"
-                      }
-                      title={
-                        bulkEditMode
-                          ? "일반 보기로 돌아갑니다"
-                          : "주차·자료를 수정하거나 삭제합니다"
-                      }
-                      onClick={() => setBulkEditMode((v) => !v)}
-                      className={`inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] font-semibold transition-colors ${lectureBulkEditToggleClasses}`}
-                    >
-                      {bulkEditMode ? (
-                        <CheckIcon className="h-3 w-3" />
-                      ) : (
-                        <EditIcon
-                          className={`h-3 w-3 ${
-                            isDarkMode ? "text-[#ff824d]" : ""
-                          }`}
-                        />
-                      )}
-                      <span>{bulkEditMode ? "완료" : "편집"}</span>
-                    </button>
-                  ) : null}
-                </div>
-              <nav
-                className="flex flex-col gap-1 overflow-visible"
-                aria-label="주차"
-              >
-                {weekNumbers.map((week) => {
-                  const label = week === 0 ? "OT" : `${week}주차`;
-                  const lec = courseDetail?.lectures?.find(
-                    (l) => l.weekNumber === week,
-                  );
-                  const lectureTitle = lec?.title?.trim();
-                  const showLectureTitle =
-                    !!lectureTitle && lectureTitle !== label;
-                  const isActiveChip =
-                    !bulkEditMode &&
-                    selectedLecture &&
-                    selectedLecture.weekNumber === week;
-                  const isActiveWeek =
-                    selectedLecture && selectedLecture.weekNumber === week;
-                  const weekEditRow =
-                    isTeacher &&
-                    bulkEditMode &&
-                    lec != null &&
-                    onEditLecture &&
-                    onDeleteLecture;
-                  const rowInactive = isDarkMode
-                    ? "border border-[#343434] bg-[#202020] text-gray-200 hover:bg-[#252525]"
-                    : "border border-[#dedbd5] bg-white text-[#212121] hover:bg-[#f7f5f1]";
-                  const rowActive = isDarkMode
-                    ? "border border-[#ff9b6a] bg-[#ff9b6a] text-[#181818]"
-                    : "border border-[#ff824d] bg-[#ff824d] text-[#FFFFFF]";
-                  if (weekEditRow) {
-                    return (
-                      <div
-                        key={week}
-                        className={`flex h-9 w-full items-center gap-1 rounded-xl pl-3 pr-1 text-sm font-semibold transition-colors ${
-                          isActiveWeek ? rowActive : rowInactive
-                        }`}
-                      >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            lec && onSelectLecture?.(lec.lectureId)
-                          }
-                          className="flex min-h-0 min-w-0 flex-1 items-center gap-2 truncate py-0 text-left"
-                        >
-	                      <span className="w-12 shrink-0 text-left tabular-nums">{label}</span>
-                          {showLectureTitle ? (
-                            <span className="min-w-0 truncate text-xs font-medium opacity-75">
-                              {lectureTitle}
-                            </span>
-                          ) : null}
-                        </button>
-                        <div className="flex shrink-0 items-center gap-0.5 pr-0.5">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              onEditLecture?.(lec);
-                            }}
-                            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors ${
-                              isDarkMode
-                                ? "text-[#ff824d] bg-black/35 hover:bg-black/50"
-                                : "text-gray-800 bg-white/80 hover:bg-white"
-                            }`}
-                            aria-label={`${label} 수정`}
-                            title="강의 수정"
-                          >
-                            <EditIcon className="w-3 h-3" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              void onDeleteLecture?.(lec.lectureId);
-                            }}
-                            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full transition-colors ${
-                              isDarkMode
-                                ? "text-[#ff824d] bg-black/35 hover:bg-black/50"
-                                : "text-[#ff824d] bg-white/80 hover:bg-white"
-                            }`}
-                            aria-label={`${label} 삭제`}
-                            title="강의 삭제"
-                          >
-                            <TrashIcon className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  }
-                  return (
-                    <button
-                      key={week}
-                      type="button"
-                      onClick={() => {
-                        if (onSelectLecture && courseDetail.lectures) {
-                          const target = courseDetail.lectures.find(
-                            (l) => l.weekNumber === week,
-                          );
-                          if (target) {
-                            onSelectLecture(target.lectureId);
-                          }
-                        }
-                      }}
-                      className={`flex h-9 w-full items-center gap-2 px-3 rounded-xl text-left text-sm font-semibold cursor-pointer transition-colors ${
-                        isActiveChip
-                          ? isDarkMode
-                            ? "border border-[#ff9b6a] bg-[#ff9b6a] text-[#181818]"
-                            : "border border-[#ff824d] bg-[#ff824d] text-[#FFFFFF]"
-                          : rowInactive
-                      }`}
-                    >
-	                      <span className="w-12 shrink-0 text-left tabular-nums">{label}</span>
-                      {showLectureTitle ? (
-                        <span className="min-w-0 truncate text-xs font-medium opacity-75">
-                          {lectureTitle}
-                        </span>
-                      ) : null}
-                    </button>
-                  );
-                })}
-                {!weekNumbers.length && (
-                  <p
-                    className={`text-xs xl:text-sm px-2 ${
-                      isDarkMode ? "text-gray-500" : "text-gray-400"
-                    }`}
-                  >
-                    등록된 강의가 없습니다.
-                  </p>
-                )}
-              </nav>
-              {isTeacher ? (
-                <button
-                  type="button"
-                  onClick={() => setAddLectureModalOpen(true)}
-                  className={`mt-2 flex h-9 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-dashed bg-transparent px-3 text-sm font-semibold transition-colors ${
-                    isDarkMode
-                      ? "border-white/20 text-gray-400 hover:border-white/35 hover:bg-white/[0.03] hover:text-gray-200"
-                      : "border-[#d3cec6] text-gray-500 hover:border-gray-400 hover:bg-[#f5f1ec] hover:text-gray-700"
-                  }`}
-                >
-                  <svg
-                    className="h-3.5 w-3.5 shrink-0"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                    aria-hidden="true"
-                  >
-                    <path
-                      d="M12 5v14M5 12h14"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                    />
-                  </svg>
-                  <span>주차 추가</span>
-                </button>
-              ) : null}
-              </section>
-            </aside>
+            {renderCourseNavigationSidebar("detail")}
 
             <div
               className={`flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden p-3 ${
@@ -7894,6 +7998,36 @@ const MainContent: React.FC<MainContentProps> = ({
                       </div>
                     </div>
 
+                    <div className="mb-4 grid grid-cols-2 gap-2 xl:grid-cols-4">
+                      {studentReportDashboardStats.map((stat) => (
+                        <article
+                          key={stat.label}
+                          className={`rounded-xl border px-3 py-3 ${
+                            isDarkMode
+                              ? "border-[#343434] bg-[#202020]"
+                              : "border-[#dedbd5] bg-[#fbfaf7]"
+                          }`}
+                        >
+                          <div className="mb-2 flex items-center gap-2">
+                            <span
+                              className={`inline-flex h-7 w-7 items-center justify-center rounded-full ${
+                                isDarkMode
+                                  ? "bg-[#ff824d]/15 text-[#ffad9b]"
+                                  : "bg-[#ff824d]/10 text-[#ff824d]"
+                              }`}
+                            >
+                              <ReportDashboardStatIcon name={stat.icon} />
+                            </span>
+                            <span className="text-xs font-semibold opacity-75">
+                              {stat.label}
+                            </span>
+                          </div>
+                          <p className="text-xl font-semibold">{stat.value}</p>
+                          <p className="mt-1 text-xs opacity-60">{stat.helper}</p>
+                        </article>
+                      ))}
+                    </div>
+
                     {classroomReportError ? (
                       <p
                         className={`mb-4 text-sm ${
@@ -8061,13 +8195,13 @@ const MainContent: React.FC<MainContentProps> = ({
                   >
                     <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
-                        <h2 className="text-xl font-semibold">학생 리포트 챗봇</h2>
+                        <h2 className="text-xl font-semibold">학생별 리포트</h2>
                         <p
                           className={`mt-1 text-sm ${
                             isDarkMode ? "text-gray-400" : "text-gray-500"
                           }`}
                         >
-                          학생을 선택하고 리포트 기반 후속 질문을 스트리밍 답변으로 확인합니다.
+                          학생별 학습 지표를 확인하고 리포트 기반 후속 질문을 이어갑니다.
                         </p>
                       </div>
                       <button
@@ -8101,7 +8235,7 @@ const MainContent: React.FC<MainContentProps> = ({
                       </p>
                     ) : null}
 
-                    <div className="grid min-h-[30rem] grid-cols-1 gap-3 xl:grid-cols-[18rem_minmax(0,1fr)]">
+                    <div className="grid min-h-[30rem] grid-cols-1 gap-3 xl:grid-cols-[20rem_minmax(0,1fr)]">
                       <div
                         className={`flex min-h-0 flex-col rounded-xl border ${
                           isDarkMode
@@ -8174,6 +8308,15 @@ const MainContent: React.FC<MainContentProps> = ({
                               {studentReportList.content.map((student) => {
                                 const active =
                                   selectedStudentReportId === student.studentId;
+                                const average = formatReportPercent(
+                                  student.averageScorePercent,
+                                );
+                                const progress = formatReportPercent(
+                                  student.courseProgressPercent,
+                                );
+                                const recent = formatActivityMonthForKo(
+                                  student.latestActivityAt,
+                                );
                                 return (
                                   <button
                                     key={student.studentId}
@@ -8201,17 +8344,40 @@ const MainContent: React.FC<MainContentProps> = ({
                                         )}
                                       </span>
                                     </div>
-                                    <div className="mt-1 flex items-center justify-between gap-2 text-xs opacity-75">
-                                      <span>
-                                        평균{" "}
-                                        {student.averageScorePercent != null
-                                          ? `${student.averageScorePercent}%`
-                                          : "-"}
+                                    <div className="mt-2 grid grid-cols-3 gap-1 text-center text-[11px] opacity-80">
+                                      <span className="rounded-md border border-current/10 px-1.5 py-1">
+                                        평균 {average}
                                       </span>
-                                      <span>
+                                      <span className="rounded-md border border-current/10 px-1.5 py-1">
+                                        진도 {progress}
+                                      </span>
+                                      <span className="rounded-md border border-current/10 px-1.5 py-1">
                                         제출 {student.submissionCount ?? 0}
                                       </span>
                                     </div>
+                                    <div className="mt-2 flex items-center justify-between gap-2 text-[11px] opacity-70">
+                                      <span className="truncate">
+                                        최근 활동 {recent}
+                                      </span>
+                                      <span className="shrink-0">
+                                        시험 {student.examAttemptCount ?? 0}회
+                                      </span>
+                                    </div>
+                                    {student.topStrengthLabel ||
+                                    student.topImprovementLabel ? (
+                                      <div className="mt-2 space-y-1 text-[11px] opacity-75">
+                                        {student.topStrengthLabel ? (
+                                          <p className="truncate">
+                                            강점 {student.topStrengthLabel}
+                                          </p>
+                                        ) : null}
+                                        {student.topImprovementLabel ? (
+                                          <p className="truncate">
+                                            보완 {student.topImprovementLabel}
+                                          </p>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
                                   </button>
                                 );
                               })}
@@ -8272,7 +8438,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                 </span>
                               </div>
 
-                              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                              <div className="grid grid-cols-2 gap-2 xl:grid-cols-4">
                                 <div
                                   className={`rounded-lg border p-3 ${
                                     isDarkMode
@@ -8282,9 +8448,11 @@ const MainContent: React.FC<MainContentProps> = ({
                                 >
                                   <p className="text-xs opacity-70">평균 점수</p>
                                   <p className="mt-1 text-lg font-semibold">
-                                    {studentReportDetail.averageScorePercent != null
-                                      ? `${studentReportDetail.averageScorePercent}%`
-                                      : "-"}
+                                    {formatReportPercent(
+                                      studentReportDetail.averageScorePercent ??
+                                        selectedStudentReportSummary
+                                          ?.averageScorePercent,
+                                    )}
                                   </p>
                                 </div>
                                 <div
@@ -8296,7 +8464,44 @@ const MainContent: React.FC<MainContentProps> = ({
                                 >
                                   <p className="text-xs opacity-70">최근 활동</p>
                                   <p className="mt-1 text-sm font-medium">
-                                    {studentReportDetail.latestActivityAt || "-"}
+                                    {formatActivityMonthForKo(
+                                      studentReportDetail.latestActivityAt ??
+                                        selectedStudentReportSummary?.latestActivityAt,
+                                    )}
+                                  </p>
+                                </div>
+                                <div
+                                  className={`rounded-lg border p-3 ${
+                                    isDarkMode
+                                      ? "border-[#343434] bg-[#181818]"
+                                      : "border-[#dedbd5] bg-white"
+                                  }`}
+                                >
+                                  <p className="text-xs opacity-70">학습 진도</p>
+                                  <p className="mt-1 text-lg font-semibold">
+                                    {formatReportPercent(
+                                      selectedStudentReportSummary
+                                        ?.courseProgressPercent,
+                                    )}
+                                  </p>
+                                </div>
+                                <div
+                                  className={`rounded-lg border p-3 ${
+                                    isDarkMode
+                                      ? "border-[#343434] bg-[#181818]"
+                                      : "border-[#dedbd5] bg-white"
+                                  }`}
+                                >
+                                  <p className="text-xs opacity-70">시험 / 제출</p>
+                                  <p className="mt-1 text-sm font-semibold">
+                                    {formatReportCount(
+                                      selectedStudentReportSummary?.examAttemptCount,
+                                    )}{" "}
+                                    /{" "}
+                                    {formatReportCount(
+                                      selectedStudentReportSummary?.submissionCount,
+                                      "건",
+                                    )}
                                   </p>
                                 </div>
                               </div>
@@ -8983,7 +9188,6 @@ const MainContent: React.FC<MainContentProps> = ({
       <div
         className={`flex-1 flex flex-col min-h-0 min-w-0 overflow-x-hidden transition-colors ${
           selectedMenu === "settings" ||
-          selectedMenu === "report" ||
           selectedMenu === "updates"
             ? "px-5"
             : "px-0"
@@ -9002,7 +9206,6 @@ const MainContent: React.FC<MainContentProps> = ({
                   : "overflow-y-auto"
             } ${
               selectedMenu === "settings" ||
-              selectedMenu === "report" ||
               selectedMenu === "updates"
                 ? "pr-5 sm:pr-6 lg:pr-8"
                 : ""
@@ -9010,8 +9213,6 @@ const MainContent: React.FC<MainContentProps> = ({
           >
             {selectedMenu === "settings" ? (
               <SettingsPage />
-            ) : selectedMenu === "report" ? (
-              <ReportPage />
             ) : selectedMenu === "updates" ? (
               <UpdatesPage />
             ) : viewMode === "course-list" ? (
@@ -12263,7 +12464,9 @@ const MainContent: React.FC<MainContentProps> = ({
                       <div className={`rounded-lg border p-4 ${isDarkMode ? "border-zinc-700 bg-zinc-900/40" : "border-gray-200 bg-gray-50"}`}>
                         <p className="text-xs opacity-70">최근 활동</p>
                         <p className="text-sm font-medium mt-1">
-                          {studentReportDetail.latestActivityAt || "-"}
+                          {formatActivityMonthForKo(
+                            studentReportDetail.latestActivityAt,
+                          )}
                         </p>
                       </div>
                     </div>

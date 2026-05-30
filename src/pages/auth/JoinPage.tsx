@@ -122,7 +122,7 @@ const JoinPage: React.FC = () => {
   // 인증 상태 확인 중이거나 로딩 중
   if (isAuthLoading || isJoining) {
     return (
-      <div className={`min-h-screen flex items-center justify-center ${isDarkMode ? 'bg-[#313130]' : 'bg-[#f5f1ec]'}`}>
+      <div className={`min-h-screen flex items-center justify-center ${isDarkMode ? 'bg-[#1A1A1A]' : 'bg-[#f5f1ec]'}`}>
         <TruckLoader />
       </div>
     );
@@ -134,7 +134,7 @@ const JoinPage: React.FC = () => {
   }
 
   return (
-    <div className={`min-h-screen flex items-center justify-center px-4 ${isDarkMode ? 'bg-[#313130]' : 'bg-gray-100'}`}>
+    <div className={`min-h-screen flex items-center justify-center px-4 ${isDarkMode ? 'bg-[#1A1A1A]' : 'bg-gray-100'}`}>
       <div className={`w-full max-w-md p-8 rounded-lg shadow-lg ${isDarkMode ? 'bg-zinc-800' : 'bg-white'}`}>
         <div className="text-center mb-6">
           <h2 className={`text-2xl font-bold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>

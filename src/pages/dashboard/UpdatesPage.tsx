@@ -1,172 +1,257 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { RefreshIcon } from "@/components/common/Icons";
 import { useTheme } from "../../contexts/ThemeContext";
 
 type UpdatePart = "ALL" | "AI" | "BE" | "FE";
-type UpdateRecord = {
-  id: string;
-  date: string; // YYYY-MM-DD
-  part: UpdatePart;
-  hash: string;
-  title: string;
+type RepoPart = Exclude<UpdatePart, "ALL">;
+
+type GitHubRepoConfig = {
+  part: RepoPart;
+  label: string;
+  name: string;
+  repo: string;
+  url: string;
 };
 
-const records: UpdateRecord[] = [
-  { id: "5926f0a", date: "2025-09-14", part: "FE", hash: "5926f0a", title: "기본 파일구조 세팅" },
-  { id: "1843945", date: "2025-09-14", part: "FE", hash: "1843945", title: "LMS 레이아웃 구현 및 Tailwind CSS 설정" },
-  { id: "6e4ad46", date: "2025-09-16", part: "FE", hash: "6e4ad46", title: "레이아웃/목업 업데이트" },
-  { id: "f89a8b7", date: "2025-10-05", part: "FE", hash: "f89a8b7", title: "JavaScript -> TypeScript 전환" },
-  { id: "e792f3d", date: "2025-10-05", part: "FE", hash: "e792f3d", title: "TypeScript 전환 브랜치 병합" },
-  { id: "b30ee32", date: "2025-10-06", part: "FE", hash: "b30ee32", title: "다크모드 구현 완료 및 코드 정리" },
-  { id: "6c35638", date: "2025-10-06", part: "FE", hash: "6c35638", title: "TypeScript 전환 후속 병합" },
-  { id: "ec83626", date: "2025-10-06", part: "FE", hash: "ec83626", title: "API 연결" },
-  { id: "ad9cc2a", date: "2025-10-06", part: "FE", hash: "ad9cc2a", title: "API 연결 변경 병합" },
-  { id: "b935c9b", date: "2025-11-08", part: "FE", hash: "b935c9b", title: "대기 중 변경분 동기화" },
-  { id: "e8a6f66", date: "2025-11-08", part: "FE", hash: "e8a6f66", title: "동기화 커밋 병합" },
-  { id: "6e92148", date: "2025-11-09", part: "FE", hash: "6e92148", title: "API 테스트 페이지 추가 및 백엔드 연동" },
-  { id: "b388514", date: "2025-11-09", part: "FE", hash: "b388514", title: "API 테스트 페이지 개선 및 Swagger 링크 추가" },
-  { id: "3f25b45", date: "2025-11-09", part: "FE", hash: "3f25b45", title: "채팅 UI 개선 및 파일 업로드 기능 추가" },
-  { id: "cca356d", date: "2025-11-10", part: "FE", hash: "cca356d", title: "사이드바 리사이즈 기능 추가 및 README 보완" },
-  { id: "348b53c", date: "2025-11-10", part: "FE", hash: "348b53c", title: "강의실 목록 레이아웃/사이드바 워크플로우 개선" },
-  { id: "7412d67", date: "2025-11-11", part: "FE", hash: "7412d67", title: "레이아웃 사이드바 및 TopNav 업데이트" },
-  { id: "463dfc3", date: "2025-11-11", part: "FE", hash: "463dfc3", title: "사이드바 패딩/테마 토글 조정" },
-  { id: "35ff839", date: "2025-11-12", part: "FE", hash: "35ff839", title: "프로필 아바타, 마크다운 채팅, 업로드 지속성, 미사용 코드 정리" },
-  { id: "10b96fc", date: "2025-11-16", part: "FE", hash: "10b96fc", title: "스트리밍 학습 플로우 적용 및 마크다운 렌더링 개선" },
-  { id: "dd8ea13", date: "2025-11-16", part: "FE", hash: "dd8ea13", title: "스트리밍 플로우 병합" },
-  { id: "84f68cc", date: "2025-11-18", part: "FE", hash: "84f68cc", title: "백엔드 서버 주소/프록시 설정 정리" },
-  { id: "e06d19f", date: "2025-11-19", part: "FE", hash: "e06d19f", title: "Netlify 프록시 설정으로 Mixed Content 문제 해결" },
-  { id: "6cc7eca", date: "2025-11-19", part: "FE", hash: "6cc7eca", title: "재배포 트리거" },
-  { id: "7f2689e", date: "2025-11-19", part: "FE", hash: "7f2689e", title: "백엔드 포트 설정 조정(포트 제거)" },
-  { id: "66a38a8", date: "2025-11-19", part: "FE", hash: "66a38a8", title: "백엔드 포트 설정 조정(8080 추가)" },
-  { id: "d11f4e5", date: "2025-11-19", part: "FE", hash: "d11f4e5", title: "백엔드 서버 HTTPS 도메인 적용" },
-  { id: "902bf1a", date: "2025-11-19", part: "FE", hash: "902bf1a", title: "파일 업로드 UX 개선 및 채팅 입력창 동적 높이 조절" },
-  { id: "7303083", date: "2025-11-19", part: "FE", hash: "7303083", title: "강의 미선택 상태 안내/버튼 노출 보강" },
-  { id: "d1dfe5a", date: "2025-11-19", part: "FE", hash: "d1dfe5a", title: "AI 스트리밍 중지 기능 추가" },
-  { id: "15bb711", date: "2025-11-21", part: "FE", hash: "15bb711", title: "스트리밍 PROCESSING 로직 및 중지 버튼 개선" },
-  { id: "af070e7", date: "2025-11-21", part: "FE", hash: "af070e7", title: "PROCESSING 에러/질문 응답 대기 안내 개선" },
-  { id: "7101f12", date: "2025-11-23", part: "FE", hash: "7101f12", title: "스트리밍 UI 개선 및 자동 로그아웃 기능 추가" },
-  { id: "e047efe", date: "2025-11-23", part: "FE", hash: "e047efe", title: "메인 페이지 사이드바 및 설정 페이지 구현" },
-  { id: "aaae550", date: "2025-11-24", part: "FE", hash: "aaae550", title: "메뉴 구조/UI 개선 및 버튼 인터랙션 정리" },
-  { id: "01e099a", date: "2025-11-24", part: "FE", hash: "01e099a", title: "강의 목록 UI 정렬 개선(OT 우선)" },
-  { id: "9dd111b", date: "2025-11-24", part: "FE", hash: "9dd111b", title: "비밀번호 찾기/소셜 로그인 UI/트럭 로더 업데이트" },
-  { id: "8b515fb", date: "2025-11-26", part: "FE", hash: "8b515fb", title: "사이드바/로그인/로딩 화면 UI 개선" },
-  { id: "774c1b2", date: "2025-11-26", part: "FE", hash: "774c1b2", title: "기능 추가 및 UI 개선" },
-  { id: "520fa36", date: "2025-11-26", part: "FE", hash: "520fa36", title: "프로필 영역 레이아웃 및 API 에러 처리 개선" },
-  { id: "39f0558", date: "2025-11-26", part: "FE", hash: "39f0558", title: "강의 레이아웃/사이드바 업데이트" },
-  { id: "8404e6b", date: "2025-11-27", part: "FE", hash: "8404e6b", title: "사이드바 및 설정 스타일 업데이트" },
-  { id: "ffe4fee", date: "2025-11-27", part: "FE", hash: "ffe4fee", title: "우측 사이드바 인터랙션 업데이트" },
-  { id: "891c702", date: "2025-11-29", part: "FE", hash: "891c702", title: "OT 페이지 표기/박스 높이 조정" },
-  { id: "a0a6c6f", date: "2025-11-30", part: "FE", hash: "a0a6c6f", title: "AppLayout 단순화 및 타입/의존성 오류 정리" },
-  { id: "9260bf9", date: "2025-12-02", part: "FE", hash: "9260bf9", title: "HelpPage 추가 및 UI 일관성 개선" },
-  { id: "7459284", date: "2025-12-02", part: "FE", hash: "7459284", title: "HelpPage/로그인 기능 리스트 단순화" },
-  { id: "2dd5ac0", date: "2025-12-02", part: "FE", hash: "2dd5ac0", title: "중지 버튼 hover/크기 일치 수정" },
-  { id: "40229b5", date: "2025-12-06", part: "FE", hash: "40229b5", title: "User 타입 profileImageUrl 속성 추가" },
-  { id: "053b582", date: "2026-03-06", part: "FE", hash: "053b582", title: "[v2] 버튼 커서/시험생성·강의실참여 API/강의실 ID 노출 개선" },
-  { id: "90d58dd", date: "2026-03-08", part: "FE", hash: "90d58dd", title: "[v2] Phase1~5 자료생성 모달·async 연동·PDF UI 개선" },
-  { id: "54e168c", date: "2026-03-10", part: "FE", hash: "54e168c", title: "[v2] 시험/강의자료/스트리밍 UX 개선" },
-  { id: "4102cf6", date: "2026-03-10", part: "FE", hash: "4102cf6", title: "[v2] 자료생성/시험생성 에이전트 연동 및 호출 로직 수정" },
-  { id: "13159e6", date: "2026-03-10", part: "FE", hash: "13159e6", title: "[v2] backend-be 서브모듈 제거" },
-  { id: "3a4b7c8", date: "2026-03-11", part: "FE", hash: "3a4b7c8", title: "최근 사용한 기획안 불러오기(latest-session) 연동" },
-  { id: "3eca00b", date: "2026-03-11", part: "FE", hash: "3eca00b", title: "강의자료 업로드/미리보기/삭제 연동 및 에러 안내 보강" },
-  { id: "0d6b91f", date: "2026-03-11", part: "FE", hash: "0d6b91f", title: "로그인/회원가입 테마 통일 및 시험/에이전트 UI 개선" },
-  { id: "bfc0275", date: "2026-03-12", part: "FE", hash: "bfc0275", title: "강의실 설명 선택 처리/채팅창 개선/리소스 카드 버튼 정리" },
-  { id: "93d9007", date: "2026-03-12", part: "FE", hash: "93d9007", title: "시험 생성/강의자료/Q&A 답변 API 및 UI 개선" },
-  { id: "77de0a4", date: "2026-03-12", part: "FE", hash: "77de0a4", title: "강의자료 생성 API 보완 및 완료 목록 반영" },
-  { id: "817c4fe", date: "2026-03-12", part: "FE", hash: "817c4fe", title: "latest-session 보완: 생성 완료 문서 표시" },
-  { id: "63ead33", date: "2026-03-12", part: "FE", hash: "63ead33", title: "강의실 목록/강의 페이지 UI 개선 및 버그 수정" },
-  { id: "a72292b", date: "2026-03-15", part: "FE", hash: "a72292b", title: "finalDocument 표시/마크다운 URL fetch 방지/모달 렌더링" },
-  { id: "0ae525f", date: "2026-03-15", part: "FE", hash: "0ae525f", title: "강의 자료 미리보기 finalDocument 기반 표시 보완" },
-  { id: "8e6c3d2", date: "2026-03-15", part: "FE", hash: "8e6c3d2", title: "시험 유형 코드 SHORT_ANSWER/DEBATE 변경" },
-  { id: "f2588e2", date: "2026-03-17", part: "FE", hash: "f2588e2", title: "설정 페이지 복구 및 UI 스타일 정리" },
-  { id: "644cb16", date: "2026-03-17", part: "FE", hash: "644cb16", title: "설정 페이지 헤더 정리/TopNav 정렬/리소스 메뉴 개선" },
-  { id: "6cad727", date: "2026-03-18", part: "FE", hash: "6cad727", title: "RightSidebar JSX/강의 로딩 병렬화/정렬·버튼 스타일 개선" },
-  { id: "6c7d470", date: "2026-03-18", part: "FE", hash: "6c7d470", title: "프로필 메뉴/테마 전환/시험 만들기 옵션화 개선" },
-  { id: "bb12ca6", date: "2026-03-18", part: "FE", hash: "bb12ca6", title: "로딩 화면 Newton's cradle 애니메이션 적용" },
-  { id: "d4de13d", date: "2026-03-19", part: "FE", hash: "d4de13d", title: "PDF 뷰어 개선 및 신고 페이지 추가" },
-  { id: "4282f62", date: "2026-03-19", part: "FE", hash: "4282f62", title: "수정/삭제 모드 UI 개선(헤더 버튼/선택 상태)" },
-  { id: "b35805c", date: "2026-03-20", part: "FE", hash: "b35805c", title: "강의 만들기 드롭다운/신고 이동/시험 폴링/PDF 배율 개선" },
-  { id: "cfa8eef", date: "2026-03-26", part: "FE", hash: "cfa8eef", title: "마크다운 미리보기 목차/미니맵 및 TOC 파싱" },
-  { id: "6bee9c1", date: "2026-03-27", part: "FE", hash: "6bee9c1", title: "시험 생성/레이아웃/마크다운/API 연동 개선" },
-  { id: "febbde6", date: "2026-04-01", part: "FE", hash: "febbde6", title: "강의 에이전트 Legacy stream·SSE 연동 및 레이아웃 개선" },
-  { id: "fd5f1fe", date: "2026-04-01", part: "FE", hash: "fd5f1fe", title: "통합학습 API learning/sessions 연동·401 처리·프록시" },
-  { id: "4d99553", date: "2026-04-02", part: "FE", hash: "4d99553", title: "강의 에이전트 스트림·스웨거 정합" },
-  { id: "37fd954", date: "2026-04-03", part: "FE", hash: "37fd954", title: "자료 뷰 50/50 분할/리사이즈, SSE 즉시 스트리밍 반영" },
-  { id: "ai-2025-11-09-01", date: "2025-11-09", part: "AI", hash: "AI", title: "메인 브랜치 병합(초기 통합)" },
-  { id: "ai-2025-11-10-01", date: "2025-11-10", part: "AI", hash: "AI", title: "await 처리 관련 업데이트" },
-  { id: "ai-2025-11-10-02", date: "2025-11-10", part: "AI", hash: "AI", title: "last 커밋(초기 실험 정리)" },
-  { id: "ai-2025-12-23-01", date: "2025-12-23", part: "AI", hash: "AI", title: "파일 업로드 기반 구조 보강" },
-  { id: "ai-2026-01-19-01", date: "2026-01-19", part: "AI", hash: "AI", title: "파일 업로드 기반 모듈 추가" },
-  { id: "ai-2026-01-20-01", date: "2026-01-20", part: "AI", hash: "AI", title: "README 생성 및 문서 기본틀 구성" },
-  { id: "ai-2026-01-20-02", date: "2026-01-20", part: "AI", hash: "AI", title: "README/문서 placeholder 및 설명 보강" },
-  { id: "ai-2026-01-22-01", date: "2026-01-22", part: "AI", hash: "AI", title: "LectureTestGenerator 디렉터리 구조 재정비" },
-  { id: "ai-2026-01-24-01", date: "2026-01-24", part: "AI", hash: "AI", title: "Debate/LectureTestGenerator 정리 및 업로드 반영" },
-  { id: "ai-2026-01-24-02", date: "2026-01-24", part: "AI", hash: "AI", title: "README 업데이트 및 가이드 파일 재배치" },
-  { id: "ai-2026-03-29-01", date: "2026-03-29", part: "AI", hash: "AI", title: "MergeEduAgentFull 프로젝트 추가" },
-  { id: "be-2025-11-09-01", date: "2025-11-09", part: "BE", hash: "BE", title: "ai-service 연동 초기 구현" },
-  { id: "be-2025-11-09-02", date: "2025-11-09", part: "BE", hash: "BE", title: "main/aiservice/hanmogo 브랜치 병합 정리" },
-  { id: "be-2025-11-10-01", date: "2025-11-10", part: "BE", hash: "BE", title: "AI 퀴즈 생성 API 구현" },
-  { id: "be-2025-11-10-02", date: "2025-11-10", part: "BE", hash: "BE", title: "AI 생성 컨텐츠 콜백 기능 추가" },
-  { id: "be-2025-11-10-03", date: "2025-11-10", part: "BE", hash: "BE", title: "권한 설정 및 user/teacher/student 연동 수정" },
-  { id: "be-2025-11-11-01", date: "2025-11-11", part: "BE", hash: "BE", title: "학생 질의(손들기) API 구현" },
-  { id: "be-2025-11-11-02", date: "2025-11-11", part: "BE", hash: "BE", title: "강의 스크립트 도중 질의 처리 API 구현" },
-  { id: "be-2025-11-11-03", date: "2025-11-11", part: "BE", hash: "BE", title: "questionId/QA 문제 수정 및 run_all stage 반영" },
-  { id: "be-2025-11-16-01", date: "2025-11-16", part: "BE", hash: "BE", title: "QnA 프로세스 수정(fix/qnaprocess)" },
-  { id: "be-2025-11-18-01", date: "2025-11-18", part: "BE", hash: "BE", title: "main-service 정리 및 최신 버전 반영" },
-  { id: "be-2025-11-19-01", date: "2025-11-19", part: "BE", hash: "BE", title: "develop 병합 및 환경파일(.env) 정리" },
+type GitHubCommitResponse = {
+  sha: string;
+  html_url: string;
+  commit: {
+    message: string;
+    author: {
+      name: string;
+      date: string;
+    };
+  };
+};
+
+type UpdateRecord = {
+  id: string;
+  date: string;
+  isoDate: string;
+  part: RepoPart;
+  repoName: string;
+  repoUrl: string;
+  hash: string;
+  title: string;
+  body?: string;
+  author: string;
+  url: string;
+};
+
+const GITHUB_REPOS: GitHubRepoConfig[] = [
+  {
+    part: "FE",
+    label: "FE",
+    name: "Frontend",
+    repo: "UOU_Capstone_Design_FE",
+    url: "https://github.com/uou-capstone/UOU_Capstone_Design_FE",
+  },
+  {
+    part: "BE",
+    label: "BE",
+    name: "Backend",
+    repo: "UOU_Capstone_Design_BE",
+    url: "https://github.com/uou-capstone/UOU_Capstone_Design_BE",
+  },
+  {
+    part: "AI",
+    label: "AI",
+    name: "AI",
+    repo: "UOU_Capstone_Design_AI",
+    url: "https://github.com/uou-capstone/UOU_Capstone_Design_AI",
+  },
 ];
 
 function toDate(value: string): Date {
-  const [y, m, d] = value.split("-").map(Number);
-  return new Date(y, m - 1, d);
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
 }
+
 function toKey(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function splitCommitMessage(message: string): { title: string; body?: string } {
+  const [title, ...rest] = message.split(/\r?\n/);
+  const body = rest.join("\n").trim();
+  return {
+    title: title.trim() || "제목 없음",
+    body: body || undefined,
+  };
+}
+
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatDateLabel(value: string): string {
+  const date = toDate(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    weekday: "short",
+  }).format(date);
+}
+
+function parseGitHubCommit(
+  repo: GitHubRepoConfig,
+  commit: GitHubCommitResponse,
+): UpdateRecord {
+  const { title, body } = splitCommitMessage(commit.commit.message);
+  const isoDate = commit.commit.author.date;
+  return {
+    id: `${repo.part}-${commit.sha}`,
+    date: toKey(new Date(isoDate)),
+    isoDate,
+    part: repo.part,
+    repoName: repo.repo,
+    repoUrl: repo.url,
+    hash: commit.sha.slice(0, 7),
+    title,
+    body,
+    author: commit.commit.author.name,
+    url: commit.html_url,
+  };
 }
 
 const UpdatesPage: React.FC = () => {
   const { isDarkMode } = useTheme();
+  const [records, setRecords] = useState<UpdateRecord[]>([]);
   const [partFilter, setPartFilter] = useState<UpdatePart>("ALL");
+  const [selectedDate, setSelectedDate] = useState<string>(() => toKey(new Date()));
+  const [currentMonth, setCurrentMonth] = useState<Date>(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loadedAt, setLoadedAt] = useState<string | null>(null);
+
+  const loadUpdates = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const repoRecords = await Promise.all(
+        GITHUB_REPOS.map(async (repo) => {
+          const response = await fetch(
+            `https://api.github.com/repos/uou-capstone/${repo.repo}/commits?per_page=30`,
+            {
+              headers: {
+                Accept: "application/vnd.github+json",
+              },
+            },
+          );
+
+          if (!response.ok) {
+            throw new Error(`${repo.repo}: GitHub API ${response.status}`);
+          }
+
+          const commits = (await response.json()) as GitHubCommitResponse[];
+          return commits.map((commit) => parseGitHubCommit(repo, commit));
+        }),
+      );
+
+      const nextRecords = repoRecords
+        .flat()
+        .sort((a, b) => b.isoDate.localeCompare(a.isoDate));
+
+      setRecords(nextRecords);
+      setLoadedAt(new Date().toISOString());
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "unknown error";
+      setError(`GitHub 업데이트 내역을 불러오지 못했습니다. ${detail}`);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadUpdates();
+  }, [loadUpdates]);
 
   const partRecords = useMemo(
     () =>
       partFilter === "ALL"
         ? records
-        : records.filter((r) => r.part === partFilter),
-    [partFilter],
+        : records.filter((record) => record.part === partFilter),
+    [partFilter, records],
   );
-  const dateCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    partRecords.forEach((r) => map.set(r.date, (map.get(r.date) ?? 0) + 1));
-    return map;
-  }, [partRecords]);
+
   const orderedDates = useMemo(
-    () => [...new Set(partRecords.map((r) => r.date))].sort(),
+    () => [...new Set(partRecords.map((record) => record.date))].sort(),
     [partRecords],
   );
 
-  const [currentMonth, setCurrentMonth] = useState<Date>(() => {
-    const last = orderedDates[orderedDates.length - 1];
-    const base = last ? toDate(last) : new Date();
-    return new Date(base.getFullYear(), base.getMonth(), 1);
-  });
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    return orderedDates[orderedDates.length - 1] ?? toKey(new Date());
-  });
+  useEffect(() => {
+    const latest = orderedDates[orderedDates.length - 1];
+    if (!latest) return;
+
+    if (!orderedDates.includes(selectedDate)) {
+      const latestDate = toDate(latest);
+      setSelectedDate(latest);
+      setCurrentMonth(new Date(latestDate.getFullYear(), latestDate.getMonth(), 1));
+    }
+  }, [orderedDates, selectedDate]);
+
+  const dateCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    partRecords.forEach((record) => {
+      map.set(record.date, (map.get(record.date) ?? 0) + 1);
+    });
+    return map;
+  }, [partRecords]);
 
   const recordsOnSelectedDate = useMemo(
-    () => partRecords.filter((r) => r.date === selectedDate),
+    () => partRecords.filter((record) => record.date === selectedDate),
     [partRecords, selectedDate],
   );
 
-  const cardClass = isDarkMode
-    ? "border-zinc-700 bg-zinc-900/60"
-    : "border-gray-200 bg-white";
-  const textMuted = isDarkMode ? "text-gray-400" : "text-gray-500";
-  const textMain = isDarkMode ? "text-white" : "text-gray-900";
+  const repoSummaries = useMemo(
+    () =>
+      GITHUB_REPOS.map((repo) => {
+        const repoItems = records.filter((record) => record.part === repo.part);
+        return {
+          ...repo,
+          count: repoItems.length,
+          latest: repoItems[0],
+        };
+      }),
+    [records],
+  );
 
-  const monthLabel = `${currentMonth.getFullYear()}-${String(
+  const cardClass = isDarkMode
+    ? "border-[#3a332f] bg-[#242220]"
+    : "border-[#dfd8d2] bg-white";
+  const softCardClass = isDarkMode
+    ? "border-[#3a332f] bg-[#2b2825]"
+    : "border-[#eadfd7] bg-[#fffaf6]";
+  const textMain = isDarkMode ? "text-[#f6f0eb]" : "text-[#1f1a16]";
+  const textMuted = isDarkMode ? "text-[#bcb0a8]" : "text-[#6f6258]";
+  const subtleText = isDarkMode ? "text-[#9e928a]" : "text-[#8b7a6f]";
+  const activeButton = "border-[#ff824d] bg-[#ff824d] text-white";
+  const inactiveButton = isDarkMode
+    ? "border-[#3a332f] bg-[#2b2825] text-[#d8cec7] hover:bg-[#34302c]"
+    : "border-[#dfd8d2] bg-white text-[#554941] hover:bg-[#fff4ec]";
+  const chipClass = isDarkMode
+    ? "border-[#4a4038] bg-[#312d29] text-[#f0e6df]"
+    : "border-[#eadfd7] bg-[#fff7f1] text-[#554941]";
+
+  const monthLabel = `${currentMonth.getFullYear()}.${String(
     currentMonth.getMonth() + 1,
   ).padStart(2, "0")}`;
   const startWeekday = new Date(
@@ -181,153 +266,266 @@ const UpdatesPage: React.FC = () => {
   ).getDate();
   const dayCells = [
     ...Array.from({ length: startWeekday }).map(() => null),
-    ...Array.from({ length: daysInMonth }).map((_, i) => i + 1),
+    ...Array.from({ length: daysInMonth }).map((_, index) => index + 1),
   ];
 
   return (
     <div className="h-full min-h-0 overflow-hidden">
-      <div className="mx-auto grid h-full w-full max-w-7xl grid-cols-1 gap-4 lg:grid-cols-[20rem_1fr]">
-        <aside className={`rounded-2xl border p-4 ${cardClass} min-h-0`}>
-          <div className="mb-4 flex flex-wrap gap-2">
-            {(
-              [
-                { value: "ALL", label: "전체" },
-                { value: "AI", label: "AI" },
-                { value: "BE", label: "BE" },
-                { value: "FE", label: "FE" },
-              ] as const
-            ).map((part) => {
-              const selected = partFilter === part.value;
-              return (
-                <button
-                  key={part.value}
-                  type="button"
-                  onClick={() => setPartFilter(part.value)}
-                  className={`w-16 rounded-full px-4 py-1.5 text-sm font-medium cursor-pointer text-center ${
-                    selected
-                      ? "bg-[#ff824d] text-white"
-                      : isDarkMode
-                      ? "bg-zinc-800 text-gray-300 hover:bg-zinc-700"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  {part.label}
-                </button>
-              );
-            })}
+      <div className="mx-auto flex h-full w-full max-w-7xl flex-col gap-4">
+        <header className={`rounded-2xl border px-5 py-4 ${cardClass}`}>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className={`text-sm font-semibold ${subtleText}`}>GitHub Repository Updates</p>
+              <h1 className={`mt-1 text-2xl font-semibold ${textMain}`}>업데이트 기록</h1>
+              <p className={`mt-1 text-sm ${textMuted}`}>
+                uou-capstone의 FE, BE, AI 레포지토리 최신 커밋 내역을 가져옵니다.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {loadedAt ? (
+                <span className={`hidden text-xs sm:inline ${subtleText}`}>
+                  갱신 {formatDateTime(loadedAt)}
+                </span>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void loadUpdates()}
+                disabled={isLoading}
+                aria-label="업데이트 새로고침"
+                title="업데이트 새로고침"
+                className={`inline-flex h-10 w-10 items-center justify-center rounded-[var(--app-control-radius)] border transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${inactiveButton}`}
+              >
+                <RefreshIcon className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+              </button>
+            </div>
           </div>
 
-          <div className="mb-3 flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() =>
-                setCurrentMonth(
-                  new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1),
-                )
-              }
-              className={`rounded px-2 py-1 text-sm cursor-pointer ${
-                isDarkMode ? "hover:bg-zinc-800" : "hover:bg-gray-100"
-              }`}
-            >
-              ◀
-            </button>
-            <div className={`text-sm font-semibold ${textMain}`}>{monthLabel}</div>
-            <button
-              type="button"
-              onClick={() =>
-                setCurrentMonth(
-                  new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1),
-                )
-              }
-              className={`rounded px-2 py-1 text-sm cursor-pointer ${
-                isDarkMode ? "hover:bg-zinc-800" : "hover:bg-gray-100"
-              }`}
-            >
-              ▶
-            </button>
-          </div>
-
-          <div className={`mb-2 grid grid-cols-7 text-center text-xs ${textMuted}`}>
-            {["일", "월", "화", "수", "목", "금", "토"].map((w) => (
-              <span key={w}>{w}</span>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            {repoSummaries.map((repo) => (
+              <a
+                key={repo.part}
+                href={repo.url}
+                target="_blank"
+                rel="noreferrer"
+                className={`rounded-[var(--app-control-radius)] border p-3 transition-colors ${softCardClass}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <span className="inline-flex rounded-full bg-[#ff824d] px-2.5 py-1 text-xs font-semibold text-white">
+                      {repo.label}
+                    </span>
+                    <p className={`mt-2 text-sm font-semibold ${textMain}`}>{repo.name}</p>
+                    <p className={`mt-0.5 truncate text-xs ${subtleText}`}>{repo.repo}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className={`text-2xl font-semibold ${textMain}`}>{repo.count}</p>
+                    <p className={`text-xs ${subtleText}`}>최근 커밋</p>
+                  </div>
+                </div>
+                <p className={`mt-3 line-clamp-1 text-xs ${textMuted}`}>
+                  {repo.latest ? repo.latest.title : "불러온 기록 없음"}
+                </p>
+              </a>
             ))}
           </div>
-          <div className="grid grid-cols-7 gap-1">
-            {dayCells.map((d, idx) => {
-              if (d == null) return <div key={`empty-${idx}`} className="h-12" />;
-              const key = toKey(
-                new Date(currentMonth.getFullYear(), currentMonth.getMonth(), d),
-              );
-              const count = dateCounts.get(key) ?? 0;
-              const hasLogs = count > 0;
-              const selected = selectedDate === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setSelectedDate(key)}
-                  className={`h-12 rounded-md border text-xs cursor-pointer ${
-                    selected
-                      ? "border-[#ff824d] bg-[#ff824d]/15 text-[#ff824d]"
-                      : hasLogs
-                      ? isDarkMode
-                        ? "border-[#ff824d]/50 bg-[#ff824d]/10 text-[#ffb08b] hover:bg-[#ff824d]/15"
-                        : "border-[#ff824d]/25 bg-[#ff824d]/10 text-[#d95d26] hover:bg-[#ff824d]/15"
-                      : isDarkMode
-                      ? "border-zinc-700 hover:bg-zinc-800 text-gray-300"
-                      : "border-gray-200 hover:bg-gray-50 text-gray-700"
-                  }`}
-                >
-                  <div className="flex h-full flex-col items-center justify-center">
-                    <div>{d}</div>
-                    {hasLogs ? (
-                      <div className="mt-0.5 text-xs opacity-90">{count}건</div>
-                    ) : null}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </aside>
+        </header>
 
-        <section className={`rounded-2xl border p-4 ${cardClass} min-h-0 overflow-y-auto`}>
-          <div className="mb-4">
-            <h1 className={`text-xl font-semibold ${textMain}`}>업데이트 기록</h1>
-            <p className={`text-sm ${textMuted}`}>
-              선택한 날짜: {selectedDate} · 파트: {partFilter}
-            </p>
-          </div>
-
-          {recordsOnSelectedDate.length === 0 ? (
-            <div className={`rounded-xl border p-4 ${isDarkMode ? "border-zinc-700" : "border-gray-200"}`}>
-              <p className={`text-sm ${textMuted}`}>해당 날짜 기록이 없습니다.</p>
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[20rem_1fr]">
+          <aside className={`min-h-0 rounded-2xl border p-4 ${cardClass}`}>
+            <div className="mb-4 flex flex-wrap gap-2">
+              {(
+                [
+                  { value: "ALL", label: "전체" },
+                  { value: "FE", label: "FE" },
+                  { value: "BE", label: "BE" },
+                  { value: "AI", label: "AI" },
+                ] as const
+              ).map((part) => {
+                const selected = partFilter === part.value;
+                return (
+                  <button
+                    key={part.value}
+                    type="button"
+                    onClick={() => setPartFilter(part.value)}
+                    className={`h-9 rounded-[var(--app-control-radius)] border px-3 text-sm font-medium transition-colors ${
+                      selected ? activeButton : inactiveButton
+                    }`}
+                  >
+                    {part.label}
+                  </button>
+                );
+              })}
             </div>
-          ) : (
-            <div className="space-y-3">
-              {recordsOnSelectedDate.map((r, idx) => (
-                <article
-                  key={r.id}
-                  className={`rounded-xl border p-4 ${
-                    isDarkMode ? "border-zinc-700 bg-zinc-900/40" : "border-gray-200 bg-white"
-                  }`}
-                >
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <h2 className={`text-sm font-semibold ${textMain}`}>
-                      {idx + 1}. {r.title}
-                    </h2>
-                    <span className={`text-xs ${textMuted}`}>#{r.hash}</span>
-                  </div>
-                  <ul className={`space-y-1 text-sm ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
-                    <li>- 목표: 사용자 시나리오 품질과 기능 안정성 개선</li>
-                    <li>- 어려운 점: 기존 흐름과 충돌 없이 변경 범위를 최소화해야 함</li>
-                    <li>- 에러/리스크: 상태 전환, 라우팅, UI 밀도에 따른 회귀 가능성</li>
-                    <li>- 해결 과정: 점진 반영 + 타입/린트 점검 + 동작 검증 순으로 정리</li>
-                  </ul>
-                </article>
+
+            <div className="mb-3 flex items-center justify-between">
+              <button
+                type="button"
+                aria-label="이전 달"
+                onClick={() =>
+                  setCurrentMonth(
+                    new Date(
+                      currentMonth.getFullYear(),
+                      currentMonth.getMonth() - 1,
+                      1,
+                    ),
+                  )
+                }
+                className={`h-8 w-8 rounded-[var(--app-control-radius)] border text-sm transition-colors ${inactiveButton}`}
+              >
+                ‹
+              </button>
+              <div className={`text-sm font-semibold ${textMain}`}>{monthLabel}</div>
+              <button
+                type="button"
+                aria-label="다음 달"
+                onClick={() =>
+                  setCurrentMonth(
+                    new Date(
+                      currentMonth.getFullYear(),
+                      currentMonth.getMonth() + 1,
+                      1,
+                    ),
+                  )
+                }
+                className={`h-8 w-8 rounded-[var(--app-control-radius)] border text-sm transition-colors ${inactiveButton}`}
+              >
+                ›
+              </button>
+            </div>
+
+            <div className={`mb-2 grid grid-cols-7 text-center text-xs ${subtleText}`}>
+              {["일", "월", "화", "수", "목", "금", "토"].map((weekday) => (
+                <span key={weekday}>{weekday}</span>
               ))}
             </div>
-          )}
-        </section>
+            <div className="grid grid-cols-7 gap-1">
+              {dayCells.map((day, index) => {
+                if (day == null) {
+                  return <div key={`empty-${index}`} className="h-11" />;
+                }
+
+                const key = toKey(
+                  new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day),
+                );
+                const count = dateCounts.get(key) ?? 0;
+                const hasLogs = count > 0;
+                const selected = selectedDate === key;
+
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setSelectedDate(key)}
+                    className={`h-11 rounded-[var(--app-control-radius)] border text-xs transition-colors ${
+                      selected
+                        ? "border-[#ff824d] bg-[#ff824d] text-white"
+                        : hasLogs
+                          ? isDarkMode
+                            ? "border-[#6f4a37] bg-[#3a302b] text-[#ffb08b] hover:bg-[#43362f]"
+                            : "border-[#ffd5c2] bg-[#fff3ec] text-[#d95d26] hover:bg-[#ffe9dc]"
+                          : inactiveButton
+                    }`}
+                  >
+                    <span className="flex h-full flex-col items-center justify-center">
+                      <span>{day}</span>
+                      {hasLogs ? <span className="mt-0.5 text-[10px]">{count}</span> : null}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {error ? (
+              <div
+                className={`mt-4 rounded-[var(--app-control-radius)] border px-3 py-2 text-xs ${
+                  isDarkMode
+                    ? "border-red-900/60 bg-red-950/30 text-red-200"
+                    : "border-red-200 bg-red-50 text-red-700"
+                }`}
+              >
+                {error}
+              </div>
+            ) : null}
+          </aside>
+
+          <section
+            className={`min-h-0 overflow-y-auto rounded-2xl border p-4 ${cardClass}`}
+            aria-busy={isLoading}
+          >
+            <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p className={`text-sm font-semibold ${subtleText}`}>
+                  {partFilter === "ALL" ? "전체 레포지토리" : `${partFilter} 레포지토리`}
+                </p>
+                <h2 className={`mt-1 text-xl font-semibold ${textMain}`}>
+                  {formatDateLabel(selectedDate)}
+                </h2>
+              </div>
+              <span className={`text-sm ${textMuted}`}>
+                {recordsOnSelectedDate.length}건의 업데이트
+              </span>
+            </div>
+
+            {isLoading && records.length === 0 ? (
+              <div className={`rounded-[var(--app-control-radius)] border p-5 ${softCardClass}`}>
+                <p className={`text-sm ${textMuted}`}>GitHub 업데이트 내역을 불러오는 중입니다.</p>
+              </div>
+            ) : recordsOnSelectedDate.length === 0 ? (
+              <div className={`rounded-[var(--app-control-radius)] border p-5 ${softCardClass}`}>
+                <p className={`text-sm ${textMuted}`}>선택한 날짜의 업데이트 기록이 없습니다.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {recordsOnSelectedDate.map((record) => (
+                  <article
+                    key={record.id}
+                    className={`rounded-[var(--app-control-radius)] border p-4 ${softCardClass}`}
+                  >
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                          <span className="inline-flex rounded-full bg-[#ff824d] px-2.5 py-1 text-xs font-semibold text-white">
+                            {record.part}
+                          </span>
+                          <span className={`rounded-full border px-2.5 py-1 text-xs ${chipClass}`}>
+                            {record.repoName}
+                          </span>
+                          <span className={`rounded-full border px-2.5 py-1 text-xs ${chipClass}`}>
+                            #{record.hash}
+                          </span>
+                        </div>
+                        <h3 className={`text-base font-semibold ${textMain}`}>{record.title}</h3>
+                        <p className={`mt-1 text-xs ${subtleText}`}>
+                          {record.author} · {formatDateTime(record.isoDate)}
+                        </p>
+                      </div>
+                      <a
+                        href={record.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={`inline-flex shrink-0 items-center justify-center rounded-[var(--app-control-radius)] border px-3 py-2 text-sm font-medium transition-colors ${inactiveButton}`}
+                      >
+                        GitHub에서 보기
+                      </a>
+                    </div>
+
+                    {record.body ? (
+                      <pre
+                        className={`mt-3 max-h-40 overflow-auto whitespace-pre-wrap rounded-[var(--app-control-radius)] border p-3 text-xs leading-5 ${
+                          isDarkMode
+                            ? "border-[#3a332f] bg-[#242220] text-[#d8cec7]"
+                            : "border-[#eadfd7] bg-white text-[#554941]"
+                        }`}
+                      >
+                        {record.body}
+                      </pre>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
       </div>
     </div>
   );
