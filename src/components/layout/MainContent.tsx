@@ -10,6 +10,7 @@ import {
   materialApi,
   materialGenerationApi,
   studentReportApi,
+  reportCriteriaApi,
   tasksApi,
   examGenerationApi,
   courseContentsApi,
@@ -218,6 +219,19 @@ function formatReportPercent(value: number | undefined): string {
 function formatReportCount(value: number | undefined, suffix = "회"): string {
   if (value == null || !Number.isFinite(value)) return "-";
   return `${Math.round(value)}${suffix}`;
+}
+
+function clampReportScore(value: number | undefined): number {
+  if (value == null || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function compactReportLines(value: string | undefined, fallback: string): string[] {
+  const lines = String(value ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/^[\s>*#\-•]+/, "").trim())
+    .filter(Boolean);
+  return lines.length > 0 ? lines.slice(0, 4) : [fallback];
 }
 
 function sanitizeDownloadFileName(name: string | null | undefined): string {
@@ -1193,7 +1207,6 @@ const MainContent: React.FC<MainContentProps> = ({
   const [editCourseMetaDescription, setEditCourseMetaDescription] =
     React.useState("");
   const [editCourseMetaSaving, setEditCourseMetaSaving] = React.useState(false);
-  const editCourseMetaDescRef = React.useRef<HTMLTextAreaElement | null>(null);
   const [joinError, setJoinError] = React.useState<string | null>(null);
   const [joinSuccess, setJoinSuccess] = React.useState<string | null>(null);
   const [isJoining, setIsJoining] = React.useState(false);
@@ -1503,6 +1516,7 @@ const MainContent: React.FC<MainContentProps> = ({
     React.useState(false);
   const [classroomAnalyzeStreaming, setClassroomAnalyzeStreaming] = React.useState(false);
   const [classroomStreamBuffer, setClassroomStreamBuffer] = React.useState("");
+  const [reportCriteriaCount, setReportCriteriaCount] = React.useState<number | null>(null);
   const [studentAiContext, setStudentAiContext] =
     React.useState<StudentReportAiContextResponse | null>(null);
   const [studentAiContextLoading, setStudentAiContextLoading] = React.useState(false);
@@ -1669,6 +1683,25 @@ const MainContent: React.FC<MainContentProps> = ({
   React.useEffect(() => {
     void loadStudentReportList();
   }, [loadStudentReportList]);
+
+  React.useEffect(() => {
+    if (!classroomReportPageOpen || courseDetail?.courseId == null) {
+      setReportCriteriaCount(null);
+      return;
+    }
+    let cancelled = false;
+    void reportCriteriaApi
+      .listCriteria(courseDetail.courseId)
+      .then((items) => {
+        if (!cancelled) setReportCriteriaCount(items.length);
+      })
+      .catch(() => {
+        if (!cancelled) setReportCriteriaCount(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [classroomReportPageOpen, courseDetail?.courseId]);
 
   React.useEffect(() => {
     if (
@@ -1885,6 +1918,700 @@ const MainContent: React.FC<MainContentProps> = ({
     reportChatMessages,
     reportChatSending,
   ]);
+
+  const renderClassroomReportPage = () => {
+    if (!courseDetail) return null;
+    const selectedStudent =
+      studentReportDetail ?? selectedStudentReportSummary ?? null;
+    const selectedName =
+      selectedStudent?.name ||
+      (selectedStudentReportId != null ? `학생 ${selectedStudentReportId}` : "학생 선택");
+    const selectedEmail = selectedStudent?.email;
+    const selectedLatest =
+      studentReportDetail?.latestActivityAt ??
+      selectedStudentReportSummary?.latestActivityAt;
+    const competencies = studentReportDetail?.competencies ?? [];
+    const score = clampReportScore(
+      studentReportDetail?.averageScorePercent ??
+        selectedStudentReportSummary?.averageScorePercent,
+    );
+    const submittedCount = studentAiContext?.activitySummary?.submittedCount;
+    const totalAssessments = studentAiContext?.activitySummary?.totalAssessments;
+    const missingCount = studentAiContext?.activitySummary?.missingCount;
+    const scoreTrend = studentAiContext?.scoreSummary?.trend;
+    const summaryLines = compactReportLines(
+      studentReportDetail?.narrativeReport,
+      "선택한 학생의 리포트 본문이 아직 없습니다.",
+    );
+    const strongCompetencies = competencies
+      .filter((item) => clampReportScore(item.scorePercent) >= 70)
+      .slice(0, 3);
+    const weakCompetencies = competencies
+      .filter((item) => clampReportScore(item.scorePercent) < 50)
+      .slice(0, 3);
+    const baseCriteriaCount =
+      reportCriteriaCount ?? (competencies.length > 0 ? competencies.length : 0);
+    const cardClass = `rounded-[var(--app-control-radius)] border ${
+      isDarkMode
+        ? "border-[#2b2b2b] bg-[#202020]"
+        : "border-[#dedbd5] bg-white"
+    }`;
+    const softCardClass = `rounded-[var(--app-control-radius)] border ${
+      isDarkMode
+        ? "border-[#343434] bg-[#242424]"
+        : "border-[#e8e1d8] bg-[#fbfaf7]"
+    }`;
+    const mutedText = isDarkMode ? "text-gray-400" : "text-gray-500";
+    const buttonClass = `rounded-[var(--app-control-radius)] border px-3 py-2 text-xs font-semibold transition-colors disabled:opacity-50 ${
+      isDarkMode
+        ? "border-[#3a3a3a] text-gray-200 hover:bg-white/10"
+        : "border-[#dedbd5] text-gray-700 hover:bg-[#f7f5f1]"
+    }`;
+    const primaryButtonClass =
+      "rounded-[var(--app-control-radius)] bg-[#ff824d] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#f26f37] disabled:opacity-50";
+
+    const refreshClassroomReport = () => {
+      if (courseDetail?.courseId == null) return;
+      setClassroomReportLoading(true);
+      setClassroomReportError(null);
+      void studentReportApi
+        .getClassroomReport(courseDetail.courseId)
+        .then((report) => setClassroomReport(report))
+        .catch((error) => {
+          setClassroomReportError(
+            error instanceof Error
+              ? error.message
+              : "강의실 리포트를 불러오지 못했습니다.",
+          );
+          setClassroomReport(undefined);
+        })
+        .finally(() => setClassroomReportLoading(false));
+    };
+
+    const refreshSelectedStudentReport = () => {
+      if (courseDetail?.courseId == null || selectedStudentReportId == null) return;
+      setStudentReportDetailLoading(true);
+      setStudentReportDetailError(null);
+      void Promise.all([
+        studentReportApi.getStudentReportDetail(
+          courseDetail.courseId,
+          selectedStudentReportId,
+        ),
+        studentReportApi.getStudentAiContext(
+          courseDetail.courseId,
+          selectedStudentReportId,
+        ),
+      ])
+        .then(([detail, context]) => {
+          setStudentReportDetail(detail);
+          setStudentAiContext(context);
+          void loadStudentReportList();
+        })
+        .catch((error) => {
+          setStudentReportDetailError(
+            error instanceof Error
+              ? error.message
+              : "학생 리포트를 다시 불러오지 못했습니다.",
+          );
+        })
+        .finally(() => setStudentReportDetailLoading(false));
+    };
+
+    const runClassroomAnalyze = (stream: boolean) => {
+      if (courseDetail?.courseId == null) return;
+      setClassroomReportError(null);
+      if (stream) {
+        setClassroomAnalyzeStreaming(true);
+        setClassroomStreamBuffer("");
+        void (async () => {
+          try {
+            await studentReportApi.streamClassroomAnalyze(courseDetail.courseId, {
+              onDelta: (chunk) => setClassroomStreamBuffer((prev) => prev + chunk),
+            });
+            const report = await studentReportApi.getClassroomReport(
+              courseDetail.courseId,
+            );
+            setClassroomReport(report);
+          } catch (error) {
+            setClassroomReportError(
+              error instanceof Error
+                ? error.message
+                : "스트리밍 분석에 실패했습니다.",
+            );
+          } finally {
+            setClassroomAnalyzeStreaming(false);
+          }
+        })();
+        return;
+      }
+
+      setClassroomAnalyzeSyncLoading(true);
+      void (async () => {
+        try {
+          await studentReportApi.analyzeClassroomSync(courseDetail.courseId);
+          const report = await studentReportApi.getClassroomReport(
+            courseDetail.courseId,
+          );
+          setClassroomReport(report);
+        } catch (error) {
+          setClassroomReportError(
+            error instanceof Error ? error.message : "종합 분석에 실패했습니다.",
+          );
+        } finally {
+          setClassroomAnalyzeSyncLoading(false);
+        }
+      })();
+    };
+
+    return (
+      <div className="mx-auto flex w-full max-w-[76rem] flex-col gap-3 pb-6">
+        <button
+          type="button"
+          onClick={() => setTeacherMainPanel("materials")}
+          className={`self-start text-xs font-semibold ${
+            isDarkMode ? "text-gray-300 hover:text-white" : "text-gray-600 hover:text-gray-950"
+          }`}
+        >
+          ← 강의실로 돌아가기
+        </button>
+
+        <section
+          className={`${cardClass} relative overflow-hidden px-5 py-5`}
+        >
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <span
+                className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                  isDarkMode
+                    ? "bg-white/10 text-gray-200"
+                    : "bg-[#fff1e8] text-[#c95018]"
+                }`}
+              >
+                리포트 생성
+              </span>
+              <h2 className="mt-3 text-2xl font-semibold leading-tight">
+                {courseDetail?.title ?? "강의실"} 학생별 역량 리포트
+              </h2>
+              <p className={`mt-2 text-sm ${mutedText}`}>
+                참여 학생을 선택하면 학습 지표, 리포트 본문, AI context 기반 챗봇을 한 화면에서 확인합니다.
+              </p>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                ["기본 항목", `${baseCriteriaCount}개`],
+                ["추가 항목", "0개"],
+                ["분석 기준", classroomAnalyzeStreaming ? "반영 중" : "적용 중"],
+              ].map(([label, value]) => (
+                <div key={label} className={`${softCardClass} min-w-[7rem] px-4 py-3`}>
+                  <p className={`text-xs font-semibold ${mutedText}`}>{label}</p>
+                  <p className="mt-1 text-xl font-semibold">{value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        <section className={`${cardClass} px-4 py-3`}>
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+              <span className="font-semibold">선택 학생</span>
+              <span className="font-semibold">{selectedName}</span>
+              {selectedEmail ? <span className={mutedText}>{selectedEmail}</span> : null}
+              <span className={mutedText}>
+                마지막 저장 {formatActivityMonthForKo(selectedLatest)}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void loadStudentReportList()}
+                disabled={studentReportListLoading}
+                className={buttonClass}
+              >
+                학생 목록 새로고침
+              </button>
+              <button
+                type="button"
+                onClick={refreshSelectedStudentReport}
+                disabled={selectedStudentReportId == null || studentReportDetailLoading}
+                className={primaryButtonClass}
+              >
+                선택 학생 새로고침
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-3 grid grid-cols-1 gap-2 lg:grid-cols-[minmax(0,1fr)_10rem_9rem]">
+            <input
+              type="text"
+              value={studentReportSearchInput}
+              onChange={(event) => setStudentReportSearchInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  setStudentReportPage(0);
+                  setStudentReportQuery(studentReportSearchInput.trim());
+                }
+              }}
+              placeholder="학생 이름 검색"
+              className={`rounded-[var(--app-control-radius)] border px-3 py-2 text-sm outline-none ${
+                isDarkMode
+                  ? "border-[#343434] bg-[#181818] text-white placeholder:text-gray-500"
+                  : "border-[#dedbd5] bg-white text-[#212121] placeholder:text-gray-400"
+              }`}
+            />
+            <select
+              value={studentReportStatus}
+              onChange={(event) => {
+                setStudentReportPage(0);
+                setStudentReportStatus(event.target.value as StudentReportStatusFilter);
+              }}
+              className={`rounded-[var(--app-control-radius)] border px-3 py-2 text-sm outline-none ${
+                isDarkMode
+                  ? "border-[#343434] bg-[#181818] text-white"
+                  : "border-[#dedbd5] bg-white text-[#212121]"
+              }`}
+            >
+              {STUDENT_REPORT_STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => {
+                setStudentReportPage(0);
+                setStudentReportQuery(studentReportSearchInput.trim());
+              }}
+              className={primaryButtonClass}
+            >
+              검색
+            </button>
+          </div>
+
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            {studentReportListLoading ? (
+              <span className={`text-sm ${mutedText}`}>학생 리포트를 불러오는 중...</span>
+            ) : studentReportList?.content?.length ? (
+              studentReportList.content.map((student) => {
+                const active = selectedStudentReportId === student.studentId;
+                return (
+                  <button
+                    key={student.studentId}
+                    type="button"
+                    onClick={() => setSelectedStudentReportId(student.studentId)}
+                    className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      active
+                        ? "border-[#ff824d] bg-[#ff824d] text-white"
+                        : isDarkMode
+                          ? "border-[#343434] bg-[#181818] text-gray-200 hover:bg-[#252525]"
+                          : "border-[#dedbd5] bg-white text-gray-700 hover:bg-[#f7f5f1]"
+                    }`}
+                  >
+                    {student.name || `학생 ${student.studentId}`} ·{" "}
+                    {studentReportStatusLabel(String(student.reportStatus))}
+                  </button>
+                );
+              })
+            ) : (
+              <span className={`text-sm ${mutedText}`}>표시할 학생이 없습니다.</span>
+            )}
+          </div>
+          {studentReportList && studentReportList.totalPages > 1 ? (
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={studentReportList.first}
+                onClick={() => setStudentReportPage((prev) => Math.max(0, prev - 1))}
+                className={buttonClass}
+              >
+                이전
+              </button>
+              <span className={`text-xs ${mutedText}`}>
+                {studentReportList.page + 1} / {studentReportList.totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={studentReportList.last}
+                onClick={() =>
+                  setStudentReportPage((prev) =>
+                    Math.min(studentReportList.totalPages - 1, prev + 1),
+                  )
+                }
+                className={buttonClass}
+              >
+                다음
+              </button>
+            </div>
+          ) : null}
+        </section>
+
+        {studentReportListError ? (
+          <p className={`text-sm ${isDarkMode ? "text-red-300" : "text-red-600"}`}>
+            {studentReportListError}
+          </p>
+        ) : null}
+
+        <section className={`${cardClass} px-5 py-5`}>
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_10rem] lg:items-center">
+            <div>
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full bg-[#ff824d] px-3 py-1 text-xs font-semibold text-white">
+                  {studentReportStatusLabel(String(studentReportDetail?.reportStatus ?? selectedStudentReportSummary?.reportStatus ?? "all"))}
+                </span>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  isDarkMode ? "bg-white/10 text-gray-200" : "bg-[#fff1e8] text-[#c95018]"
+                }`}>
+                  리포트 점검
+                </span>
+                {scoreTrend ? (
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                    isDarkMode ? "bg-white/10 text-gray-200" : "bg-[#f4f1eb] text-gray-700"
+                  }`}>
+                    {scoreTrend}
+                  </span>
+                ) : null}
+              </div>
+              <h3 className="mt-3 text-2xl font-semibold leading-snug">
+                {score < 50
+                  ? "기초 체력을 올리면서 약점 개념을 좁혀가야 하는 구간입니다."
+                  : score < 75
+                    ? "핵심 개념은 잡혀 있으나 보완 학습이 필요한 구간입니다."
+                    : "학습 흐름이 안정적이며 심화 적용을 시도할 수 있습니다."}
+              </h3>
+              <p className={`mt-2 text-sm ${mutedText}`}>
+                현재 데이터와 리포트 기준을 바탕으로 학생의 강점과 보완 포인트를 요약했습니다.
+              </p>
+            </div>
+            <div className="flex items-center justify-center">
+              <div
+                className="flex h-28 w-28 items-center justify-center rounded-full"
+                style={{
+                  background: `conic-gradient(#ff824d ${score * 3.6}deg, ${
+                    isDarkMode ? "#343434" : "#e8e1d8"
+                  } 0deg)`,
+                }}
+              >
+                <div
+                  className={`flex h-20 w-20 flex-col items-center justify-center rounded-full ${
+                    isDarkMode ? "bg-[#202020]" : "bg-white"
+                  }`}
+                >
+                  <span className="text-2xl font-semibold">{score}</span>
+                  <span className={`text-[11px] font-semibold ${mutedText}`}>종합 점수</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
+            {[
+              ["강의", `${selectedStudentReportSummary?.courseProgressPercent != null ? formatReportPercent(selectedStudentReportSummary.courseProgressPercent) : "-"}`],
+              ["질문", formatReportCount(reportChatMessages.length, "건")],
+              ["제출 체크", `${submittedCount ?? "-"}건`],
+              ["평균 점수", formatReportPercent(studentReportDetail?.averageScorePercent ?? selectedStudentReportSummary?.averageScorePercent)],
+              ["고사 시험", formatReportCount(selectedStudentReportSummary?.examAttemptCount)],
+              ["미제출", `${missingCount ?? "-"}건`],
+            ].map(([label, value]) => (
+              <div key={label} className={`${softCardClass} px-4 py-3`}>
+                <p className={`text-xs font-semibold ${mutedText}`}>{label}</p>
+                <p className="mt-1 text-xl font-semibold">{value}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <div className="grid gap-3 lg:grid-cols-2">
+          <section className={`${cardClass} px-5 py-4`}>
+            <h3 className="text-base font-semibold">핵심 요약</h3>
+            {studentReportDetailLoading ? (
+              <p className={`mt-3 text-sm ${mutedText}`}>학생 상세 리포트를 불러오는 중...</p>
+            ) : studentReportDetailError ? (
+              <p className={`mt-3 text-sm ${isDarkMode ? "text-red-300" : "text-red-600"}`}>
+                {studentReportDetailError}
+              </p>
+            ) : (
+              <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-6">
+                {summaryLines.map((line, index) => (
+                  <li key={`${line}-${index}`}>{line}</li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className={`${cardClass} px-5 py-4`}>
+            <h3 className="text-base font-semibold">두드러진 역량</h3>
+            <div className="mt-3 space-y-3">
+              {(strongCompetencies.length ? strongCompetencies : competencies.slice(0, 3)).map((competency) => (
+                <div key={competency.competencyName} className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold">{competency.competencyName}</p>
+                    <p className={`mt-1 text-xs ${mutedText}`}>
+                      {competency.feedback || "세부 피드백 데이터가 더 쌓이면 정밀도가 올라갑니다."}
+                    </p>
+                  </div>
+                  <span className="text-xl font-semibold">
+                    {competency.scorePercent != null
+                      ? clampReportScore(competency.scorePercent)
+                      : competency.level || "-"}
+                  </span>
+                </div>
+              ))}
+              {!competencies.length ? (
+                <p className={`text-sm ${mutedText}`}>표시할 역량 데이터가 없습니다.</p>
+              ) : null}
+            </div>
+          </section>
+        </div>
+
+        <section className={`${cardClass} px-5 py-4`}>
+          <h3 className="text-base font-semibold">
+            {competencies.length || baseCriteriaCount || 0}개 역량 체크리스트
+          </h3>
+          <p className={`mt-1 text-sm ${mutedText}`}>
+            세션, 퀴즈, 피드백 데이터를 종합해 항목별 점수를 표시합니다.
+          </p>
+          <div className="mt-4 space-y-3">
+            {competencies.length ? (
+              competencies.map((competency) => {
+                const percent = clampReportScore(competency.scorePercent);
+                return (
+                  <article key={competency.competencyName} className={`${softCardClass} px-4 py-3`}>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <h4 className="text-sm font-semibold">{competency.competencyName}</h4>
+                        <p className={`mt-1 text-xs leading-5 ${mutedText}`}>
+                          {competency.feedback || "아직 충분한 피드백 데이터가 없습니다."}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-2xl font-semibold">
+                          {competency.scorePercent != null ? percent : "-"}
+                        </p>
+                        <p className={`text-[11px] font-semibold ${mutedText}`}>
+                          {competency.level || "유지"}
+                        </p>
+                      </div>
+                    </div>
+                    <div
+                      className={`mt-3 h-2 rounded-full ${
+                        isDarkMode ? "bg-[#343434]" : "bg-[#e8e1d8]"
+                      }`}
+                    >
+                      <div
+                        className="h-full rounded-full bg-[#ff824d]"
+                        style={{ width: `${percent}%` }}
+                      />
+                    </div>
+                  </article>
+                );
+              })
+            ) : (
+              <div className={`rounded-[var(--app-control-radius)] border border-dashed px-4 py-8 text-center text-sm ${mutedText}`}>
+                학생을 선택하거나 분석 데이터가 생성되면 역량 체크리스트가 표시됩니다.
+              </div>
+            )}
+          </div>
+        </section>
+
+        <div className="grid gap-3 lg:grid-cols-2">
+          <section className={`${cardClass} px-5 py-4`}>
+            <h3 className="text-base font-semibold">강점</h3>
+            <p className={`mt-3 text-sm ${mutedText}`}>
+              {strongCompetencies.length
+                ? strongCompetencies.map((item) => item.competencyName).join(", ")
+                : selectedStudentReportSummary?.topStrengthLabel || "아직 충분한 강점 근거가 없습니다."}
+            </p>
+          </section>
+          <section className={`${cardClass} px-5 py-4`}>
+            <h3 className="text-base font-semibold">보완 포인트</h3>
+            <p className={`mt-3 text-sm ${mutedText}`}>
+              {weakCompetencies.length
+                ? weakCompetencies.map((item) => item.competencyName).join(", ")
+                : selectedStudentReportSummary?.topImprovementLabel || "아직 뚜렷한 보완 포인트가 없습니다."}
+            </p>
+          </section>
+          <section className={`${cardClass} px-5 py-4`}>
+            <h3 className="text-base font-semibold">코칭 인사이트</h3>
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-6">
+              {(classroomReport?.coachingPriorities?.length
+                ? classroomReport.coachingPriorities.map(reportInsightPrimaryText)
+                : summaryLines
+              )
+                .slice(0, 3)
+                .map((item, index) => (
+                  <li key={`${item}-${index}`}>{item}</li>
+                ))}
+            </ul>
+          </section>
+          <section className={`${cardClass} px-5 py-4`}>
+            <h3 className="text-base font-semibold">추천 액션</h3>
+            <div className="mt-3 divide-y divide-current/10 text-sm">
+              {[
+                ["약점 개념 점검", weakCompetencies[0]?.competencyName || "핵심 개념 복습"],
+                ["짧은 퀴즈 재투입", "오답 유형을 기준으로 미니 퀴즈를 제공합니다."],
+                ["질문 로그 유지", "학습 중 막힌 부분을 그대로 남기도록 안내합니다."],
+              ].map(([title, body]) => (
+                <div key={title} className="grid grid-cols-[8rem_minmax(0,1fr)] gap-3 py-2">
+                  <span className="font-semibold">{title}</span>
+                  <span className={mutedText}>{body}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        <section className={`${cardClass} px-5 py-4`}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h3 className="text-base font-semibold">강의실 학습 흐름</h3>
+              <p className={`mt-1 text-sm ${mutedText}`}>
+                선택한 학생과 강의실 전체 리포트를 함께 보면 코칭 우선순위를 정하기 쉽습니다.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={refreshClassroomReport}
+                disabled={classroomReportLoading || classroomAnalyzeSyncLoading || classroomAnalyzeStreaming}
+                className={buttonClass}
+              >
+                <RefreshIcon className={`inline h-3.5 w-3.5 ${classroomReportLoading ? "animate-spin" : ""}`} />
+                <span className="ml-1">새로고침</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => runClassroomAnalyze(false)}
+                disabled={classroomAnalyzeSyncLoading || classroomAnalyzeStreaming || classroomReportLoading}
+                className={primaryButtonClass}
+              >
+                {classroomAnalyzeSyncLoading ? "분석 중..." : "종합분석"}
+              </button>
+              <button
+                type="button"
+                onClick={() => runClassroomAnalyze(true)}
+                disabled={classroomAnalyzeSyncLoading || classroomAnalyzeStreaming || classroomReportLoading}
+                className={primaryButtonClass}
+              >
+                {classroomAnalyzeStreaming ? "수신 중..." : "스트리밍 분석"}
+              </button>
+            </div>
+          </div>
+          {classroomReportError ? (
+            <p className={`mt-3 text-sm ${isDarkMode ? "text-red-300" : "text-red-600"}`}>
+              {classroomReportError}
+            </p>
+          ) : null}
+          <div className={`mt-4 rounded-[var(--app-control-radius)] border p-4 text-sm prose prose-sm max-w-none dark:prose-invert ${
+            isDarkMode ? "border-[#343434] bg-[#242424]" : "border-[#e8e1d8] bg-[#fbfaf7]"
+          }`}>
+            {classroomReportLoading ? (
+              <span className={mutedText}>강의실 종합 리포트를 불러오는 중...</span>
+            ) : classroomReport?.summaryMarkdown?.trim() ? (
+              <MarkdownContent>{classroomReport.summaryMarkdown}</MarkdownContent>
+            ) : (
+              <span className={mutedText}>
+                아직 생성된 강의실 종합 리포트가 없습니다. 종합분석을 실행해 보세요.
+              </span>
+            )}
+          </div>
+          {classroomStreamBuffer.trim() ? (
+            <details className={`${softCardClass} mt-3 text-sm`}>
+              <summary className="cursor-pointer px-3 py-2 font-semibold">스트리밍 로그</summary>
+              <pre className="max-h-52 overflow-auto whitespace-pre-wrap px-3 pb-3 text-xs opacity-80">
+                {classroomStreamBuffer}
+              </pre>
+            </details>
+          ) : null}
+        </section>
+
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_24rem]">
+          <ReportCriteriaPanel
+            courseId={courseDetail.courseId}
+            isDarkMode={isDarkMode}
+          />
+          <section className={`${cardClass} flex min-h-[28rem] flex-col`}>
+            <div className="border-b border-inherit px-4 py-3">
+              <h3 className="text-base font-semibold">학생 리포트 챗봇</h3>
+              <p className={`mt-1 text-xs ${mutedText}`}>
+                선택 학생의 리포트와 AI context를 기반으로 질문합니다.
+              </p>
+            </div>
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+              {reportChatMessages.length === 0 ? (
+                <div className={`flex h-full items-center justify-center px-4 text-center text-sm ${mutedText}`}>
+                  예: 이 학생의 보완점과 다음 학습 우선순위를 알려줘.
+                </div>
+              ) : (
+                reportChatMessages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    <div
+                      className={`max-w-[84%] rounded-[var(--app-control-radius)] px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
+                        message.role === "user"
+                          ? "bg-[#ff824d] text-white"
+                          : isDarkMode
+                            ? "border border-[#343434] bg-[#181818] text-gray-100"
+                            : "border border-[#dedbd5] bg-white text-[#212121]"
+                      }`}
+                    >
+                      <p className="mb-1 text-[11px] font-semibold opacity-70">
+                        {message.role === "user" ? "나" : "AI Tutor"}
+                      </p>
+                      {message.text || (message.role === "assistant" ? "응답 생성 중..." : "")}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+            <form
+              className="flex shrink-0 gap-2 border-t border-inherit p-3"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitStudentReportChatQuestion();
+              }}
+            >
+              <input
+                type="text"
+                value={reportChatInput}
+                onChange={(event) => setReportChatInput(event.target.value)}
+                disabled={reportChatSending || selectedStudentReportId == null || !studentReportDetail}
+                placeholder={
+                  selectedStudentReportId == null
+                    ? "학생을 먼저 선택하세요"
+                    : "리포트에 대해 질문하세요"
+                }
+                className={`min-w-0 flex-1 rounded-[var(--app-control-radius)] border px-3 py-2 text-sm outline-none ${
+                  isDarkMode
+                    ? "border-[#343434] bg-[#181818] text-white placeholder:text-gray-500"
+                    : "border-[#dedbd5] bg-white text-[#212121] placeholder:text-gray-400"
+                } disabled:opacity-50`}
+              />
+              {reportChatSending ? (
+                <button
+                  type="button"
+                  onClick={() => reportChatAbortRef.current?.abort()}
+                  className={buttonClass}
+                >
+                  중지
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!reportChatInput.trim() || selectedStudentReportId == null || !studentReportDetail}
+                  className={primaryButtonClass}
+                >
+                  전송
+                </button>
+              )}
+            </form>
+          </section>
+        </div>
+      </div>
+    );
+  };
 
   const [examRecoverOpen, setExamRecoverOpen] = React.useState(false);
   const [examRecoverSelectedId, setExamRecoverSelectedId] = React.useState("");
@@ -4859,19 +5586,6 @@ const MainContent: React.FC<MainContentProps> = ({
       setEditCourseMetaSaving(false);
     }
   };
-
-  const autosizeEditCourseMetaDescription = React.useCallback(() => {
-    const el = editCourseMetaDescRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }, []);
-
-  React.useEffect(() => {
-    if (!editCourseMetaModalOpen) return;
-    // 모달 오픈 시 1회 autosize (초기값/복원값 반영)
-    setTimeout(() => autosizeEditCourseMetaDescription(), 0);
-  }, [editCourseMetaModalOpen, autosizeEditCourseMetaDescription]);
 
   const renderCourseList = () => {
     const displayName = user?.fullName?.trim() || "사용자";
@@ -7856,10 +8570,26 @@ const MainContent: React.FC<MainContentProps> = ({
 	                    setEditCourseMetaDescription(courseDetail.description ?? "");
 	                    setEditCourseMetaModalOpen(true);
 	                  }}
+                    isEditingCourseMeta={editCourseMetaModalOpen}
+                    editTitle={editCourseMetaTitle}
+                    editDescription={editCourseMetaDescription}
+                    editSaving={editCourseMetaSaving}
+                    onEditTitleChange={setEditCourseMetaTitle}
+                    onEditDescriptionChange={setEditCourseMetaDescription}
+                    onCancelEditCourseMeta={() => {
+                      if (!editCourseMetaSaving) {
+                        setEditCourseMetaModalOpen(false);
+                        setEditCourseMetaTitle(courseDetail.title ?? "");
+                        setEditCourseMetaDescription(courseDetail.description ?? "");
+                      }
+                    }}
+                    onSaveCourseMeta={handleEditCourseMetaSubmit}
 	                />
 	              ) : null}
 	              <div className="scrollbar-hide flex min-h-0 flex-1 flex-col overflow-y-auto pb-4">
               {isTeacher && teacherMainPanel === "classroomReport" ? (
+                renderClassroomReportPage()
+              ) : false ? (
                 <div className="flex min-h-full flex-col gap-4 pb-6">
                   <section
                     className={`rounded-xl border px-4 py-4 ${
@@ -9349,136 +10079,6 @@ const MainContent: React.FC<MainContentProps> = ({
                 생성하기
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* 강의실 이름·설명 수정 (수정/삭제 모드 연필) */}
-      {editCourseMetaModalOpen && courseDetail?.courseId && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="edit-course-meta-title"
-          onClick={() => !editCourseMetaSaving && setEditCourseMetaModalOpen(false)}
-        >
-          <div
-            className={`w-full max-w-xl max-h-[85vh] overflow-hidden rounded-xl shadow-xl border ${
-              isDarkMode
-                ? "bg-zinc-900 border-zinc-700 text-gray-100"
-                : "bg-white border-gray-200 text-gray-900"
-            }`}
-            onClick={(ev) => ev.stopPropagation()}
-          >
-            <div
-              className={`flex items-center justify-between px-5 py-4 border-b ${
-                isDarkMode ? "border-zinc-700/50" : "border-gray-200"
-              }`}
-            >
-              <h2
-                id="edit-course-meta-title"
-                className={`text-lg font-semibold ${isDarkMode ? "text-gray-100" : "text-gray-900"}`}
-              >
-                강의실 정보 수정
-              </h2>
-              <button
-                type="button"
-                onClick={() =>
-                  !editCourseMetaSaving && setEditCourseMetaModalOpen(false)
-                }
-                className={`p-1.5 rounded cursor-pointer ${
-                  isDarkMode
-                    ? "hover:bg-zinc-700 text-gray-300"
-                    : "hover:bg-gray-200 text-gray-500"
-                }`}
-                aria-label="닫기"
-              >
-                <CloseIcon className="h-4 w-4" />
-              </button>
-            </div>
-            <form
-              onSubmit={handleEditCourseMetaSubmit}
-              className="px-5 py-4 space-y-4 overflow-y-auto"
-              style={{ maxHeight: "calc(85vh - 64px)" }}
-            >
-              <div>
-                <label
-                  className={`block text-sm font-medium mb-1 ${
-                    isDarkMode ? "text-gray-200" : "text-gray-700"
-                  }`}
-                >
-                  강의실 제목 *
-                </label>
-                <input
-                  type="text"
-                  value={editCourseMetaTitle}
-                  onChange={(e) => setEditCourseMetaTitle(e.target.value)}
-                  className={`w-full px-3 py-2 text-sm rounded border ${
-                    isDarkMode
-                      ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
-                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-zinc-500"}`}
-                  autoFocus
-                />
-              </div>
-              <div>
-                <label
-                  className={`block text-sm font-medium mb-1 ${
-                    isDarkMode ? "text-gray-200" : "text-gray-700"
-                  }`}
-                >
-                  강의실 설명 (선택)
-                </label>
-                <textarea
-                  ref={editCourseMetaDescRef}
-                  value={editCourseMetaDescription}
-                  onChange={(e) => {
-                    setEditCourseMetaDescription(e.target.value);
-                    autosizeEditCourseMetaDescription();
-                  }}
-                  rows={5}
-                  className={`w-full px-3 py-2 text-sm rounded border resize-none overflow-hidden ${
-                    isDarkMode
-                      ? "bg-zinc-800 border-zinc-600 text-white placeholder-gray-400"
-                      : "bg-white border-gray-300 text-gray-900 placeholder-gray-400"
-                  } focus:outline-none focus:ring-2 ${isDarkMode ? "focus:ring-zinc-500" : "focus:ring-zinc-500"}`}
-                />
-              </div>
-              <div
-                className={`flex justify-end gap-2 pt-2 border-t ${
-                  isDarkMode ? "border-zinc-700/50" : "border-gray-200"
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    !editCourseMetaSaving && setEditCourseMetaModalOpen(false)
-                  }
-                  className={`px-4 py-2 text-sm rounded ${
-                    isDarkMode
-                      ? "bg-zinc-800 hover:bg-zinc-700 text-gray-200"
-                      : "bg-gray-100 hover:bg-gray-200 text-gray-700"
-                  }`}
-                >
-                  취소
-                </button>
-                <button
-                  type="submit"
-                  disabled={editCourseMetaSaving || !editCourseMetaTitle.trim()}
-                  className={`px-4 py-2 text-sm rounded font-medium ${
-                    editCourseMetaSaving || !editCourseMetaTitle.trim()
-                      ? isDarkMode
-                        ? "bg-zinc-800/40 text-gray-400 cursor-not-allowed"
-                        : "bg-[#ff824d]/20 text-[#d95d26] cursor-not-allowed"
-                      : isDarkMode
-                        ? "bg-[#ff824d] hover:bg-[#f26f37] text-white"
-                        : "bg-[#ff824d] hover:bg-[#f26f37] text-white"
-                  }`}
-                >
-                  {editCourseMetaSaving ? "저장 중..." : "저장"}
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}

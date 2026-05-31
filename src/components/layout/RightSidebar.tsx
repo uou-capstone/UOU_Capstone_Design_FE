@@ -6,7 +6,13 @@ import React, {
   useLayoutEffect,
   useMemo,
 } from "react";
-import { CheckIcon, CloseIcon, EditIcon, TrashIcon } from "../common/Icons";
+import {
+  CheckIcon,
+  ClipboardIcon,
+  CloseIcon,
+  EditIcon,
+  TrashIcon,
+} from "../common/Icons";
 import { useParams } from "react-router-dom";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
@@ -226,6 +232,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const [learningTab, setLearningTab] = useState<LearningTab>("study");
   const [showIntegratedBetaNotice, setShowIntegratedBetaNotice] =
     useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null);
+  const copiedMessageTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   useEffect(() => {
     if (!examProps?.examMode) {
       examCountFieldFocusedRef.current = false;
@@ -492,10 +502,56 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   /** v1 강의학습 에이전트(통합학습 제외): prose 제목(h)과 바로 아래 본문 간격만 살짝 축소 */
   const lectureV1AgentMarkdown = assistantEnabled && !integratedModeActive;
 
-  const copyLearningChatToClipboard = useCallback((raw: string) => {
-    const t = raw.trim();
-    if (!t) return;
-    void navigator.clipboard?.writeText(t).catch(() => {});
+  useEffect(() => {
+    return () => {
+      if (copiedMessageTimerRef.current != null) {
+        clearTimeout(copiedMessageTimerRef.current);
+      }
+    };
+  }, []);
+
+  const copyLearningChatToClipboard = useCallback((messageId: number, raw: string) => {
+    const text = raw.trim();
+    if (!text) return;
+    const showCopiedState = () => {
+      setCopiedMessageId(messageId);
+      if (copiedMessageTimerRef.current != null) {
+        clearTimeout(copiedMessageTimerRef.current);
+      }
+      copiedMessageTimerRef.current = setTimeout(
+        () => setCopiedMessageId(null),
+        2000,
+      );
+    };
+    const fallbackCopy = () => {
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "true");
+      textarea.style.position = "fixed";
+      textarea.style.top = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.select();
+      try {
+        return document.execCommand("copy");
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    };
+
+    void (async () => {
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+        } else if (!fallbackCopy()) {
+          return;
+        }
+        showCopiedState();
+      } catch {
+        if (fallbackCopy()) {
+          showCopiedState();
+        }
+      }
+    })();
   }, []);
 
   // 로컬 스토리지 키 생성
@@ -1996,10 +2052,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   ? { color: sidebarTextColor }
                   : undefined;
 
-            const iconBtnClass = `inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors cursor-pointer ${
+            const isMessageCopied = copiedMessageId === message.id;
+            const iconBtnClass = `inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--app-control-radius)] border transition-colors cursor-pointer ${
               isDarkMode
-                ? "text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
-                : "text-gray-500 hover:bg-black/[0.06] hover:text-gray-800"
+                ? "border-[#3a3a3a] text-zinc-400 hover:bg-white/10 hover:text-zinc-200"
+                : "border-[#dedbd5] text-gray-500 hover:bg-[#f7f5f1] hover:text-gray-950"
             }`;
 
             const thoughtText = message.thoughtSummary?.trim() ?? "";
@@ -2161,13 +2218,21 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     {message.streamingMarkdown &&
                     message.assistantVariant === "educational" ? (
                       <div
-                        className={`max-w-none whitespace-pre-wrap break-words ${
+                        className={`prose max-w-none overflow-hidden break-words [&_pre]:max-w-full [&_pre]:overflow-x-auto [&_code]:break-words prose-headings:font-semibold ${
+                          borderlessLearningChat ? "learning-chat-md" : ""
+                        } ${
                           borderlessLearningChat
-                            ? `text-base leading-[1.65] ${isDarkMode ? "text-zinc-100" : "text-gray-900"}`
-                            : `text-sm leading-[1.7] ${isDarkMode ? "text-white/95" : "text-gray-900"}`
+                            ? "prose-base prose-neutral leading-[1.65]"
+                            : "prose-sm prose-neutral leading-[1.7]"
+                        } ${
+                          lectureV1AgentMarkdown
+                            ? "[&_h1]:!mb-1.5 [&_h2]:!mb-1.5 [&_h3]:!mb-1.5 [&_h4]:!mb-1.5 [&_h5]:!mb-1.5 [&_h6]:!mb-1.5 [&_h1+*]:!mt-1.5 [&_h2+*]:!mt-1.5 [&_h3+*]:!mt-1.5 [&_h4+*]:!mt-1.5 [&_h5+*]:!mt-1.5 [&_h6+*]:!mt-1.5"
+                            : ""
+                        } ${
+                          isDarkMode ? "prose-invert" : ""
                         }`}
                       >
-                        {message.markdown}
+                        <MarkdownContent>{message.markdown ?? ""}</MarkdownContent>
                       </div>
                     ) : message.markdown?.trim() ||
                       message.assistantVariant !== "educational" ? (
@@ -2294,33 +2359,27 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                     <div
                       className={`mt-1 flex w-full items-center ${
                         message.isUser ? "justify-end" : "justify-start"
-                      } opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100`}
+                      } ${
+                        isMessageCopied
+                          ? "opacity-100"
+                          : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+                      } transition-opacity`}
                       aria-label="메시지 도구"
                     >
                       <button
                         type="button"
                         className={iconBtnClass}
-                        title="복사"
-                        aria-label="메시지 복사"
+                        title={isMessageCopied ? "복사됨" : "복사"}
+                        aria-label={isMessageCopied ? "메시지 복사됨" : "메시지 복사"}
                         onClick={() =>
-                          copyLearningChatToClipboard(messageCopyText)
+                          copyLearningChatToClipboard(message.id, messageCopyText)
                         }
                       >
-                        <svg
-                          width="18"
-                          height="18"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.75"
-                          aria-hidden
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2M8 16h10a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                          />
-                        </svg>
+                        {isMessageCopied ? (
+                          <CheckIcon className="h-4 w-4 text-emerald-500" />
+                        ) : (
+                          <ClipboardIcon className="h-4 w-4" />
+                        )}
                       </button>
                     </div>
                   )}
