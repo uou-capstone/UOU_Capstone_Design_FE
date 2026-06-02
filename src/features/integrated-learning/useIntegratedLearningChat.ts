@@ -4,6 +4,7 @@ import {
   integratedLearningApi,
   parseIntegratedLearningQuizOverlayFromMessageTail,
   type IntegratedLearningMessage,
+  type LearningChatMessageResponse,
   type IntegratedQuizOverlayModel,
 } from "@/services/api";
 
@@ -19,6 +20,10 @@ const FRIENDLY_INTERNAL_THOUGHT_TEXT =
   "생각 과정 중 내부 처리 정보를 정리하고 있습니다. 최종 답변에는 필요한 내용만 반영할게요.";
 const FRIENDLY_INTEGRATED_ERROR_TEXT =
   "통합학습 처리 중 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
+const PAGE_REQUEST_PATTERNS = [
+  /(?:^|\s)(\d{1,4})\s*(?:페이지|쪽|page)\b/i,
+  /\b(?:page|p)\.?\s*(\d{1,4})\b/i,
+];
 
 function toUserFacingThoughtText(text: string): string {
   return INTERNAL_THOUGHT_DIAGNOSTIC_RE.test(text)
@@ -30,6 +35,16 @@ function toUserFacingIntegratedError(message: string): string {
   return INTERNAL_THOUGHT_DIAGNOSTIC_RE.test(message)
     ? FRIENDLY_INTEGRATED_ERROR_TEXT
     : message;
+}
+
+function extractRequestedPage(text: string): number | null {
+  for (const pattern of PAGE_REQUEST_PATTERNS) {
+    const match = text.match(pattern);
+    if (!match?.[1]) continue;
+    const page = Number(match[1]);
+    if (Number.isFinite(page) && page > 0) return Math.round(page);
+  }
+  return null;
 }
 
 export interface IntegratedChatMessage {
@@ -54,12 +69,40 @@ export interface IntegratedChatMessage {
   integratedQuizOpenButton?: boolean;
 }
 
+function learningHistoryToChatMessages(
+  history: LearningChatMessageResponse[],
+): IntegratedChatMessage[] {
+  return history
+    .map((item, index): IntegratedChatMessage | null => {
+      const content = String(item.content ?? "").trim();
+      if (!content) return null;
+      const id = item.messageId > 0 ? item.messageId : index + 1;
+      const role = String(item.role ?? "").toUpperCase();
+      if (role === "USER") {
+        return {
+          id,
+          isUser: true,
+          text: content,
+        };
+      }
+      return {
+        id,
+        isUser: false,
+        roleBadge: "통합학습",
+        assistantVariant: "educational",
+        markdown: content,
+      };
+    })
+    .filter((item): item is IntegratedChatMessage => item != null);
+}
+
 export function useIntegratedLearningChat(options: {
   enabled: boolean;
   lectureId: number | null;
   currentPage?: number | null;
+  goToPage?: (page: number) => void;
 }) {
-  const { enabled, lectureId, currentPage } = options;
+  const { enabled, lectureId, currentPage, goToPage } = options;
   const [messages, setMessages] = useState<IntegratedChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [quizOverlayModel, setQuizOverlayModel] =
@@ -206,8 +249,8 @@ export function useIntegratedLearningChat(options: {
             assistantVariant: "orchestrator",
             text: "다음 페이지로 이동할까요?",
             actionButtons: [
-              { id: "next_page_accept", label: "예", variant: "primary" },
-              { id: "next_page_reject", label: "아니오", variant: "muted" },
+              { id: "next_page_accept", label: "다음 페이지로 이동", variant: "primary" },
+              { id: "next_page_reject", label: "현재 페이지 유지", variant: "muted" },
             ],
           },
         ]);
@@ -264,6 +307,7 @@ export function useIntegratedLearningChat(options: {
     async (
       eventType: string,
       payload: Record<string, unknown>,
+      options?: { pageOverride?: number | null },
     ): Promise<void> => {
       if (!lectureId || !enabled) return;
       const sessionId = await ensureSession();
@@ -287,6 +331,7 @@ export function useIntegratedLearningChat(options: {
       let gotBody = false;
       let thoughtMessageId: number | null = null;
       let thoughtBuf = "";
+      let quizOpenButtonAttached = false;
 
       const notifyDrainIfDone = () => {
         if (
@@ -438,7 +483,7 @@ export function useIntegratedLearningChat(options: {
               streamError = msg;
             },
           },
-          { page: currentPage ?? undefined },
+          { page: options?.pageOverride ?? currentPage ?? undefined },
         );
 
         if (cancelled) return;
@@ -469,6 +514,7 @@ export function useIntegratedLearningChat(options: {
             // 타입 선택 모달이 뜨는 단계에서는 줄글 본문을 숨기고 버튼 UI에 집중한다.
             setMessages((p) => p.filter((m) => m.id !== answerMessageId));
           } else {
+            if (overlay) quizOpenButtonAttached = true;
             setMessages((p) =>
               p.map((m) =>
                 m.id === answerMessageId
@@ -489,6 +535,19 @@ export function useIntegratedLearningChat(options: {
         if (overlayFromTail) {
           setQuizOverlayModel(overlayFromTail);
           setQuizOverlayOpen(true);
+          if (!quizOpenButtonAttached) {
+            setMessages((prev) => [
+              ...prev,
+              {
+                id: nextMessageId(),
+                isUser: false,
+                roleBadge: "통합학습",
+                assistantVariant: "orchestrator",
+                text: "퀴즈가 생성되었습니다.",
+                integratedQuizOpenButton: true,
+              },
+            ]);
+          }
         }
 
         // 퀴즈 타입 전달/생성 품질 진단 로그:
@@ -647,6 +706,10 @@ export function useIntegratedLearningChat(options: {
     async (raw: string) => {
       const text = raw.trim();
       if (!text || !lectureId || !enabled || busy) return;
+      const requestedPage = extractRequestedPage(text);
+      if (requestedPage != null) {
+        goToPage?.(requestedPage);
+      }
       setMessages((prev) => [...prev, { id: nextMessageId(), isUser: true, text }]);
       // 사용자가 퀴즈 생성을 요청하면, 즉시 생성하지 않고 유형 선택 UI를 먼저 노출한다.
       if (INTEGRATED_QUIZ_REQUEST_RE.test(text)) {
@@ -655,7 +718,11 @@ export function useIntegratedLearningChat(options: {
       }
       setBusy(true);
       try {
-        await runStreamingAgentTurn("USER_MESSAGE", { question: text });
+        await runStreamingAgentTurn(
+          "USER_MESSAGE",
+          { question: text },
+          { pageOverride: requestedPage },
+        );
       } finally {
         setBusy(false);
       }
@@ -664,6 +731,7 @@ export function useIntegratedLearningChat(options: {
       appendQuizTypePicker,
       busy,
       enabled,
+      goToPage,
       lectureId,
       nextMessageId,
       runStreamingAgentTurn,
@@ -729,16 +797,27 @@ export function useIntegratedLearningChat(options: {
         retest_accept: "재시험 시작",
         retest_reject: "재시험 건너뛰기",
       };
+      const selectedLabel = actionLabelMap[actionId] ?? decisionEvent;
       setMessages((prev) => [
-        ...prev,
-        {
-          id: nextMessageId(),
-          isUser: true,
-          text: quizType
-            ? `퀴즈 유형 선택: ${quizType}`
-            : `선택: ${actionLabelMap[actionId] ?? decisionEvent}`,
-        },
+        ...prev.map((message) =>
+          message.actionButtons?.some((button) => button.id === actionId)
+            ? {
+                ...message,
+                text: message.text
+                  ? `${message.text}\n\n선택됨: ${selectedLabel}`
+                  : `선택됨: ${selectedLabel}`,
+                actionButtons: undefined,
+              }
+            : message,
+        ),
       ]);
+      const nextPage =
+        actionId === "next_page_accept" && currentPage != null
+          ? currentPage + 1
+          : null;
+      if (nextPage != null) {
+        goToPage?.(nextPage);
+      }
       setBusy(true);
       try {
         if (quizType) {
@@ -748,13 +827,16 @@ export function useIntegratedLearningChat(options: {
           await runStreamingAgentTurn(decisionEvent, {
             accept: decisionAccept,
             ...(currentPage != null ? { fromPage: currentPage } : {}),
+            ...(nextPage != null ? { toPage: nextPage } : {}),
+          }, {
+            pageOverride: nextPage ?? currentPage ?? null,
           });
         }
       } finally {
         setBusy(false);
       }
     },
-    [busy, currentPage, enabled, lectureId, nextMessageId, runStreamingAgentTurn],
+    [busy, currentPage, enabled, goToPage, lectureId, runStreamingAgentTurn],
   );
 
   const stop = useCallback(async () => {
@@ -789,7 +871,77 @@ export function useIntegratedLearningChat(options: {
       setQuizOverlayOpen(false);
       sessionIdRef.current = null;
       messageIdRef.current = 0;
+      return;
     }
+
+    if (!lectureId) {
+      setMessages([]);
+      setQuizOverlayModel(null);
+      setQuizOverlayOpen(false);
+      sessionIdRef.current = null;
+      messageIdRef.current = 0;
+      return;
+    }
+
+    let cancelled = false;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setBusy(false);
+    setMessages([]);
+    setQuizOverlayModel(null);
+    setQuizOverlayOpen(false);
+    sessionIdRef.current = null;
+    messageIdRef.current = 0;
+
+    void (async () => {
+      try {
+        const sessions = await integratedLearningApi.getChatSessions(lectureId, {
+          page: 0,
+          size: 5,
+          sort: "lastMessageAt,desc",
+        });
+        if (cancelled) return;
+        let selectedSession = null as (typeof sessions.content)[number] | null;
+        let selectedHistory: LearningChatMessageResponse[] = [];
+        for (const session of sessions.content ?? []) {
+          if (session.chatSessionId == null || session.chatSessionId <= 0) continue;
+          const history = await integratedLearningApi.getChatMessages(session.chatSessionId);
+          if (cancelled) return;
+          selectedSession = session;
+          selectedHistory = history;
+          if (history.length > 0) break;
+        }
+        if (!selectedSession) {
+          return;
+        }
+
+        try {
+          const opened = await integratedLearningApi.openSession(lectureId, {
+            sessionId: String(selectedSession.chatSessionId),
+          });
+          if (cancelled) return;
+          sessionIdRef.current = opened.sessionId;
+        } catch {
+          sessionIdRef.current = String(selectedSession.chatSessionId);
+        }
+
+        const restoredMessages = learningHistoryToChatMessages(selectedHistory);
+        setMessages(restoredMessages);
+        messageIdRef.current = restoredMessages.reduce(
+          (max, item) => Math.max(max, item.id),
+          0,
+        );
+      } catch {
+        if (!cancelled) {
+          sessionIdRef.current = null;
+          setMessages([]);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [enabled, lectureId]);
 
   return {

@@ -484,6 +484,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       resolvedLectureId != null,
     lectureId: resolvedLectureId,
     currentPage: previewCurrentPdfPage ?? null,
+    goToPage: goToPdfPage ?? undefined,
   });
   const integratedModeActive =
     !examProps?.examMode &&
@@ -656,11 +657,15 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     const chatContainer = document.getElementById("chat-messages");
     if (!chatContainer) return;
     const id = requestAnimationFrame(() => {
-      if (integratedModeActive && shouldPinIntegratedUserMessageTopRef.current) {
+      if (integratedModeActive) {
         const latestUserMessage = [...displayMessages]
           .reverse()
           .find((m) => m.isUser);
-        if (latestUserMessage) {
+        const shouldKeepUserPinned =
+          shouldPinIntegratedUserMessageTopRef.current ||
+          integratedLearning.busy ||
+          integratedTopPinBottomPad > 0;
+        if (latestUserMessage && shouldKeepUserPinned) {
           const target = chatContainer.querySelector<HTMLElement>(
             `[data-message-id="${latestUserMessage.id}"]`,
           );
@@ -674,13 +679,17 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               return;
             }
             chatContainer.scrollTop = target.offsetTop;
-            shouldPinIntegratedUserMessageTopRef.current = false;
+            if (!integratedLearning.busy) {
+              shouldPinIntegratedUserMessageTopRef.current = false;
+            }
             return;
           }
         }
-        shouldPinIntegratedUserMessageTopRef.current = false;
+        if (!integratedLearning.busy) {
+          shouldPinIntegratedUserMessageTopRef.current = false;
+        }
       }
-      if (integratedTopPinBottomPad !== 0) {
+      if (!integratedLearning.busy && integratedTopPinBottomPad !== 0) {
         setIntegratedTopPinBottomPad(0);
       }
       chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -691,6 +700,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     integratedModeActive,
     assistantEnabled,
     lectureAssistant.busy,
+    integratedLearning.busy,
     integratedTopPinBottomPad,
   ]);
 
@@ -2310,7 +2320,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                           key={btn.id}
                           type="button"
                           onClick={() => integratedLearning.handleAction(btn.id)}
-                          className={`cursor-pointer rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                          disabled={integratedLearning.busy}
+                          className={`cursor-pointer rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                             btn.id.startsWith("quiz_type_")
                               ? `${
                                   isDarkMode

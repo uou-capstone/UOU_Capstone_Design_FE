@@ -28,6 +28,10 @@ import {
   type StudentReportStatusFilter,
   type ClassroomReportResponse,
   type StudentReportAiContextResponse,
+  type StudentReportActivitySummaryResponse,
+  type StudentReportChatHistoryItem,
+  type ReportCriteriaSummary,
+  type ClassroomLearningFlowItem,
   type ExamSessionDetailResponse,
   type ExamAnswerSubmission,
   type ExamSubmissionResponse,
@@ -232,6 +236,23 @@ function compactReportLines(value: string | undefined, fallback: string): string
     .map((line) => line.replace(/^[\s>*#\-•]+/, "").trim())
     .filter(Boolean);
   return lines.length > 0 ? lines.slice(0, 4) : [fallback];
+}
+
+function reportChatHistoryToUiMessages(
+  items: StudentReportChatHistoryItem[],
+): { id: string; role: "user" | "assistant"; text: string }[] {
+  return items
+    .map((item, index) => {
+      const role = String(item.role ?? "").toUpperCase() === "USER" ? "user" : "assistant";
+      const text = String(item.message ?? "").trim();
+      if (!text) return null;
+      return {
+        id: `history-${item.sessionId ?? "none"}-${item.createdAt ?? index}-${index}`,
+        role,
+        text,
+      };
+    })
+    .filter((item): item is { id: string; role: "user" | "assistant"; text: string } => item != null);
 }
 
 function sanitizeDownloadFileName(name: string | null | undefined): string {
@@ -1507,6 +1528,9 @@ const MainContent: React.FC<MainContentProps> = ({
   const [studentReportModalTab, setStudentReportModalTab] = React.useState<
     "students" | "classroom"
   >("students");
+  const [classroomReportTab, setClassroomReportTab] = React.useState<
+    "students" | "criteria" | "content"
+  >("students");
   const [classroomReport, setClassroomReport] = React.useState<
     ClassroomReportResponse | null | undefined
   >(undefined);
@@ -1516,14 +1540,28 @@ const MainContent: React.FC<MainContentProps> = ({
     React.useState(false);
   const [classroomAnalyzeStreaming, setClassroomAnalyzeStreaming] = React.useState(false);
   const [classroomStreamBuffer, setClassroomStreamBuffer] = React.useState("");
-  const [reportCriteriaCount, setReportCriteriaCount] = React.useState<number | null>(null);
+  const [reportCriteriaSummary, setReportCriteriaSummary] =
+    React.useState<ReportCriteriaSummary | null>(null);
+  const [classroomFlowItems, setClassroomFlowItems] = React.useState<
+    ClassroomLearningFlowItem[]
+  >([]);
+  const [classroomFlowLoading, setClassroomFlowLoading] = React.useState(false);
   const [studentAiContext, setStudentAiContext] =
     React.useState<StudentReportAiContextResponse | null>(null);
   const [studentAiContextLoading, setStudentAiContextLoading] = React.useState(false);
   const [studentAiContextError, setStudentAiContextError] = React.useState<string | null>(null);
+  const [studentActivitySummary, setStudentActivitySummary] =
+    React.useState<StudentReportActivitySummaryResponse | null>(null);
+  const [studentActivitySummaryLoading, setStudentActivitySummaryLoading] =
+    React.useState(false);
   const [reportChatMessages, setReportChatMessages] = React.useState<
     { id: string; role: "user" | "assistant"; text: string }[]
   >([]);
+  const [reportChatHistoryLoading, setReportChatHistoryLoading] =
+    React.useState(false);
+  const [reportChatSessionId, setReportChatSessionId] = React.useState<number | null>(
+    null,
+  );
   const [reportChatInput, setReportChatInput] = React.useState("");
   const [reportChatSending, setReportChatSending] = React.useState(false);
   const reportChatAbortRef = React.useRef<AbortController | null>(null);
@@ -1686,17 +1724,17 @@ const MainContent: React.FC<MainContentProps> = ({
 
   React.useEffect(() => {
     if (!classroomReportPageOpen || courseDetail?.courseId == null) {
-      setReportCriteriaCount(null);
+      setReportCriteriaSummary(null);
       return;
     }
     let cancelled = false;
     void reportCriteriaApi
-      .listCriteria(courseDetail.courseId)
-      .then((items) => {
-        if (!cancelled) setReportCriteriaCount(items.length);
+      .getSummary(courseDetail.courseId)
+      .then((summary) => {
+        if (!cancelled) setReportCriteriaSummary(summary);
       })
       .catch(() => {
-        if (!cancelled) setReportCriteriaCount(null);
+        if (!cancelled) setReportCriteriaSummary(null);
       });
     return () => {
       cancelled = true;
@@ -1776,6 +1814,30 @@ const MainContent: React.FC<MainContentProps> = ({
   ]);
 
   React.useEffect(() => {
+    if (!classroomReportPageOpen || courseDetail?.courseId == null) {
+      setClassroomFlowItems([]);
+      setClassroomFlowLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setClassroomFlowLoading(true);
+    void studentReportApi
+      .getClassroomFlow(courseDetail.courseId)
+      .then((flow) => {
+        if (!cancelled) setClassroomFlowItems(flow.items);
+      })
+      .catch(() => {
+        if (!cancelled) setClassroomFlowItems([]);
+      })
+      .finally(() => {
+        if (!cancelled) setClassroomFlowLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [classroomReportPageOpen, courseDetail?.courseId]);
+
+  React.useEffect(() => {
     if (!studentReportListVisible || courseDetail?.courseId == null) return;
     if (selectedStudentReportId == null) {
       setStudentAiContext(null);
@@ -1812,8 +1874,63 @@ const MainContent: React.FC<MainContentProps> = ({
   ]);
 
   React.useEffect(() => {
+    if (
+      !studentReportListVisible ||
+      courseDetail?.courseId == null ||
+      selectedStudentReportId == null
+    ) {
+      setStudentActivitySummary(null);
+      setStudentActivitySummaryLoading(false);
+      setReportChatHistoryLoading(false);
+      setReportChatSessionId(null);
+      return;
+    }
+    let cancelled = false;
+    setStudentActivitySummaryLoading(true);
+    setReportChatHistoryLoading(true);
+    void Promise.allSettled([
+      studentReportApi.getStudentActivitySummary(
+        courseDetail.courseId,
+        selectedStudentReportId,
+      ),
+      studentReportApi.getStudentReportChatHistory(courseDetail.courseId, selectedStudentReportId, {
+        page: 0,
+        size: 50,
+        sort: "createdAt,asc",
+      }),
+    ]).then(([activityResult, historyResult]) => {
+      if (cancelled) return;
+      if (activityResult.status === "fulfilled") {
+        setStudentActivitySummary(activityResult.value);
+      } else {
+        setStudentActivitySummary(null);
+      }
+      if (historyResult.status === "fulfilled") {
+        const content = historyResult.value.content ?? [];
+        setReportChatMessages(reportChatHistoryToUiMessages(content));
+        setReportChatSessionId(
+          [...content].reverse().find((item) => item.sessionId != null)?.sessionId ??
+            null,
+        );
+      } else {
+        setReportChatSessionId(null);
+      }
+      setStudentActivitySummaryLoading(false);
+      setReportChatHistoryLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    studentReportListVisible,
+    courseDetail?.courseId,
+    selectedStudentReportId,
+  ]);
+
+  React.useEffect(() => {
     setReportChatMessages([]);
     setReportChatInput("");
+    setReportChatSessionId(null);
     reportChatAbortRef.current?.abort();
     reportChatAbortRef.current = null;
   }, [selectedStudentReportId]);
@@ -1821,6 +1938,7 @@ const MainContent: React.FC<MainContentProps> = ({
   React.useEffect(() => {
     if (studentReportWorkspaceOpen) return;
     setStudentReportModalTab("students");
+    setClassroomReportTab("students");
     setClassroomReport(undefined);
     setClassroomReportError(null);
     setClassroomStreamBuffer("");
@@ -1828,8 +1946,14 @@ const MainContent: React.FC<MainContentProps> = ({
     setClassroomAnalyzeSyncLoading(false);
     setStudentAiContext(null);
     setStudentAiContextError(null);
+    setStudentActivitySummary(null);
+    setStudentActivitySummaryLoading(false);
+    setClassroomFlowItems([]);
+    setClassroomFlowLoading(false);
     setReportChatMessages([]);
     setReportChatInput("");
+    setReportChatSessionId(null);
+    setReportChatHistoryLoading(false);
     reportChatAbortRef.current?.abort();
     reportChatAbortRef.current = null;
   }, [studentReportWorkspaceOpen]);
@@ -1875,6 +1999,7 @@ const MainContent: React.FC<MainContentProps> = ({
         selectedStudentReportId,
         {
           question,
+          sessionId: reportChatSessionId,
           messages: historyPayload.length > 0 ? historyPayload : undefined,
         },
         {
@@ -1916,6 +2041,7 @@ const MainContent: React.FC<MainContentProps> = ({
     selectedStudentReportId,
     reportChatInput,
     reportChatMessages,
+    reportChatSessionId,
     reportChatSending,
   ]);
 
@@ -1929,20 +2055,37 @@ const MainContent: React.FC<MainContentProps> = ({
     const selectedEmail = selectedStudent?.email;
     const selectedLatest =
       studentReportDetail?.latestActivityAt ??
-      selectedStudentReportSummary?.latestActivityAt;
+      selectedStudentReportSummary?.latestActivityAt ??
+      studentReportDetail?.updatedAt ??
+      studentReportDetail?.generatedAt;
     const competencies = studentReportDetail?.competencies ?? [];
     const score = clampReportScore(
-      studentReportDetail?.averageScorePercent ??
+      studentReportDetail?.overallScorePercent ??
+        studentReportDetail?.averageScorePercent ??
         selectedStudentReportSummary?.averageScorePercent,
     );
-    const submittedCount = studentAiContext?.activitySummary?.submittedCount;
+    const submittedCount =
+      studentActivitySummary?.submissionCount ??
+      studentAiContext?.activitySummary?.submittedCount;
     const totalAssessments = studentAiContext?.activitySummary?.totalAssessments;
-    const missingCount = studentAiContext?.activitySummary?.missingCount;
+    const missingCount =
+      studentActivitySummary?.missingSubmissionCount ??
+      studentAiContext?.activitySummary?.missingCount;
     const scoreTrend = studentAiContext?.scoreSummary?.trend;
-    const summaryLines = compactReportLines(
-      studentReportDetail?.narrativeReport,
-      "선택한 학생의 리포트 본문이 아직 없습니다.",
-    );
+    const summaryLines =
+      studentReportDetail?.summaryBullets?.length
+        ? studentReportDetail.summaryBullets.slice(0, 4)
+        : compactReportLines(
+            studentReportDetail?.narrativeReport,
+            "선택한 학생의 리포트 본문이 아직 없습니다.",
+          );
+    const headline =
+      studentReportDetail?.headline ||
+      (score < 50
+        ? "기초 체력을 올리면서 약점 개념을 좁혀가야 하는 구간입니다."
+        : score < 75
+          ? "핵심 개념은 잡혀 있으나 보완 학습이 필요한 구간입니다."
+          : "학습 흐름이 안정적이며 심화 적용을 시도할 수 있습니다.");
     const strongCompetencies = competencies
       .filter((item) => clampReportScore(item.scorePercent) >= 70)
       .slice(0, 3);
@@ -1950,7 +2093,35 @@ const MainContent: React.FC<MainContentProps> = ({
       .filter((item) => clampReportScore(item.scorePercent) < 50)
       .slice(0, 3);
     const baseCriteriaCount =
-      reportCriteriaCount ?? (competencies.length > 0 ? competencies.length : 0);
+      reportCriteriaSummary?.baseItemCount ??
+      (competencies.length > 0 ? competencies.length : 0);
+    const additionalCriteriaCount = reportCriteriaSummary?.additionalItemCount ?? 0;
+    const activeCriteriaCount =
+      reportCriteriaSummary?.activeCriteriaCount ??
+      baseCriteriaCount + additionalCriteriaCount;
+    const reportStrengthTexts = studentReportDetail?.strengths?.length
+      ? studentReportDetail.strengths
+      : strongCompetencies.map((item) => item.competencyName);
+    const reportImprovementTexts = studentReportDetail?.improvementPoints?.length
+      ? studentReportDetail.improvementPoints
+      : weakCompetencies.map((item) => item.competencyName);
+    const reportCoachingInsights = studentReportDetail?.coachingInsights?.length
+      ? studentReportDetail.coachingInsights
+      : classroomReport?.coachingPriorities?.length
+        ? classroomReport.coachingPriorities.map(reportInsightPrimaryText)
+        : summaryLines;
+    const reportRecommendedActions = studentReportDetail?.recommendedActions?.length
+      ? studentReportDetail.recommendedActions.map((item, index) => [
+          index === 0 ? "우선 실행" : index === 1 ? "보완 학습" : "추가 코칭",
+          item,
+        ])
+      : [
+          ["약점 개념 점검", weakCompetencies[0]?.competencyName || "핵심 개념 복습"],
+          ["짧은 퀴즈 재투입", "오답 유형을 기준으로 미니 퀴즈를 제공합니다."],
+          ["질문 로그 유지", "학습 중 막힌 부분을 그대로 남기도록 안내합니다."],
+        ];
+    const pageCoverage = studentActivitySummary?.pageCoverage ?? [];
+    const categoryCoverage = studentActivitySummary?.categoryCoverage ?? [];
     const cardClass = `rounded-[var(--app-control-radius)] border ${
       isDarkMode
         ? "border-[#2b2b2b] bg-[#202020]"
@@ -1961,6 +2132,11 @@ const MainContent: React.FC<MainContentProps> = ({
         ? "border-[#343434] bg-[#242424]"
         : "border-[#e8e1d8] bg-[#fbfaf7]"
     }`;
+    const reportHeaderCardClass = `rounded-2xl border ${
+      isDarkMode
+        ? "border-[#2b2b2b] bg-[#202020]"
+        : "border-[#dedbd5] bg-white"
+    }`;
     const mutedText = isDarkMode ? "text-gray-400" : "text-gray-500";
     const buttonClass = `rounded-[var(--app-control-radius)] border px-3 py-2 text-xs font-semibold transition-colors disabled:opacity-50 ${
       isDarkMode
@@ -1969,14 +2145,49 @@ const MainContent: React.FC<MainContentProps> = ({
     }`;
     const primaryButtonClass =
       "rounded-[var(--app-control-radius)] bg-[#ff824d] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#f26f37] disabled:opacity-50";
+    const reportTabs: {
+      id: "students" | "criteria" | "content";
+      label: string;
+    }[] = [
+      {
+        id: "students",
+        label: "학생 선택",
+      },
+      {
+        id: "criteria",
+        label: "평가 항목",
+      },
+      {
+        id: "content",
+        label: "리포트 내용",
+      },
+    ];
+    const reportTabButtonClass = (active: boolean) =>
+      `inline-flex h-8 min-w-0 items-center justify-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-colors ${
+        active
+          ? isDarkMode
+            ? "border-[#ff9b6a] bg-[#ff9b6a]/12 text-[#ffad9b]"
+            : "border-[#ff824d] bg-[#fff2eb] text-[#ff824d]"
+          : isDarkMode
+            ? "border-[#343434] bg-[#202020] text-gray-200 hover:bg-[#262626]"
+            : "border-[#dedbd5] bg-white text-[#212121] hover:bg-[#fbfaf7]"
+      }`;
 
     const refreshClassroomReport = () => {
       if (courseDetail?.courseId == null) return;
       setClassroomReportLoading(true);
+      setClassroomFlowLoading(true);
       setClassroomReportError(null);
-      void studentReportApi
-        .getClassroomReport(courseDetail.courseId)
-        .then((report) => setClassroomReport(report))
+      void Promise.all([
+        studentReportApi.getClassroomReport(courseDetail.courseId),
+        studentReportApi.getClassroomFlow(courseDetail.courseId),
+        reportCriteriaApi.getSummary(courseDetail.courseId),
+      ])
+        .then(([report, flow, criteriaSummary]) => {
+          setClassroomReport(report);
+          setClassroomFlowItems(flow.items);
+          setReportCriteriaSummary(criteriaSummary);
+        })
         .catch((error) => {
           setClassroomReportError(
             error instanceof Error
@@ -1985,7 +2196,10 @@ const MainContent: React.FC<MainContentProps> = ({
           );
           setClassroomReport(undefined);
         })
-        .finally(() => setClassroomReportLoading(false));
+        .finally(() => {
+          setClassroomReportLoading(false);
+          setClassroomFlowLoading(false);
+        });
     };
 
     const refreshSelectedStudentReport = () => {
@@ -2001,10 +2215,27 @@ const MainContent: React.FC<MainContentProps> = ({
           courseDetail.courseId,
           selectedStudentReportId,
         ),
+        studentReportApi.getStudentActivitySummary(
+          courseDetail.courseId,
+          selectedStudentReportId,
+        ),
+        studentReportApi.getStudentReportChatHistory(
+          courseDetail.courseId,
+          selectedStudentReportId,
+          { page: 0, size: 50, sort: "createdAt,asc" },
+        ),
       ])
-        .then(([detail, context]) => {
+        .then(([detail, context, activity, history]) => {
           setStudentReportDetail(detail);
           setStudentAiContext(context);
+          setStudentActivitySummary(activity);
+          setReportChatMessages(reportChatHistoryToUiMessages(history.content ?? []));
+          setReportChatSessionId(
+            [...(history.content ?? [])]
+              .reverse()
+              .find((item) => item.sessionId != null)?.sessionId ??
+              null,
+          );
           void loadStudentReportList();
         })
         .catch((error) => {
@@ -2032,6 +2263,8 @@ const MainContent: React.FC<MainContentProps> = ({
               courseDetail.courseId,
             );
             setClassroomReport(report);
+            const flow = await studentReportApi.getClassroomFlow(courseDetail.courseId);
+            setClassroomFlowItems(flow.items);
           } catch (error) {
             setClassroomReportError(
               error instanceof Error
@@ -2053,6 +2286,8 @@ const MainContent: React.FC<MainContentProps> = ({
             courseDetail.courseId,
           );
           setClassroomReport(report);
+          const flow = await studentReportApi.getClassroomFlow(courseDetail.courseId);
+          setClassroomFlowItems(flow.items);
         } catch (error) {
           setClassroomReportError(
             error instanceof Error ? error.message : "종합 분석에 실패했습니다.",
@@ -2064,43 +2299,26 @@ const MainContent: React.FC<MainContentProps> = ({
     };
 
     return (
-      <div className="mx-auto flex w-full max-w-[76rem] flex-col gap-3 pb-6">
-        <button
-          type="button"
-          onClick={() => setTeacherMainPanel("materials")}
-          className={`self-start text-xs font-semibold ${
-            isDarkMode ? "text-gray-300 hover:text-white" : "text-gray-600 hover:text-gray-950"
-          }`}
-        >
-          ← 강의실로 돌아가기
-        </button>
-
+      <div className="flex w-full flex-col gap-3 pb-6">
         <section
-          className={`${cardClass} relative overflow-hidden px-5 py-5`}
+          className={`${reportHeaderCardClass} relative overflow-hidden px-5 py-5 lg:px-6`}
         >
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
-              <span
-                className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                  isDarkMode
-                    ? "bg-white/10 text-gray-200"
-                    : "bg-[#fff1e8] text-[#c95018]"
-                }`}
-              >
-                리포트 생성
-              </span>
-              <h2 className="mt-3 text-2xl font-semibold leading-tight">
+              <h2 className="text-2xl font-semibold leading-tight">
                 {courseDetail?.title ?? "강의실"} 학생별 역량 리포트
               </h2>
-              <p className={`mt-2 text-sm ${mutedText}`}>
-                참여 학생을 선택하면 학습 지표, 리포트 본문, AI context 기반 챗봇을 한 화면에서 확인합니다.
-              </p>
             </div>
             <div className="grid grid-cols-3 gap-2">
               {[
                 ["기본 항목", `${baseCriteriaCount}개`],
-                ["추가 항목", "0개"],
-                ["분석 기준", classroomAnalyzeStreaming ? "반영 중" : "적용 중"],
+                ["추가 항목", `${additionalCriteriaCount}개`],
+                [
+                  "분석 기준",
+                  reportCriteriaSummary?.criteriaStatus ||
+                    (classroomAnalyzeStreaming ? "반영 중" : "적용 중"),
+                ],
               ].map(([label, value]) => (
                 <div key={label} className={`${softCardClass} min-w-[7rem] px-4 py-3`}>
                   <p className={`text-xs font-semibold ${mutedText}`}>{label}</p>
@@ -2108,10 +2326,33 @@ const MainContent: React.FC<MainContentProps> = ({
                 </div>
               ))}
             </div>
+            </div>
+            <div className="flex min-w-0 justify-end">
+              <nav
+                className="flex shrink-0 flex-wrap items-center justify-start gap-1.5 lg:max-w-[30rem] lg:justify-end"
+                aria-label="강의실 리포트 하위 메뉴"
+              >
+                {reportTabs.map((tab) => {
+                  const active = classroomReportTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setClassroomReportTab(tab.id)}
+                      className={reportTabButtonClass(active)}
+                      aria-current={active ? "page" : undefined}
+                    >
+                      <span className="truncate">{tab.label}</span>
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
           </div>
-        </section>
+		        </section>
 
-        <section className={`${cardClass} px-4 py-3`}>
+	        {classroomReportTab === "students" ? (
+	        <section className={`${cardClass} px-4 py-3`}>
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-sm">
               <span className="font-semibold">선택 학생</span>
@@ -2137,6 +2378,14 @@ const MainContent: React.FC<MainContentProps> = ({
                 className={primaryButtonClass}
               >
                 선택 학생 새로고침
+              </button>
+              <button
+                type="button"
+                onClick={() => setClassroomReportTab("content")}
+                disabled={selectedStudentReportId == null}
+                className={primaryButtonClass}
+              >
+                리포트 내용 보기
               </button>
             </div>
           </div>
@@ -2189,32 +2438,72 @@ const MainContent: React.FC<MainContentProps> = ({
             </button>
           </div>
 
-          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+          <div
+            className={`mt-3 overflow-hidden rounded-[var(--app-control-radius)] border ${
+              isDarkMode ? "border-[#343434]" : "border-[#dedbd5]"
+            }`}
+          >
+            <div
+              className={`grid grid-cols-[minmax(7rem,1.1fr)_minmax(8rem,1.4fr)_8rem_7rem_8rem] gap-3 px-4 py-2 text-xs font-semibold ${
+                isDarkMode
+                  ? "bg-[#181818] text-gray-400"
+                  : "bg-[#f7f5f1] text-gray-500"
+              }`}
+            >
+              <span>학생</span>
+              <span>이메일</span>
+              <span>상태</span>
+              <span>평균 점수</span>
+              <span>최근 활동</span>
+            </div>
             {studentReportListLoading ? (
-              <span className={`text-sm ${mutedText}`}>학생 리포트를 불러오는 중...</span>
+              <div className={`px-4 py-8 text-center text-sm ${mutedText}`}>
+                학생 리포트를 불러오는 중...
+              </div>
             ) : studentReportList?.content?.length ? (
-              studentReportList.content.map((student) => {
-                const active = selectedStudentReportId === student.studentId;
-                return (
-                  <button
-                    key={student.studentId}
-                    type="button"
-                    onClick={() => setSelectedStudentReportId(student.studentId)}
-                    className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                      active
-                        ? "border-[#ff824d] bg-[#ff824d] text-white"
-                        : isDarkMode
-                          ? "border-[#343434] bg-[#181818] text-gray-200 hover:bg-[#252525]"
-                          : "border-[#dedbd5] bg-white text-gray-700 hover:bg-[#f7f5f1]"
-                    }`}
-                  >
-                    {student.name || `학생 ${student.studentId}`} ·{" "}
-                    {studentReportStatusLabel(String(student.reportStatus))}
-                  </button>
-                );
-              })
+              <div className="divide-y divide-inherit">
+                {studentReportList.content.map((student) => {
+                  const active = selectedStudentReportId === student.studentId;
+                  return (
+                    <button
+                      key={student.studentId}
+                      type="button"
+                      onClick={() => setSelectedStudentReportId(student.studentId)}
+                      className={`grid w-full grid-cols-[minmax(7rem,1.1fr)_minmax(8rem,1.4fr)_8rem_7rem_8rem] gap-3 px-4 py-3 text-left text-sm transition-colors ${
+                        active
+                          ? isDarkMode
+                            ? "bg-[#ff9b6a]/12 text-[#ffad9b]"
+                            : "bg-[#fff2eb] text-[#c95018]"
+                          : isDarkMode
+                            ? "bg-[#202020] text-gray-100 hover:bg-[#262626]"
+                            : "bg-white text-[#212121] hover:bg-[#fbfaf7]"
+                      }`}
+                    >
+                      <span className="min-w-0 truncate font-semibold">
+                        {student.name || `학생 ${student.studentId}`}
+                      </span>
+                      <span className={`min-w-0 truncate ${active ? "" : mutedText}`}>
+                        {student.email || "-"}
+                      </span>
+                      <span className="min-w-0 truncate">
+                        {studentReportStatusLabel(String(student.reportStatus))}
+                      </span>
+                      <span className="tabular-nums">
+                        {student.averageScorePercent != null
+                          ? `${clampReportScore(student.averageScorePercent)}%`
+                          : "-"}
+                      </span>
+                      <span className={`min-w-0 truncate ${active ? "" : mutedText}`}>
+                        {formatActivityMonthForKo(student.latestActivityAt)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             ) : (
-              <span className={`text-sm ${mutedText}`}>표시할 학생이 없습니다.</span>
+              <div className={`px-4 py-8 text-center text-sm ${mutedText}`}>
+                표시할 학생이 없습니다.
+              </div>
             )}
           </div>
           {studentReportList && studentReportList.totalPages > 1 ? (
@@ -2243,16 +2532,49 @@ const MainContent: React.FC<MainContentProps> = ({
                 다음
               </button>
             </div>
-          ) : null}
-        </section>
+	          ) : null}
+	        </section>
+	        ) : null}
+	
+	        {classroomReportTab === "students" && studentReportListError ? (
+	          <p className={`text-sm ${isDarkMode ? "text-red-300" : "text-red-600"}`}>
+	            {studentReportListError}
+	          </p>
+	        ) : null}
+	
+	        {classroomReportTab === "content" ? (
+	        <>
+	        <section className={`${cardClass} px-4 py-3`}>
+	          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+	            <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+	              <span className="font-semibold">선택 학생</span>
+	              <span className="font-semibold">{selectedName}</span>
+	              {selectedEmail ? <span className={mutedText}>{selectedEmail}</span> : null}
+	              <span className={mutedText}>
+	                마지막 저장 {formatActivityMonthForKo(selectedLatest)}
+	              </span>
+	            </div>
+	            <div className="flex flex-wrap gap-2">
+	              <button
+	                type="button"
+	                onClick={() => setClassroomReportTab("students")}
+	                className={buttonClass}
+	              >
+	                학생 변경
+	              </button>
+	              <button
+	                type="button"
+	                onClick={refreshSelectedStudentReport}
+	                disabled={selectedStudentReportId == null || studentReportDetailLoading}
+	                className={primaryButtonClass}
+	              >
+	                선택 학생 새로고침
+	              </button>
+	            </div>
+	          </div>
+	        </section>
 
-        {studentReportListError ? (
-          <p className={`text-sm ${isDarkMode ? "text-red-300" : "text-red-600"}`}>
-            {studentReportListError}
-          </p>
-        ) : null}
-
-        <section className={`${cardClass} px-5 py-5`}>
+	        <section className={`${cardClass} px-5 py-5`}>
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_10rem] lg:items-center">
             <div>
               <div className="flex flex-wrap gap-2">
@@ -2273,11 +2595,7 @@ const MainContent: React.FC<MainContentProps> = ({
                 ) : null}
               </div>
               <h3 className="mt-3 text-2xl font-semibold leading-snug">
-                {score < 50
-                  ? "기초 체력을 올리면서 약점 개념을 좁혀가야 하는 구간입니다."
-                  : score < 75
-                    ? "핵심 개념은 잡혀 있으나 보완 학습이 필요한 구간입니다."
-                    : "학습 흐름이 안정적이며 심화 적용을 시도할 수 있습니다."}
+                {headline}
               </h3>
               <p className={`mt-2 text-sm ${mutedText}`}>
                 현재 데이터와 리포트 기준을 바탕으로 학생의 강점과 보완 포인트를 요약했습니다.
@@ -2306,11 +2624,35 @@ const MainContent: React.FC<MainContentProps> = ({
 
           <div className="mt-5 grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
             {[
-              ["강의", `${selectedStudentReportSummary?.courseProgressPercent != null ? formatReportPercent(selectedStudentReportSummary.courseProgressPercent) : "-"}`],
-              ["질문", formatReportCount(reportChatMessages.length, "건")],
-              ["제출 체크", `${submittedCount ?? "-"}건`],
+              [
+                "강의",
+                formatReportPercent(
+                  studentActivitySummary?.lectureProgressPercent ??
+                    selectedStudentReportSummary?.courseProgressPercent,
+                ),
+              ],
+              [
+                "질문",
+                formatReportCount(
+                  studentActivitySummary?.questionCount ??
+                    reportChatMessages.filter((message) => message.role === "user").length,
+                  "건",
+                ),
+              ],
+              [
+                "제출 체크",
+                totalAssessments != null
+                  ? `${submittedCount ?? 0}/${totalAssessments}`
+                  : `${submittedCount ?? "-"}건`,
+              ],
               ["평균 점수", formatReportPercent(studentReportDetail?.averageScorePercent ?? selectedStudentReportSummary?.averageScorePercent)],
-              ["고사 시험", formatReportCount(selectedStudentReportSummary?.examAttemptCount)],
+              [
+                "고사 시험",
+                formatReportCount(
+                  studentActivitySummary?.examAttemptCount ??
+                    selectedStudentReportSummary?.examAttemptCount,
+                ),
+              ],
               ["미제출", `${missingCount ?? "-"}건`],
             ].map(([label, value]) => (
               <div key={label} className={`${softCardClass} px-4 py-3`}>
@@ -2319,6 +2661,52 @@ const MainContent: React.FC<MainContentProps> = ({
               </div>
             ))}
           </div>
+          {studentActivitySummaryLoading || pageCoverage.length || categoryCoverage.length ? (
+            <div className="mt-4 grid gap-2 lg:grid-cols-2">
+              <div className={`${softCardClass} px-4 py-3`}>
+                <p className={`text-xs font-semibold ${mutedText}`}>페이지 커버리지</p>
+                {studentActivitySummaryLoading ? (
+                  <p className={`mt-2 text-sm ${mutedText}`}>활동 요약을 불러오는 중...</p>
+                ) : pageCoverage.length ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {pageCoverage.slice(0, 8).map((item, index) => (
+                      <span
+                        key={`${item.pageNumber ?? "page"}-${index}`}
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          isDarkMode ? "bg-white/10 text-gray-200" : "bg-white text-gray-700"
+                        }`}
+                      >
+                        p.{item.pageNumber ?? "-"} · {item.messageCount ?? 0}회
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className={`mt-2 text-sm ${mutedText}`}>페이지 기반 질문 기록이 없습니다.</p>
+                )}
+              </div>
+              <div className={`${softCardClass} px-4 py-3`}>
+                <p className={`text-xs font-semibold ${mutedText}`}>활동 카테고리</p>
+                {studentActivitySummaryLoading ? (
+                  <p className={`mt-2 text-sm ${mutedText}`}>활동 요약을 불러오는 중...</p>
+                ) : categoryCoverage.length ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {categoryCoverage.slice(0, 8).map((item, index) => (
+                      <span
+                        key={`${item.category ?? "category"}-${index}`}
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          isDarkMode ? "bg-white/10 text-gray-200" : "bg-white text-gray-700"
+                        }`}
+                      >
+                        {item.category ?? "기타"} · {item.count ?? 0}건
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className={`mt-2 text-sm ${mutedText}`}>카테고리 기반 활동 기록이 없습니다.</p>
+                )}
+              </div>
+            </div>
+          ) : null}
         </section>
 
         <div className="grid gap-3 lg:grid-cols-2">
@@ -2366,10 +2754,13 @@ const MainContent: React.FC<MainContentProps> = ({
 
         <section className={`${cardClass} px-5 py-4`}>
           <h3 className="text-base font-semibold">
-            {competencies.length || baseCriteriaCount || 0}개 역량 체크리스트
+            {activeCriteriaCount || competencies.length || 0}개 역량 체크리스트
           </h3>
           <p className={`mt-1 text-sm ${mutedText}`}>
             세션, 퀴즈, 피드백 데이터를 종합해 항목별 점수를 표시합니다.
+            {reportCriteriaSummary?.criteriaReflectedAt
+              ? ` 기준 반영: ${formatActivityMonthForKo(reportCriteriaSummary.criteriaReflectedAt)}`
+              : ""}
           </p>
           <div className="mt-4 space-y-3">
             {competencies.length ? (
@@ -2418,26 +2809,23 @@ const MainContent: React.FC<MainContentProps> = ({
           <section className={`${cardClass} px-5 py-4`}>
             <h3 className="text-base font-semibold">강점</h3>
             <p className={`mt-3 text-sm ${mutedText}`}>
-              {strongCompetencies.length
-                ? strongCompetencies.map((item) => item.competencyName).join(", ")
+              {reportStrengthTexts.length
+                ? reportStrengthTexts.join(", ")
                 : selectedStudentReportSummary?.topStrengthLabel || "아직 충분한 강점 근거가 없습니다."}
             </p>
           </section>
           <section className={`${cardClass} px-5 py-4`}>
             <h3 className="text-base font-semibold">보완 포인트</h3>
             <p className={`mt-3 text-sm ${mutedText}`}>
-              {weakCompetencies.length
-                ? weakCompetencies.map((item) => item.competencyName).join(", ")
+              {reportImprovementTexts.length
+                ? reportImprovementTexts.join(", ")
                 : selectedStudentReportSummary?.topImprovementLabel || "아직 뚜렷한 보완 포인트가 없습니다."}
             </p>
           </section>
           <section className={`${cardClass} px-5 py-4`}>
             <h3 className="text-base font-semibold">코칭 인사이트</h3>
             <ul className="mt-3 list-disc space-y-1 pl-5 text-sm leading-6">
-              {(classroomReport?.coachingPriorities?.length
-                ? classroomReport.coachingPriorities.map(reportInsightPrimaryText)
-                : summaryLines
-              )
+              {reportCoachingInsights
                 .slice(0, 3)
                 .map((item, index) => (
                   <li key={`${item}-${index}`}>{item}</li>
@@ -2447,11 +2835,7 @@ const MainContent: React.FC<MainContentProps> = ({
           <section className={`${cardClass} px-5 py-4`}>
             <h3 className="text-base font-semibold">추천 액션</h3>
             <div className="mt-3 divide-y divide-current/10 text-sm">
-              {[
-                ["약점 개념 점검", weakCompetencies[0]?.competencyName || "핵심 개념 복습"],
-                ["짧은 퀴즈 재투입", "오답 유형을 기준으로 미니 퀴즈를 제공합니다."],
-                ["질문 로그 유지", "학습 중 막힌 부분을 그대로 남기도록 안내합니다."],
-              ].map(([title, body]) => (
+              {reportRecommendedActions.map(([title, body]) => (
                 <div key={title} className="grid grid-cols-[8rem_minmax(0,1fr)] gap-3 py-2">
                   <span className="font-semibold">{title}</span>
                   <span className={mutedText}>{body}</span>
@@ -2502,18 +2886,86 @@ const MainContent: React.FC<MainContentProps> = ({
               {classroomReportError}
             </p>
           ) : null}
-          <div className={`mt-4 rounded-[var(--app-control-radius)] border p-4 text-sm prose prose-sm max-w-none dark:prose-invert ${
-            isDarkMode ? "border-[#343434] bg-[#242424]" : "border-[#e8e1d8] bg-[#fbfaf7]"
-          }`}>
-            {classroomReportLoading ? (
-              <span className={mutedText}>강의실 종합 리포트를 불러오는 중...</span>
-            ) : classroomReport?.summaryMarkdown?.trim() ? (
-              <MarkdownContent>{classroomReport.summaryMarkdown}</MarkdownContent>
-            ) : (
-              <span className={mutedText}>
-                아직 생성된 강의실 종합 리포트가 없습니다. 종합분석을 실행해 보세요.
-              </span>
-            )}
+          <div className="mt-4 space-y-3">
+            {classroomFlowLoading ? (
+              <div className={`${softCardClass} px-4 py-4 text-sm ${mutedText}`}>
+                강의실 학습 흐름을 불러오는 중...
+              </div>
+            ) : classroomFlowItems.length ? (
+              classroomFlowItems.map((item, index) => {
+                const progress = clampReportScore(item.learningProgressPercent);
+                const avgScore = clampReportScore(item.averageScorePercent);
+                const participation = clampReportScore(item.participationRatePercent);
+                return (
+                  <article key={`${item.lectureId ?? "flow"}-${index}`} className={`${softCardClass} px-4 py-3`}>
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                      <div className="min-w-0">
+                        <p className={`text-xs font-semibold ${mutedText}`}>
+                          {item.week != null ? `${item.week}주차` : "주차 미지정"}
+                        </p>
+                        <h4 className="mt-1 text-sm font-semibold">
+                          {item.title || "제목 없음"}
+                        </h4>
+                        {item.riskReasons.length ? (
+                          <p className={`mt-1 text-xs ${mutedText}`}>
+                            {item.riskReasons.slice(0, 2).join(" · ")}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 text-center sm:grid-cols-6 xl:min-w-[34rem]">
+                        {[
+                          ["자료", formatReportCount(item.materialCount, "개")],
+                          ["진도", item.learningProgressPercent == null ? "-" : `${progress}%`],
+                          ["평균", item.averageScorePercent == null ? "-" : `${avgScore}%`],
+                          ["질문", formatReportCount(item.questionCount, "건")],
+                          ["퀴즈", formatReportCount(item.quizCount, "건")],
+                          ["참여", item.participationRatePercent == null ? "-" : `${participation}%`],
+                        ].map(([label, value]) => (
+                          <div
+                            key={label}
+                            className={`rounded-[var(--app-control-radius)] px-2 py-2 ${
+                              isDarkMode ? "bg-[#1a1a1a]" : "bg-white"
+                            }`}
+                          >
+                            <p className={`text-[11px] font-semibold ${mutedText}`}>{label}</p>
+                            <p className="mt-1 text-sm font-semibold">{value}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div
+                      className={`mt-3 h-1.5 rounded-full ${
+                        isDarkMode ? "bg-[#343434]" : "bg-[#e8e1d8]"
+                      }`}
+                    >
+                      <div
+                        className="h-full rounded-full bg-[#ff824d]"
+                        style={{ width: `${Math.max(progress, participation, avgScore)}%` }}
+                      />
+                    </div>
+                    {item.riskLevel ? (
+                      <p className={`mt-2 text-xs font-semibold ${mutedText}`}>
+                        위험도: {item.riskLevel}
+                      </p>
+                    ) : null}
+                  </article>
+                );
+              })
+            ) : null}
+
+            <div className={`rounded-[var(--app-control-radius)] border p-4 text-sm prose prose-sm max-w-none dark:prose-invert ${
+              isDarkMode ? "border-[#343434] bg-[#242424]" : "border-[#e8e1d8] bg-[#fbfaf7]"
+            }`}>
+              {classroomReportLoading ? (
+                <span className={mutedText}>강의실 종합 리포트를 불러오는 중...</span>
+              ) : classroomReport?.summaryMarkdown?.trim() ? (
+                <MarkdownContent>{classroomReport.summaryMarkdown}</MarkdownContent>
+              ) : (
+                <span className={mutedText}>
+                  아직 생성된 강의실 종합 리포트가 없습니다. 종합분석을 실행해 보세요.
+                </span>
+              )}
+            </div>
           </div>
           {classroomStreamBuffer.trim() ? (
             <details className={`${softCardClass} mt-3 text-sm`}>
@@ -2522,93 +2974,108 @@ const MainContent: React.FC<MainContentProps> = ({
                 {classroomStreamBuffer}
               </pre>
             </details>
-          ) : null}
-        </section>
+	          ) : null}
+	        </section>
+	
+	        <section className={`${cardClass} flex min-h-[28rem] flex-col`}>
+	          <div className="border-b border-inherit px-4 py-3">
+	            <h3 className="text-base font-semibold">학생 리포트 챗봇</h3>
+	            <p className={`mt-1 text-xs ${mutedText}`}>
+	              선택 학생의 리포트와 AI context를 기반으로 질문합니다.
+	            </p>
+	          </div>
+	          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+	            {reportChatHistoryLoading ? (
+	              <div className={`flex h-full items-center justify-center px-4 text-center text-sm ${mutedText}`}>
+	                저장된 대화를 불러오는 중...
+	              </div>
+	            ) : reportChatMessages.length === 0 ? (
+	              <div className={`flex h-full items-center justify-center px-4 text-center text-sm ${mutedText}`}>
+	                예: 이 학생의 보완점과 다음 학습 우선순위를 알려줘.
+	              </div>
+	            ) : (
+	              reportChatMessages.map((message) => (
+	                <div
+	                  key={message.id}
+	                  className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+	                >
+	                  <div
+	                    className={`max-w-[84%] rounded-[var(--app-control-radius)] px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
+	                      message.role === "user"
+	                        ? "bg-[#ff824d] text-white"
+	                        : isDarkMode
+	                          ? "border border-[#343434] bg-[#181818] text-gray-100"
+	                          : "border border-[#dedbd5] bg-white text-[#212121]"
+	                    }`}
+	                  >
+	                    <p className="mb-1 text-[11px] font-semibold opacity-70">
+	                      {message.role === "user" ? "나" : "AI Tutor"}
+	                    </p>
+	                    {message.role === "assistant" && message.text ? (
+	                      <div className="prose prose-sm max-w-none dark:prose-invert">
+	                        <MarkdownContent>{message.text}</MarkdownContent>
+	                      </div>
+	                    ) : (
+	                      message.text || (message.role === "assistant" ? "응답 생성 중..." : "")
+	                    )}
+	                  </div>
+	                </div>
+	              ))
+	            )}
+	          </div>
+	          <form
+	            className="flex shrink-0 gap-2 border-t border-inherit p-3"
+	            onSubmit={(event) => {
+	              event.preventDefault();
+	              void submitStudentReportChatQuestion();
+	            }}
+	          >
+	            <input
+	              type="text"
+	              value={reportChatInput}
+	              onChange={(event) => setReportChatInput(event.target.value)}
+	              disabled={reportChatSending || selectedStudentReportId == null || !studentReportDetail}
+	              placeholder={
+	                selectedStudentReportId == null
+	                  ? "학생을 먼저 선택하세요"
+	                  : "리포트에 대해 질문하세요"
+	              }
+	              className={`min-w-0 flex-1 rounded-[var(--app-control-radius)] border px-3 py-2 text-sm outline-none ${
+	                isDarkMode
+	                  ? "border-[#343434] bg-[#181818] text-white placeholder:text-gray-500"
+	                  : "border-[#dedbd5] bg-white text-[#212121] placeholder:text-gray-400"
+	              } disabled:opacity-50`}
+	            />
+	            {reportChatSending ? (
+	              <button
+	                type="button"
+	                onClick={() => reportChatAbortRef.current?.abort()}
+	                className={buttonClass}
+	              >
+	                중지
+	              </button>
+	            ) : (
+	              <button
+	                type="submit"
+	                disabled={!reportChatInput.trim() || selectedStudentReportId == null || !studentReportDetail}
+	                className={primaryButtonClass}
+	              >
+	                전송
+	              </button>
+	            )}
+	          </form>
+	        </section>
+	        </>
+	        ) : null}
 
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_24rem]">
-          <ReportCriteriaPanel
-            courseId={courseDetail.courseId}
-            isDarkMode={isDarkMode}
-          />
-          <section className={`${cardClass} flex min-h-[28rem] flex-col`}>
-            <div className="border-b border-inherit px-4 py-3">
-              <h3 className="text-base font-semibold">학생 리포트 챗봇</h3>
-              <p className={`mt-1 text-xs ${mutedText}`}>
-                선택 학생의 리포트와 AI context를 기반으로 질문합니다.
-              </p>
-            </div>
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-              {reportChatMessages.length === 0 ? (
-                <div className={`flex h-full items-center justify-center px-4 text-center text-sm ${mutedText}`}>
-                  예: 이 학생의 보완점과 다음 학습 우선순위를 알려줘.
-                </div>
-              ) : (
-                reportChatMessages.map((message) => (
-                  <div
-                    key={message.id}
-                    className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className={`max-w-[84%] rounded-[var(--app-control-radius)] px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
-                        message.role === "user"
-                          ? "bg-[#ff824d] text-white"
-                          : isDarkMode
-                            ? "border border-[#343434] bg-[#181818] text-gray-100"
-                            : "border border-[#dedbd5] bg-white text-[#212121]"
-                      }`}
-                    >
-                      <p className="mb-1 text-[11px] font-semibold opacity-70">
-                        {message.role === "user" ? "나" : "AI Tutor"}
-                      </p>
-                      {message.text || (message.role === "assistant" ? "응답 생성 중..." : "")}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-            <form
-              className="flex shrink-0 gap-2 border-t border-inherit p-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void submitStudentReportChatQuestion();
-              }}
-            >
-              <input
-                type="text"
-                value={reportChatInput}
-                onChange={(event) => setReportChatInput(event.target.value)}
-                disabled={reportChatSending || selectedStudentReportId == null || !studentReportDetail}
-                placeholder={
-                  selectedStudentReportId == null
-                    ? "학생을 먼저 선택하세요"
-                    : "리포트에 대해 질문하세요"
-                }
-                className={`min-w-0 flex-1 rounded-[var(--app-control-radius)] border px-3 py-2 text-sm outline-none ${
-                  isDarkMode
-                    ? "border-[#343434] bg-[#181818] text-white placeholder:text-gray-500"
-                    : "border-[#dedbd5] bg-white text-[#212121] placeholder:text-gray-400"
-                } disabled:opacity-50`}
-              />
-              {reportChatSending ? (
-                <button
-                  type="button"
-                  onClick={() => reportChatAbortRef.current?.abort()}
-                  className={buttonClass}
-                >
-                  중지
-                </button>
-              ) : (
-                <button
-                  type="submit"
-                  disabled={!reportChatInput.trim() || selectedStudentReportId == null || !studentReportDetail}
-                  className={primaryButtonClass}
-                >
-                  전송
-                </button>
-              )}
-            </form>
-          </section>
-        </div>
+	        {classroomReportTab === "criteria" ? (
+	        <div className="grid gap-3">
+	          <ReportCriteriaPanel
+	            courseId={courseDetail.courseId}
+	            isDarkMode={isDarkMode}
+	          />
+	        </div>
+	        ) : null}
       </div>
     );
   };

@@ -34,6 +34,89 @@ export interface LectureAssistantChatMessage {
 const SKIM_DEBOUNCE_MS = 1000;
 /** 「아니오」 후 무반응 시 「다음 페이지로 넘어갈까요?」 재진입 (문서 4) */
 const IDLE_AFTER_NO_MS = 10000;
+const LECTURE_ASSISTANT_STORAGE_PREFIX = "lecture-assistant-chat:v1";
+
+interface PersistedLectureAssistantChatMessage {
+  id: number;
+  isUser: boolean;
+  text?: string;
+  markdown?: string;
+  roleBadge?: string;
+  assistantVariant?: "educational" | "orchestrator" | "system";
+  thoughtSummary?: string;
+  thoughtExpanded?: boolean;
+  thoughtFinished?: boolean;
+  actionButtons?: {
+    id: string;
+    label: string;
+    variant?: "primary" | "muted";
+  }[];
+}
+
+interface PersistedLectureAssistantChat {
+  savedAt: number;
+  messages: PersistedLectureAssistantChatMessage[];
+}
+
+const getLectureAssistantStorageKey = (
+  lectureId: number | null,
+  materialId: number | null,
+) =>
+  lectureId != null && materialId != null
+    ? `${LECTURE_ASSISTANT_STORAGE_PREFIX}:${lectureId}:${materialId}`
+    : null;
+
+const serializeLectureAssistantMessage = (
+  message: LectureAssistantChatMessage,
+): PersistedLectureAssistantChatMessage | null => {
+  if (message.isLoading) return null;
+  return {
+    id: message.id,
+    isUser: message.isUser,
+    text: message.text,
+    markdown: message.markdown,
+    roleBadge: message.roleBadge,
+    assistantVariant: message.assistantVariant,
+    thoughtSummary: message.thoughtSummary,
+    thoughtExpanded: message.thoughtExpanded,
+    thoughtFinished: message.thoughtFinished,
+    actionButtons: message.actionButtons,
+  };
+};
+
+const restoreLectureAssistantMessages = (
+  raw: string | null,
+): LectureAssistantChatMessage[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as Partial<PersistedLectureAssistantChat>;
+    if (!Array.isArray(parsed.messages)) return [];
+    return parsed.messages
+      .filter((message): message is PersistedLectureAssistantChatMessage => {
+        return (
+          message != null &&
+          typeof message === "object" &&
+          typeof message.id === "number" &&
+          typeof message.isUser === "boolean"
+        );
+      })
+      .map((message) => ({
+        id: message.id,
+        isUser: message.isUser,
+        text: message.text,
+        markdown: message.markdown,
+        roleBadge: message.roleBadge,
+        assistantVariant: message.assistantVariant,
+        thoughtSummary: message.thoughtSummary,
+        thoughtExpanded: message.thoughtExpanded,
+        thoughtFinished: message.thoughtFinished,
+        streamingMarkdown: false,
+        actionButtons: message.actionButtons,
+      }));
+  } catch {
+    return [];
+  }
+};
 
 export function useLectureAssistantChat(options: {
   enabled: boolean;
@@ -66,6 +149,8 @@ export function useLectureAssistantChat(options: {
   const nudgedAfterNoRef = useRef(false);
   const idleAfterNoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const phaseRef = useRef<AssistantPhase>("idle");
+  const hydratedStorageKeyRef = useRef<string | null>(null);
+  const skipNextPersistRef = useRef(false);
   /** Legacy `stream/initialize`는 세션당 1회만 — 이후 페이지·설명은 `next`만 사용 */
   const lectureLegacySessionInitializedRef = useRef(false);
   /** SSE `next`가 `waitingForAnswer`일 때만 — 그때는 `answer(aiQuestionId)` 후 `next` */
@@ -91,6 +176,73 @@ export function useLectureAssistantChat(options: {
       idleAfterNoTimerRef.current = null;
     }
   }, []);
+
+  const storageKey = getLectureAssistantStorageKey(lectureId, materialId);
+
+  useEffect(() => {
+    hydratedStorageKeyRef.current = null;
+    skipNextPersistRef.current = true;
+    abortRef.current?.();
+    abortRef.current = null;
+    streamingRef.current = false;
+    setBusy(false);
+    setPhase("idle");
+    lectureLegacySessionInitializedRef.current = false;
+    pendingAiQuestionIdRef.current = null;
+    pendingPageAfterStreamRef.current = null;
+    pendingExplainPageRef.current = null;
+    clearIdleAfterNoTimer();
+    if (skimTimerRef.current) {
+      clearTimeout(skimTimerRef.current);
+      skimTimerRef.current = null;
+    }
+
+    if (!storageKey || typeof window === "undefined") {
+      setMessages([]);
+      messageIdRef.current = 0;
+      return;
+    }
+
+    const restored = restoreLectureAssistantMessages(
+      window.localStorage.getItem(storageKey),
+    );
+    const maxMessageId = restored.reduce(
+      (max, message) => Math.max(max, message.id),
+      0,
+    );
+    messageIdRef.current = maxMessageId;
+    setMessages(restored);
+    hydratedStorageKeyRef.current = storageKey;
+  }, [storageKey, clearIdleAfterNoTimer]);
+
+  useEffect(() => {
+    if (
+      !storageKey ||
+      hydratedStorageKeyRef.current !== storageKey ||
+      typeof window === "undefined"
+    ) {
+      return;
+    }
+    if (skipNextPersistRef.current) {
+      skipNextPersistRef.current = false;
+      return;
+    }
+    const persistedMessages = messages
+      .map(serializeLectureAssistantMessage)
+      .filter(
+        (message): message is PersistedLectureAssistantChatMessage =>
+          message != null,
+      );
+    if (persistedMessages.length === 0) {
+      window.localStorage.removeItem(storageKey);
+      return;
+    }
+    const payload: PersistedLectureAssistantChat = {
+      savedAt: Date.now(),
+      messages: persistedMessages,
+    };
+    window.localStorage.setItem(storageKey, JSON.stringify(payload));
+  }, [storageKey, messages]);
 
   const appendOrchestrator = useCallback(
     (
@@ -417,13 +569,10 @@ export function useLectureAssistantChat(options: {
 
   useEffect(() => {
     if (!enabled) {
-      setMessages([]);
       setPhase("idle");
       setBusy(false);
       streamingRef.current = false;
-      lectureLegacySessionInitializedRef.current = false;
       pendingAiQuestionIdRef.current = null;
-      messageIdRef.current = 0;
       abortRef.current?.();
       abortRef.current = null;
       pendingPageAfterStreamRef.current = null;

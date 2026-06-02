@@ -112,9 +112,19 @@ export interface StudentReportDetailResponse {
   email?: string;
   reportStatus: StudentReportStatusFilter | string;
   averageScorePercent?: number;
+  overallScorePercent?: number;
+  headline?: string;
+  summaryBullets?: string[];
+  strengths?: string[];
+  improvementPoints?: string[];
+  coachingInsights?: string[];
+  recommendedActions?: string[];
   narrativeReport?: string;
   competencies: StudentReportCompetency[];
   latestActivityAt?: string;
+  generatedAt?: string;
+  updatedAt?: string;
+  reportWarnings?: string[];
 }
 
 /** GET /api/courses/{courseId}/reports/classroom */
@@ -165,6 +175,85 @@ export interface StudentReportAiContextResponse {
   student?: StudentReportAiContextStudentInfo;
   activitySummary?: StudentReportAiContextActivity;
   scoreSummary?: StudentReportAiContextScore;
+}
+
+/** GET /api/courses/{courseId}/reports/criteria/summary */
+export interface ReportCriteriaSummary {
+  baseItemCount: number;
+  additionalItemCount: number;
+  activeCriteriaCount: number;
+  criteriaStatus?: string;
+  criteriaReflectedAt?: string;
+}
+
+export interface StudentReportActivityCoverageItem {
+  pageNumber?: number;
+  messageCount?: number;
+}
+
+export interface StudentReportCategoryCoverageItem {
+  category?: string;
+  count?: number;
+}
+
+/** GET …/reports/students/{studentId}/activity-summary */
+export interface StudentReportActivitySummaryResponse {
+  questionCount?: number;
+  examAttemptCount?: number;
+  submissionCount?: number;
+  missingSubmissionCount?: number;
+  lectureProgressPercent?: number;
+  pageCoverage: StudentReportActivityCoverageItem[];
+  categoryCoverage: StudentReportCategoryCoverageItem[];
+}
+
+export interface StudentReportChatHistoryItem {
+  sessionId?: number;
+  role: string;
+  message: string;
+  createdAt?: string;
+}
+
+export interface ClassroomLearningFlowItem {
+  lectureId?: number;
+  week?: number;
+  title?: string;
+  materialCount?: number;
+  learningProgressPercent?: number;
+  averageScorePercent?: number;
+  questionCount?: number;
+  quizCount?: number;
+  participationRatePercent?: number;
+  riskLevel?: string;
+  riskReasons: string[];
+}
+
+/** GET /api/courses/{courseId}/reports/classroom/flow */
+export interface ClassroomLearningFlowResponse {
+  courseId: number;
+  items: ClassroomLearningFlowItem[];
+}
+
+function toFiniteNumber(v: unknown): number | undefined {
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) {
+    return Number(v);
+  }
+  return undefined;
+}
+
+function toOptionalString(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const text = v.trim();
+  return text ? text : undefined;
+}
+
+function normalizeStringArray(v: unknown): string[] {
+  if (typeof v === "string" && v.trim() !== "") return [v.trim()];
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
 }
 
 function normalizeNotificationItem(raw: Record<string, unknown>): NotificationItem {
@@ -372,6 +461,12 @@ function normalizeStudentReportDetail(
     raw.average_score_percent ??
     scoreObj?.averageScorePercent ??
     scoreObj?.average_score_percent;
+  const overallScore =
+    raw.overallScorePercent ??
+    raw.overall_score_percent ??
+    raw.overallScore ??
+    raw.overall_score ??
+    avg;
 
   const n = (v: unknown): number | undefined => {
     if (typeof v === "number" && Number.isFinite(v)) return v;
@@ -469,12 +564,38 @@ function normalizeStudentReportDetail(
     email: typeof email === "string" && email.trim() !== "" ? email : undefined,
     reportStatus,
     averageScorePercent: n(avg),
+    overallScorePercent: n(overallScore),
+    headline: toOptionalString(raw.headline),
+    summaryBullets: normalizeStringArray(raw.summaryBullets ?? raw.summary_bullets),
+    strengths: normalizeStringArray(raw.strengths),
+    improvementPoints: normalizeStringArray(
+      raw.improvementPoints ?? raw.improvement_points,
+    ),
+    coachingInsights: normalizeStringArray(
+      raw.coachingInsights ?? raw.coaching_insights,
+    ),
+    recommendedActions: normalizeStringArray(
+      raw.recommendedActions ?? raw.recommended_actions,
+    ),
     narrativeReport,
     competencies,
     latestActivityAt:
       typeof latestActivityAt === "string" && latestActivityAt.trim() !== ""
         ? latestActivityAt
         : undefined,
+    generatedAt:
+      typeof raw.generatedAt === "string"
+        ? raw.generatedAt
+        : typeof raw.generated_at === "string"
+          ? raw.generated_at
+          : undefined,
+    updatedAt:
+      typeof raw.updatedAt === "string"
+        ? raw.updatedAt
+        : typeof raw.updated_at === "string"
+          ? raw.updated_at
+          : undefined,
+    reportWarnings: normalizeStringArray(raw.reportWarnings ?? raw.report_warnings),
   };
 }
 
@@ -591,6 +712,115 @@ function normalizeStudentReportAiContext(raw: Record<string, unknown>): StudentR
   }
 
   return { course, student, activitySummary, scoreSummary };
+}
+
+function normalizeReportCriteriaSummary(raw: Record<string, unknown>): ReportCriteriaSummary {
+  return {
+    baseItemCount: toFiniteNumber(raw.baseItemCount ?? raw.base_item_count) ?? 0,
+    additionalItemCount:
+      toFiniteNumber(raw.additionalItemCount ?? raw.additional_item_count) ?? 0,
+    activeCriteriaCount:
+      toFiniteNumber(raw.activeCriteriaCount ?? raw.active_criteria_count) ?? 0,
+    criteriaStatus: toOptionalString(raw.criteriaStatus ?? raw.criteria_status),
+    criteriaReflectedAt: toOptionalString(
+      raw.criteriaReflectedAt ?? raw.criteria_reflected_at,
+    ),
+  };
+}
+
+function normalizeStudentReportActivitySummary(
+  raw: Record<string, unknown>,
+): StudentReportActivitySummaryResponse {
+  const pageCoverageRaw = raw.pageCoverage ?? raw.page_coverage;
+  const pageCoverage = Array.isArray(pageCoverageRaw)
+    ? pageCoverageRaw
+        .map((item) => {
+          if (item == null || typeof item !== "object" || Array.isArray(item)) return null;
+          const obj = item as Record<string, unknown>;
+          return {
+            pageNumber: toFiniteNumber(obj.pageNumber ?? obj.page_number),
+            messageCount: toFiniteNumber(obj.messageCount ?? obj.message_count),
+          };
+        })
+        .filter((item): item is StudentReportActivityCoverageItem => item != null)
+    : [];
+
+  const categoryCoverageRaw = raw.categoryCoverage ?? raw.category_coverage;
+  const categoryCoverage = Array.isArray(categoryCoverageRaw)
+    ? categoryCoverageRaw
+        .map((item) => {
+          if (item == null || typeof item !== "object" || Array.isArray(item)) return null;
+          const obj = item as Record<string, unknown>;
+          return {
+            category: toOptionalString(obj.category),
+            count: toFiniteNumber(obj.count),
+          };
+        })
+        .filter((item): item is StudentReportCategoryCoverageItem => item != null)
+    : [];
+
+  return {
+    questionCount: toFiniteNumber(raw.questionCount ?? raw.question_count),
+    examAttemptCount: toFiniteNumber(raw.examAttemptCount ?? raw.exam_attempt_count),
+    submissionCount: toFiniteNumber(raw.submissionCount ?? raw.submission_count),
+    missingSubmissionCount: toFiniteNumber(
+      raw.missingSubmissionCount ?? raw.missing_submission_count,
+    ),
+    lectureProgressPercent: toFiniteNumber(
+      raw.lectureProgressPercent ?? raw.lecture_progress_percent,
+    ),
+    pageCoverage,
+    categoryCoverage,
+  };
+}
+
+function normalizeStudentReportChatHistoryItem(
+  raw: Record<string, unknown>,
+): StudentReportChatHistoryItem {
+  return {
+    sessionId: toFiniteNumber(raw.sessionId ?? raw.session_id),
+    role: String(raw.role ?? ""),
+    message: String(raw.message ?? raw.content ?? ""),
+    createdAt: toOptionalString(raw.createdAt ?? raw.created_at),
+  };
+}
+
+function normalizeClassroomLearningFlow(
+  raw: Record<string, unknown>,
+): ClassroomLearningFlowResponse {
+  const itemsRaw = raw.items;
+  const items = Array.isArray(itemsRaw)
+    ? itemsRaw
+        .map((item) => {
+          if (item == null || typeof item !== "object" || Array.isArray(item)) return null;
+          const obj = item as Record<string, unknown>;
+          return {
+            lectureId: toFiniteNumber(obj.lectureId ?? obj.lecture_id),
+            week: toFiniteNumber(obj.week ?? obj.weekNumber ?? obj.week_number),
+            title: toOptionalString(obj.title),
+            materialCount: toFiniteNumber(obj.materialCount ?? obj.material_count),
+            learningProgressPercent: toFiniteNumber(
+              obj.learningProgressPercent ?? obj.learning_progress_percent,
+            ),
+            averageScorePercent: toFiniteNumber(
+              obj.averageScorePercent ?? obj.average_score_percent,
+            ),
+            questionCount: toFiniteNumber(obj.questionCount ?? obj.question_count),
+            quizCount: toFiniteNumber(obj.quizCount ?? obj.quiz_count),
+            participationRatePercent: toFiniteNumber(
+              obj.participationRatePercent ?? obj.participation_rate_percent,
+            ),
+            riskLevel: toOptionalString(obj.riskLevel ?? obj.risk_level),
+            riskReasons: normalizeStringArray(obj.riskReasons ?? obj.risk_reasons),
+          };
+        })
+        .filter((item): item is ClassroomLearningFlowItem => item != null)
+    : [];
+
+  return {
+    courseId: Number(raw.courseId ?? raw.course_id ?? 0),
+    items,
+  };
 }
 
 export interface CourseDetail extends Course {
@@ -814,6 +1044,51 @@ export interface ReportCriterionPayload {
   label?: string;
   description?: string;
   weight?: number;
+}
+
+export type AiAgentOperationMethod =
+  | "messageOnly"
+  | "draftNotice"
+  | "reviseNotice"
+  | "createNotice"
+  | "updateNotice"
+  | "deleteNotice"
+  | "draftCriterion"
+  | "reviseCriterion"
+  | "createCriterion"
+  | "updateCriterion"
+  | "deleteCriterion";
+
+export interface AiAgentOperation {
+  method: AiAgentOperationMethod | string;
+  message?: string;
+  warnings: string[];
+  payload?: Record<string, unknown>;
+  raw?: Record<string, unknown>;
+}
+
+export interface AiAgentStreamResult {
+  text: string;
+  operation?: AiAgentOperation;
+  warnings: string[];
+  doneData?: Record<string, unknown>;
+  rawEvents: Record<string, unknown>[];
+}
+
+export interface NoticeAssistantStreamRequest {
+  message: string;
+  currentDraft?: Partial<NoticePayload> & { noticeId?: number | null };
+  selectedNotice?: Partial<NoticeDetail> | null;
+  notices?: Array<Partial<NoticeListItem>>;
+  context?: Record<string, unknown>;
+}
+
+export interface CriteriaAssistantChatStreamRequest {
+  message: string;
+  criteria?: ReportCriterion[];
+  currentDraft?: Partial<ReportCriterionPayload> & { criterionId?: number | null };
+  selectedCriterion?: Partial<ReportCriterion> | null;
+  context?: Record<string, unknown>;
 }
 
 export interface TeacherNotificationPreference {
@@ -1608,6 +1883,12 @@ const isDevHost = (): boolean =>
 const resolveApiEndpointUrl = (endpoint: string): string => {
   const shouldUseViteProxy = isDevHost() && endpoint.startsWith('/api');
   return shouldUseViteProxy ? endpoint : (API_BASE_URL ? `${String(API_BASE_URL).replace(/\/$/, '')}${endpoint}` : endpoint);
+};
+
+const resolveAiEndpointUrl = (endpoint: string): string => {
+  if (/^https?:\/\//i.test(endpoint)) return endpoint;
+  const base = String(AI_SERVICE_URL || API_BASE_URL || "").replace(/\/$/, "");
+  return base ? `${base}${endpoint}` : endpoint;
 };
 
 const AUTH_REFRESH_ENDPOINT = '/api/auth/refresh';
@@ -2697,6 +2978,211 @@ async function postJsonSseStream(
   return accumulated;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function pickFirstRecord(
+  raw: Record<string, unknown>,
+  keys: string[],
+): Record<string, unknown> | undefined {
+  for (const key of keys) {
+    const picked = asRecord(raw[key]);
+    if (picked) return picked;
+  }
+  return undefined;
+}
+
+function pickFirstStringValue(
+  raw: Record<string, unknown>,
+  keys: string[],
+): string | undefined {
+  for (const key of keys) {
+    const value = raw[key];
+    if (typeof value === "string" && value.trim() !== "") return value;
+  }
+  return undefined;
+}
+
+function normalizeWarningArray(value: unknown): string[] {
+  if (typeof value === "string" && value.trim() !== "") return [value.trim()];
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
+}
+
+function extractBridgeTextChunk(payload: Record<string, unknown>): string | undefined {
+  const eventType = String(payload.type ?? payload.event ?? "").toLowerCase();
+  if (eventType === "done") return undefined;
+  return pickFirstStringValue(payload, [
+    "delta",
+    "text",
+    "content",
+    "message",
+    "draft",
+    "answer",
+  ]);
+}
+
+function extractBridgeDoneData(
+  payload: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const eventType = String(payload.type ?? payload.event ?? "").toLowerCase();
+  if (eventType !== "done" && payload.done !== true) return undefined;
+  return asRecord(payload.data) ?? payload;
+}
+
+function normalizeAiAgentOperation(
+  doneData: Record<string, unknown> | undefined,
+): AiAgentOperation | undefined {
+  if (!doneData) return undefined;
+  const operation =
+    pickFirstRecord(doneData, ["operation", "op", "suggestedOperation"]) ?? doneData;
+  const method = pickFirstStringValue(operation, ["method", "operation", "type"]);
+  if (!method) return undefined;
+
+  const payload =
+    pickFirstRecord(operation, ["payload", "notice", "criterion", "draft", "data"]) ??
+    pickFirstRecord(doneData, ["payload", "notice", "criterion", "draft"]);
+  const warnings = [
+    ...normalizeWarningArray(operation.warnings),
+    ...normalizeWarningArray(doneData.warnings),
+    ...normalizeWarningArray(operation.warning),
+    ...normalizeWarningArray(doneData.warning),
+  ];
+
+  return {
+    method,
+    message:
+      pickFirstStringValue(operation, ["message", "text", "reason"]) ??
+      pickFirstStringValue(doneData, ["message", "text", "reason"]),
+    warnings: Array.from(new Set(warnings)),
+    payload,
+    raw: operation,
+  };
+}
+
+async function* iterateNdjsonPayloadsFromResponse(
+  response: Response,
+  options?: { signal?: AbortSignal },
+): AsyncGenerator<string, void, undefined> {
+  const stream = response.body;
+  if (!stream) return;
+
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      if (options?.signal?.aborted) {
+        await reader.cancel();
+        return;
+      }
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? "";
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        yield line.startsWith("data:") ? line.slice("data:".length).trimStart() : line;
+      }
+    }
+
+    const tail = buffer.trim();
+    if (tail) {
+      yield tail.startsWith("data:") ? tail.slice("data:".length).trimStart() : tail;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function postJsonAgentBridgeStream(
+  endpoint: string,
+  body: Record<string, unknown>,
+  options?: {
+    signal?: AbortSignal;
+    onDelta?: (chunk: string) => void;
+    onEvent?: (payload: Record<string, unknown>) => void;
+  },
+): Promise<AiAgentStreamResult> {
+  const token = getAuthToken();
+  const headers: Record<string, string> = {
+    Accept: "application/x-ndjson, text/event-stream, application/json",
+    "Content-Type": "application/json",
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(resolveAiEndpointUrl(endpoint), {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    mode: "cors",
+    credentials: "omit",
+    signal: options?.signal,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(text.trim() || `AI 도우미 요청 실패 (${res.status})`);
+  }
+
+  const contentType = res.headers.get("content-type") || "";
+  let accumulated = "";
+  let doneData: Record<string, unknown> | undefined;
+  const rawEvents: Record<string, unknown>[] = [];
+  const iterator = contentType.includes("text/event-stream")
+    ? iterateSseDataPayloadsFromResponse(res, { signal: options?.signal })
+    : iterateNdjsonPayloadsFromResponse(res, { signal: options?.signal });
+
+  for await (const eventData of iterator) {
+    const text = eventData.trim();
+    if (!text || text === "[DONE]") continue;
+    try {
+      const parsed = JSON.parse(text) as Record<string, unknown>;
+      rawEvents.push(parsed);
+      options?.onEvent?.(parsed);
+      const maybeDone = extractBridgeDoneData(parsed);
+      if (maybeDone) {
+        doneData = maybeDone;
+      }
+      const chunk = extractBridgeTextChunk(parsed);
+      if (chunk) {
+        accumulated += chunk;
+        options?.onDelta?.(chunk);
+      }
+    } catch {
+      accumulated += text;
+      options?.onDelta?.(text);
+    }
+  }
+
+  const operation = normalizeAiAgentOperation(doneData);
+  const warnings = Array.from(
+    new Set([
+      ...normalizeWarningArray(doneData?.warnings),
+      ...normalizeWarningArray(doneData?.warning),
+      ...(operation?.warnings ?? []),
+    ]),
+  );
+  return {
+    text:
+      accumulated ||
+      operation?.message ||
+      (doneData ? pickFirstStringValue(doneData, ["message", "text", "content"]) : undefined) ||
+      "",
+    operation,
+    warnings,
+    doneData,
+    rawEvents,
+  };
+}
+
 export const noticeApi = {
   listNotices: async (
     courseId: number,
@@ -2809,6 +3295,36 @@ export const noticeApi = {
     await apiRequest<void>(
       `/api/courses/${encodeURIComponent(courseId)}/notices/${encodeURIComponent(noticeId)}/comments/${encodeURIComponent(commentId)}`,
       { method: "DELETE" },
+    );
+  },
+
+  streamAssistant: async (
+    courseId: number,
+    payload: NoticeAssistantStreamRequest,
+    options?: {
+      signal?: AbortSignal;
+      onDelta?: (chunk: string) => void;
+      onEvent?: (payload: Record<string, unknown>) => void;
+    },
+  ): Promise<AiAgentStreamResult> => {
+    const message = payload.message.trim();
+    return postJsonAgentBridgeStream(
+      `/bridge/notice_assistant_stream`,
+      {
+        courseId,
+        course_id: courseId,
+        message,
+        userMessage: message,
+        user_message: message,
+        prompt: message,
+        currentDraft: payload.currentDraft,
+        current_draft: payload.currentDraft,
+        selectedNotice: payload.selectedNotice,
+        selected_notice: payload.selectedNotice,
+        notices: payload.notices,
+        context: payload.context,
+      },
+      options,
     );
   },
 };
@@ -2959,6 +3475,13 @@ export const reportCriteriaApi = {
     return Array.isArray(raw) ? raw.map((item) => normalizeReportCriterion(item)) : [];
   },
 
+  getSummary: async (courseId: number): Promise<ReportCriteriaSummary> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/criteria/summary`,
+    );
+    return normalizeReportCriteriaSummary(raw);
+  },
+
   createCriterion: async (
     courseId: number,
     payload: ReportCriterionPayload,
@@ -3006,6 +3529,36 @@ export const reportCriteriaApi = {
       options,
     );
   },
+
+  streamOperationAssistant: async (
+    courseId: number,
+    payload: CriteriaAssistantChatStreamRequest,
+    options?: {
+      signal?: AbortSignal;
+      onDelta?: (chunk: string) => void;
+      onEvent?: (payload: Record<string, unknown>) => void;
+    },
+  ): Promise<AiAgentStreamResult> => {
+    const message = payload.message.trim();
+    return postJsonAgentBridgeStream(
+      `/bridge/report/criteria_assistant_chat_stream`,
+      {
+        courseId,
+        course_id: courseId,
+        message,
+        userMessage: message,
+        user_message: message,
+        prompt: message,
+        criteria: payload.criteria,
+        currentDraft: payload.currentDraft,
+        current_draft: payload.currentDraft,
+        selectedCriterion: payload.selectedCriterion,
+        selected_criterion: payload.selectedCriterion,
+        context: payload.context,
+      },
+      options,
+    );
+  },
 };
 
 function extractReportSseDoneText(payload: Record<string, unknown>): string | undefined {
@@ -3048,6 +3601,34 @@ export const studentReportApi = {
     return normalizeStudentReportDetail(raw);
   },
 
+  getStudentActivitySummary: async (
+    courseId: number,
+    studentId: number,
+  ): Promise<StudentReportActivitySummaryResponse> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/students/${encodeURIComponent(studentId)}/activity-summary`,
+    );
+    return normalizeStudentReportActivitySummary(raw);
+  },
+
+  getStudentReportChatHistory: async (
+    courseId: number,
+    studentId: number,
+    params?: PageQueryParams & { sessionId?: number },
+  ): Promise<PageResponse<StudentReportChatHistoryItem>> => {
+    const searchParams = buildPageSearchParams(params, "createdAt,asc");
+    if (params?.sessionId != null) {
+      searchParams.set("sessionId", String(params.sessionId));
+    }
+    const res = await apiRequest<PageResponse<Record<string, unknown>>>(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/students/${encodeURIComponent(studentId)}/chat/history?${searchParams.toString()}`,
+    );
+    const content = Array.isArray(res.content)
+      ? res.content.map((item) => normalizeStudentReportChatHistoryItem(item))
+      : [];
+    return { ...(res as unknown as PageResponse<StudentReportChatHistoryItem>), content };
+  },
+
   /** 저장된 강의실 종합 리포트. 미생성 시 204 → `null` */
   getClassroomReport: async (courseId: number): Promise<ClassroomReportResponse | null> => {
     const url = resolveApiEndpointUrl(
@@ -3064,6 +3645,13 @@ export const studentReportApi = {
     }
     const json = (await res.json()) as Record<string, unknown>;
     return normalizeClassroomReport(json);
+  },
+
+  getClassroomFlow: async (courseId: number): Promise<ClassroomLearningFlowResponse> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/classroom/flow`,
+    );
+    return normalizeClassroomLearningFlow(raw);
   },
 
   analyzeClassroomSync: async (courseId: number): Promise<Record<string, unknown>> => {
@@ -3128,7 +3716,11 @@ export const studentReportApi = {
   streamStudentReportChat: async (
     courseId: number,
     studentId: number,
-    payload: { question: string; messages?: Array<Record<string, unknown>> },
+    payload: {
+      question: string;
+      messages?: Array<Record<string, unknown>>;
+      sessionId?: number | null;
+    },
     options?: {
       signal?: AbortSignal;
       onDelta?: (chunk: string) => void;
@@ -3146,6 +3738,9 @@ export const studentReportApi = {
     const bodyObj: Record<string, unknown> = { question: payload.question };
     if (payload.messages != null && payload.messages.length > 0) {
       bodyObj.messages = payload.messages;
+    }
+    if (payload.sessionId != null && Number.isFinite(payload.sessionId)) {
+      bodyObj.sessionId = payload.sessionId;
     }
     const res = await fetch(url, {
       method: "POST",
@@ -3656,6 +4251,23 @@ export interface StreamAnswerResponse {
 interface LearningSessionState {
   sessionId: string;
   lectureId: number;
+}
+
+export interface LearningChatSessionResponse {
+  chatSessionId: number;
+  lectureId: number;
+  title?: string;
+  lastMessageAt?: string;
+  endedAt?: string;
+  createdAt?: string;
+}
+
+export interface LearningChatMessageResponse {
+  messageId: number;
+  role: "USER" | "ASSISTANT" | string;
+  content: string;
+  pageNumber?: number;
+  createdAt?: string;
 }
 
 export interface IntegratedLearningMessage {
@@ -4471,6 +5083,81 @@ const ensureLearningSession = async (
 
   throw new Error("학습 세션을 열 수 없습니다.");
 };
+
+function normalizeLearningChatSession(
+  raw: Record<string, unknown>,
+): LearningChatSessionResponse {
+  return {
+    chatSessionId: Number(raw.chatSessionId ?? raw.chat_session_id ?? raw.sessionId ?? 0),
+    lectureId: Number(raw.lectureId ?? raw.lecture_id ?? 0),
+    title: toOptionalString(raw.title),
+    lastMessageAt: toOptionalString(raw.lastMessageAt ?? raw.last_message_at),
+    endedAt: toOptionalString(raw.endedAt ?? raw.ended_at),
+    createdAt: toOptionalString(raw.createdAt ?? raw.created_at),
+  };
+}
+
+function normalizeLearningChatMessage(
+  raw: Record<string, unknown>,
+): LearningChatMessageResponse {
+  return {
+    messageId: Number(raw.messageId ?? raw.message_id ?? 0),
+    role: String(raw.role ?? ""),
+    content: String(raw.content ?? raw.message ?? ""),
+    pageNumber: toFiniteNumber(raw.pageNumber ?? raw.page_number),
+    createdAt: toOptionalString(raw.createdAt ?? raw.created_at),
+  };
+}
+
+function unwrapApiDataPayload(raw: unknown): unknown {
+  if (raw != null && typeof raw === "object" && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>;
+    if (obj.data != null) return obj.data;
+  }
+  return raw;
+}
+
+function normalizeLearningChatSessionPage(
+  raw: unknown,
+): PageResponse<LearningChatSessionResponse> {
+  const payload = unwrapApiDataPayload(raw);
+  const pageObj =
+    payload != null && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : {};
+  const contentRaw = Array.isArray(pageObj.content) ? pageObj.content : [];
+  const content = contentRaw
+    .filter((item): item is Record<string, unknown> =>
+      item != null && typeof item === "object" && !Array.isArray(item),
+    )
+    .map((item) => normalizeLearningChatSession(item));
+  return {
+    content,
+    page: toFiniteNumber(pageObj.page) ?? 0,
+    size: toFiniteNumber(pageObj.size) ?? content.length,
+    totalElements: toFiniteNumber(pageObj.totalElements ?? pageObj.total_elements) ?? content.length,
+    totalPages: toFiniteNumber(pageObj.totalPages ?? pageObj.total_pages) ?? 1,
+    first: typeof pageObj.first === "boolean" ? pageObj.first : true,
+    last: typeof pageObj.last === "boolean" ? pageObj.last : true,
+  };
+}
+
+function normalizeLearningChatMessagesPayload(raw: unknown): LearningChatMessageResponse[] {
+  const payload = unwrapApiDataPayload(raw);
+  const list =
+    Array.isArray(payload)
+      ? payload
+      : payload != null && typeof payload === "object" && !Array.isArray(payload)
+        ? Array.isArray((payload as Record<string, unknown>).content)
+          ? ((payload as Record<string, unknown>).content as unknown[])
+          : []
+        : [];
+  return list
+    .filter((item): item is Record<string, unknown> =>
+      item != null && typeof item === "object" && !Array.isArray(item),
+    )
+    .map((item) => normalizeLearningChatMessage(item));
+}
 
 /** 요청 바디: { type, …필드 } 평탄화 (payload 중첩 제거). lectureId는 쿼리로만 전달 */
 const flattenLearningEventBody = (eventBody: {
@@ -5722,6 +6409,25 @@ export const streamingApi = {
 };
 
 export const integratedLearningApi = {
+  getChatSessions: async (
+    lectureId: number,
+    params?: PageQueryParams,
+  ): Promise<PageResponse<LearningChatSessionResponse>> => {
+    const searchParams = buildPageSearchParams(params, "lastMessageAt,desc");
+    searchParams.set("lectureId", String(lectureId));
+    const res = await apiRequest<unknown>(
+      `/api/learning/sessions?${searchParams.toString()}`,
+    );
+    return normalizeLearningChatSessionPage(res);
+  },
+  getChatMessages: async (
+    sessionId: string | number,
+  ): Promise<LearningChatMessageResponse[]> => {
+    const raw = await apiRequest<unknown>(
+      `/api/learning/sessions/${encodeURIComponent(sessionId)}/messages`,
+    );
+    return normalizeLearningChatMessagesPayload(raw);
+  },
   openSession: async (
     lectureId: number,
     options?: { pdfPath?: string; sessionId?: string },

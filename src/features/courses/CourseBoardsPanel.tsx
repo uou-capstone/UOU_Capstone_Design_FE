@@ -4,6 +4,7 @@ import { RefreshIcon } from "@/components/common/Icons";
 import {
   discussionApi,
   noticeApi,
+  type AiAgentOperation,
   type DiscussionCategory,
   type DiscussionComment,
   type DiscussionDetail,
@@ -46,6 +47,12 @@ type ScheduledBoardJob = {
   tab: BoardTab;
   title: string;
   scheduledAt: string;
+};
+
+type NoticeAssistantMessage = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
 };
 
 type BoardWeekScope = {
@@ -130,6 +137,80 @@ function withBoardWeekScopeMarker(value: string, scope: BoardWeekScope | null): 
   return scope ? `${buildBoardWeekScopeMarker(scope)}${content}` : content;
 }
 
+function asPlainRecord(value: unknown): Record<string, unknown> {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function readOperationString(raw: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = raw[key];
+    if (typeof value === "string" && value.trim() !== "") return value;
+  }
+  return "";
+}
+
+function readOperationNumber(raw: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = raw[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))) {
+      return Number(value);
+    }
+  }
+  return null;
+}
+
+function normalizeNoticeCategory(value: unknown): NoticeCategory | undefined {
+  const text = String(value ?? "").toUpperCase();
+  return text === "EXAM" || text === "MATERIAL" || text === "ASSIGNMENT" || text === "GENERAL"
+    ? text
+    : undefined;
+}
+
+function normalizeNoticePriority(value: unknown): NoticePriority | undefined {
+  const text = String(value ?? "").toUpperCase();
+  return text === "IMPORTANT" || text === "NORMAL" ? text : undefined;
+}
+
+function noticeDraftFromOperation(operation: AiAgentOperation): Partial<NoticePayload> {
+  const payload = asPlainRecord(operation.payload);
+  const raw = asPlainRecord(operation.raw);
+  const merged = { ...raw, ...payload };
+  return {
+    title:
+      readOperationString(merged, ["title", "subject", "noticeTitle", "notice_title"]) ||
+      undefined,
+    contentMarkdown:
+      readOperationString(merged, [
+        "contentMarkdown",
+        "content_markdown",
+        "content",
+        "body",
+        "markdown",
+        "draft",
+      ]) || undefined,
+    category: normalizeNoticeCategory(merged.category ?? merged.noticeCategory),
+    priority: normalizeNoticePriority(merged.priority),
+    pinned:
+      typeof merged.pinned === "boolean"
+        ? merged.pinned
+        : typeof merged.isPinned === "boolean"
+          ? merged.isPinned
+          : undefined,
+  };
+}
+
+function noticeIdFromOperation(operation: AiAgentOperation): number | null {
+  const payload = asPlainRecord(operation.payload);
+  const raw = asPlainRecord(operation.raw);
+  return readOperationNumber(
+    { ...raw, ...payload },
+    ["noticeId", "notice_id", "id", "targetId", "target_id"],
+  );
+}
+
 function formatInstant(value: string | undefined): string {
   if (!value) return "-";
   const time = Date.parse(value);
@@ -205,6 +286,13 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
   const [editingCommentId, setEditingCommentId] = React.useState<number | null>(null);
   const [assistantTopic, setAssistantTopic] = React.useState("");
   const [assistantLoading, setAssistantLoading] = React.useState(false);
+  const [noticeAssistantInput, setNoticeAssistantInput] = React.useState("");
+  const [noticeAssistantLoading, setNoticeAssistantLoading] = React.useState(false);
+  const [noticeAssistantMessages, setNoticeAssistantMessages] = React.useState<
+    NoticeAssistantMessage[]
+  >([]);
+  const [pendingNoticeOperation, setPendingNoticeOperation] =
+    React.useState<AiAgentOperation | null>(null);
   const [scheduledJobs, setScheduledJobs] = React.useState<ScheduledBoardJob[]>([]);
   const scheduledTimersRef = React.useRef<Map<string, number>>(new Map());
   const contentEditorRef = React.useRef<HTMLDivElement | null>(null);
@@ -328,6 +416,8 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
     setSelectedNotice(null);
     setSelectedDiscussion(null);
     setComments([]);
+    setNoticeAssistantInput("");
+    setPendingNoticeOperation(null);
   }, [courseId, scopedToLecture, selectedLectureId, tab]);
 
   const selectNotice = React.useCallback(
@@ -677,6 +767,183 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
     [courseId, loadComments, selectedId, tab],
   );
 
+  const runNoticeAssistant = React.useCallback(async () => {
+    const message = noticeAssistantInput.trim();
+    if (tab !== "notices" || !isTeacher || !message || noticeAssistantLoading) return;
+    const contentMarkdown = readEditorHtml();
+    const assistantId = `notice-assistant-${Date.now()}`;
+    setNoticeAssistantMessages((prev) => [
+      ...prev,
+      { id: `notice-user-${Date.now()}`, role: "user", text: message },
+      { id: assistantId, role: "assistant", text: "" },
+    ]);
+    setNoticeAssistantInput("");
+    setPendingNoticeOperation(null);
+    setNoticeAssistantLoading(true);
+    setError(null);
+    try {
+      const result = await noticeApi.streamAssistant(
+        courseId,
+        {
+          message,
+          currentDraft: {
+            noticeId: editingId,
+            title: form.title || undefined,
+            contentMarkdown: contentMarkdown || form.contentMarkdown || undefined,
+            category: form.noticeCategory,
+            priority: form.priority,
+            pinned: form.pinned,
+          },
+          selectedNotice,
+          notices: notices.slice(0, 10),
+          context: {
+            scope: scopedWeekTarget,
+            locale: "ko",
+          },
+        },
+        {
+          onDelta: (chunk) =>
+            setNoticeAssistantMessages((prev) =>
+              prev.map((item) =>
+                item.id === assistantId
+                  ? { ...item, text: `${item.text}${chunk}` }
+                  : item,
+              ),
+            ),
+        },
+      );
+
+      const finalText = [
+        result.text,
+        ...(result.warnings.length ? [`주의: ${result.warnings.join(", ")}`] : []),
+      ]
+        .filter(Boolean)
+        .join("\n");
+      setNoticeAssistantMessages((prev) =>
+        prev.map((item) =>
+          item.id === assistantId
+            ? { ...item, text: finalText || "공지 작업 제안을 확인했습니다." }
+            : item,
+        ),
+      );
+      if (result.operation && result.operation.method !== "messageOnly") {
+        setPendingNoticeOperation(result.operation);
+      }
+    } catch (err) {
+      const messageText =
+        err instanceof Error ? err.message : "공지 AI 도우미 요청에 실패했습니다.";
+      setNoticeAssistantMessages((prev) =>
+        prev.map((item) =>
+          item.id === assistantId ? { ...item, text: messageText } : item,
+        ),
+      );
+      setError(messageText);
+    } finally {
+      setNoticeAssistantLoading(false);
+    }
+  }, [
+    courseId,
+    editingId,
+    form,
+    isTeacher,
+    noticeAssistantInput,
+    noticeAssistantLoading,
+    notices,
+    readEditorHtml,
+    scopedWeekTarget,
+    selectedNotice,
+    tab,
+  ]);
+
+  const applyPendingNoticeOperation = React.useCallback(async () => {
+    if (!pendingNoticeOperation) return;
+    const method = pendingNoticeOperation.method;
+    const draft = noticeDraftFromOperation(pendingNoticeOperation);
+    const targetId = noticeIdFromOperation(pendingNoticeOperation) ?? editingId ?? selectedNotice?.noticeId ?? null;
+
+    if (method === "draftNotice" || method === "reviseNotice") {
+      setForm((prev) => ({
+        ...prev,
+        title: draft.title ?? prev.title,
+        contentMarkdown: draft.contentMarkdown ?? prev.contentMarkdown,
+        noticeCategory: draft.category ?? prev.noticeCategory,
+        priority: draft.priority ?? prev.priority,
+        pinned: draft.pinned ?? prev.pinned,
+      }));
+      if (targetId != null) setEditingId(targetId);
+      setPendingNoticeOperation(null);
+      return;
+    }
+
+    if (method === "deleteNotice") {
+      if (targetId == null) {
+        setError("삭제할 공지를 특정할 수 없습니다.");
+        return;
+      }
+      const ok = window.confirm("AI가 제안한 공지 삭제를 적용할까요?");
+      if (!ok) return;
+      setSaving(true);
+      setError(null);
+      try {
+        await noticeApi.deleteNotice(courseId, targetId);
+        setPendingNoticeOperation(null);
+        setSelectedNotice(null);
+        setComments([]);
+        await loadList();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "공지 삭제에 실패했습니다.");
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
+
+    const snapshot: BoardForm = {
+      ...emptyForm(),
+      ...form,
+      title: draft.title ?? form.title,
+      contentMarkdown: draft.contentMarkdown ?? form.contentMarkdown,
+      noticeCategory: draft.category ?? form.noticeCategory,
+      priority: draft.priority ?? form.priority,
+      pinned: draft.pinned ?? form.pinned,
+      immediateSend: true,
+    };
+
+    if (!snapshot.title.trim() || isRichContentEmpty(snapshot.contentMarkdown)) {
+      setError("AI 제안에 공지 제목 또는 내용이 없어 적용할 수 없습니다.");
+      return;
+    }
+
+    setSaving(true);
+    setError(null);
+    try {
+      if (method === "updateNotice") {
+        if (targetId == null) {
+          setError("수정할 공지를 특정할 수 없습니다.");
+          return;
+        }
+        await publishPost("notices", snapshot, targetId);
+      } else {
+        await publishPost("notices", snapshot, null);
+      }
+      setPendingNoticeOperation(null);
+      resetForm();
+      await loadList();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "AI 공지 제안 적용에 실패했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    courseId,
+    editingId,
+    form,
+    loadList,
+    pendingNoticeOperation,
+    publishPost,
+    selectedNotice?.noticeId,
+  ]);
+
   const runDiscussionAssistant = React.useCallback(async () => {
     if (tab !== "discussions" || !assistantTopic.trim()) return;
     setAssistantLoading(true);
@@ -892,6 +1159,118 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                 </>
               )}
             </div>
+            {tab === "notices" && isTeacher ? (
+              <div
+                className={`rounded-lg border px-3 py-3 ${
+                  isDarkMode
+                    ? "border-[#343434] bg-white/[0.03]"
+                    : "border-[#dedbd5] bg-[#fbfaf7]"
+                }`}
+              >
+                <div className="flex flex-col gap-1">
+                  <p className="text-sm font-semibold">AI 공지 도우미</p>
+                  <p className={`text-xs ${mutedClass}`}>
+                    공지 초안, 수정, 게시/삭제 제안을 받은 뒤 적용 여부를 직접 확인합니다.
+                  </p>
+                </div>
+                {noticeAssistantMessages.length ? (
+                  <div className="mt-3 max-h-44 space-y-2 overflow-y-auto">
+                    {noticeAssistantMessages.map((message) => (
+                      <div
+                        key={message.id}
+                        className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
+                      >
+                        <div
+                          className={`max-w-[88%] rounded-lg px-3 py-2 text-xs leading-5 ${
+                            message.role === "user"
+                              ? "bg-[#ff824d] text-white"
+                              : isDarkMode
+                                ? "border border-[#343434] bg-[#202020] text-gray-100"
+                                : "border border-[#dedbd5] bg-white text-[#212121]"
+                          }`}
+                        >
+                          <p className="mb-1 font-semibold opacity-70">
+                            {message.role === "user" ? "나" : "AI 도우미"}
+                          </p>
+                          <p className="whitespace-pre-wrap">
+                            {message.text ||
+                              (message.role === "assistant" ? "응답 생성 중..." : "")}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                {pendingNoticeOperation ? (
+                  <div
+                    className={`mt-3 rounded-lg border px-3 py-3 text-sm ${
+                      isDarkMode
+                        ? "border-[#343434] bg-[#181818]"
+                        : "border-[#dedbd5] bg-white"
+                    }`}
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="font-semibold">
+                          AI 제안: {pendingNoticeOperation.method}
+                        </p>
+                        {pendingNoticeOperation.message ? (
+                          <p className={`mt-1 text-xs ${mutedClass}`}>
+                            {pendingNoticeOperation.message}
+                          </p>
+                        ) : null}
+                        {pendingNoticeOperation.warnings.length ? (
+                          <p className="mt-1 text-xs font-semibold text-[#ff824d]">
+                            {pendingNoticeOperation.warnings.join(", ")}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void applyPendingNoticeOperation()}
+                          disabled={saving}
+                          className={`rounded-lg px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
+                            isDarkMode
+                              ? "bg-white text-[#141414]"
+                              : "bg-[#141414] text-white"
+                          }`}
+                        >
+                          적용
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPendingNoticeOperation(null)}
+                          className={`rounded-lg border px-3 py-2 text-xs font-semibold ${
+                            isDarkMode ? "border-zinc-600" : "border-gray-300"
+                          }`}
+                        >
+                          취소
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+                <div className="mt-3 grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
+                  <input
+                    className={inputClass}
+                    value={noticeAssistantInput}
+                    onChange={(event) => setNoticeAssistantInput(event.target.value)}
+                    placeholder="예: 다음 주 시험 안내 공지를 중요 공지로 작성해줘"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void runNoticeAssistant()}
+                    disabled={noticeAssistantLoading || !noticeAssistantInput.trim()}
+                    className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50 ${
+                      isDarkMode ? "bg-white text-[#141414]" : "bg-[#141414] text-white"
+                    }`}
+                  >
+                    {noticeAssistantLoading ? "처리 중" : "AI 요청"}
+                  </button>
+                </div>
+              </div>
+            ) : null}
             {tab === "discussions" ? (
               <div className="grid gap-2 lg:grid-cols-[1fr_auto]">
                 <input
