@@ -846,14 +846,6 @@ export function useIntegratedLearningChat(options: {
         }
         if (doneWidget) {
           appendDecisionWidget(doneWidget);
-          if (
-            eventType === "QUIZ_SUBMITTED" &&
-            (doneWidget === "REVIEW_DECISION" ||
-              doneWidget === "NEXT_PAGE_DECISION" ||
-              doneWidget === "RETEST_DECISION")
-          ) {
-            setQuizOverlayOpen(false);
-          }
         }
       } catch (e) {
         if (cancelled || (e instanceof Error && e.name === "AbortError")) {

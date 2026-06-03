@@ -1772,6 +1772,7 @@ const MainContent: React.FC<MainContentProps> = ({
       return;
     }
     let cancelled = false;
+    setStudentReportDetail(null);
     setStudentReportDetailLoading(true);
     setStudentReportDetailError(null);
     void studentReportApi
@@ -1866,6 +1867,7 @@ const MainContent: React.FC<MainContentProps> = ({
       return;
     }
     let cancelled = false;
+    setStudentAiContext(null);
     setStudentAiContextLoading(true);
     setStudentAiContextError(null);
     void studentReportApi
@@ -1906,6 +1908,9 @@ const MainContent: React.FC<MainContentProps> = ({
       return;
     }
     let cancelled = false;
+    setStudentActivitySummary(null);
+    setReportChatMessages([]);
+    setReportChatSessionId(null);
     setStudentActivitySummaryLoading(true);
     setReportChatHistoryLoading(true);
     void Promise.allSettled([
@@ -10145,6 +10150,7 @@ const MainContent: React.FC<MainContentProps> = ({
 	                    courseId={courseDetail.courseId}
 	                    viewMode="course-detail"
 	                    courseDetail={courseDetail}
+	                    examStudioPage
 	                    previewCurrentPdfPage={previewCurrentPdfPage}
 	                    assistantMaterialId={previewMaterialId}
 	                    assistantPdfActive={false}

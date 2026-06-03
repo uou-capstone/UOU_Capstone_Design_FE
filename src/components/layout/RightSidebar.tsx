@@ -11,6 +11,7 @@ import {
   ClipboardIcon,
   CloseIcon,
   EditIcon,
+  SparklesIcon,
   TrashIcon,
 } from "../common/Icons";
 import { useParams } from "react-router-dom";
@@ -107,6 +108,27 @@ function readExamStudioContextId(response: Record<string, unknown>): string | nu
   return typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
 }
 
+function toExamDateTimeLocalValue(date: Date): string {
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function addDays(date: Date, days: number): Date {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function examTypeLabel(examType: string): string {
+  const normalized = examType.toUpperCase();
+  if (normalized === "FLASH_CARD") return "플래시카드";
+  if (normalized === "OX_PROBLEM" || normalized === "OX") return "OX";
+  if (normalized === "FIVE_CHOICE") return "객관식";
+  if (normalized === "SHORT_ANSWER") return "단답형";
+  if (normalized === "ESSAY") return "서술형";
+  return examType;
+}
+
 export interface RightSidebarExamProps {
   examMode: boolean;
   onExamModeChange: (value: boolean) => void;
@@ -173,6 +195,8 @@ interface RightSidebarProps {
   userPdfNav?: { page: number; at: number } | null;
   /** 강의 상세에서 시험 만들기 시 오른쪽 패널에 프로필 설정 UI 표시 */
   examProps?: RightSidebarExamProps | null;
+  /** 강의실 내부의 독립 시험 설계 페이지 여부 */
+  examStudioPage?: boolean;
 }
 
 const RightSidebar: React.FC<RightSidebarProps> = ({
@@ -189,6 +213,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   goToPdfPage,
   userPdfNav,
   examProps,
+  examStudioPage = false,
 }) => {
   const { isDarkMode } = useTheme();
   const { isAuthenticated } = useAuth();
@@ -222,6 +247,14 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   /** 시험 이름·주제: 부모(MainContent)로 끌어올리지 않고 로컬에서만 관리 → 마크다운 미리보기 전체 리렌더 방지 */
   const [localExamTopic, setLocalExamTopic] = useState("");
   const [localExamDisplayName, setLocalExamDisplayName] = useState("");
+  const [examStartsAt, setExamStartsAt] = useState(() =>
+    toExamDateTimeLocalValue(new Date()),
+  );
+  const [examEndsAt, setExamEndsAt] = useState(() =>
+    toExamDateTimeLocalValue(addDays(new Date(), 7)),
+  );
+  const [examTimeLimit, setExamTimeLimit] = useState("30");
+  const [examAiGradingEnabled, setExamAiGradingEnabled] = useState(true);
   const [examStudioContextId, setExamStudioContextId] = useState("");
   const [examStudioPrompt, setExamStudioPrompt] = useState("");
   const [examStudioOutput, setExamStudioOutput] = useState("");
@@ -373,6 +406,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     : isDarkMode
       ? "#242424"
       : "#FFFFFF";
+  const examStudioPageMode =
+    !!examProps?.examMode && examStudioPage && viewMode === "course-detail";
   const controlSurface = isDarkMode ? "#2B2B2B" : "#FFFFFF";
   const controlBorder = isDarkMode ? "rgba(255, 255, 255, 0.16)" : "#D3CEC6";
   const examControlStyle: React.CSSProperties = {
@@ -412,6 +447,59 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       ? "text-zinc-300 hover:bg-white/10 hover:text-white"
       : "text-gray-600 hover:bg-[#f7f5f1] hover:text-gray-950"
   }`;
+  const examMutedTextClass = isDarkMode ? "text-zinc-400" : "text-gray-500";
+  const examPageSurfaceClass = isDarkMode
+    ? "border-[#343434] bg-[#202020]"
+    : "border-[#dedbd5] bg-white";
+  const examSoftSurfaceClass = isDarkMode
+    ? "border-[#343434] bg-[#262626]"
+    : "border-[#e4e1db] bg-[#fbfaf7]";
+  const selectedExamTypeLabel = examProps
+    ? examTypeLabel(examProps.examType)
+    : "";
+  const resolvedExamCreateTopic =
+    localExamTopic.trim() || localExamDisplayName.trim();
+  const handleSaveExamDraft = useCallback(() => {
+    if (!examProps) return;
+    try {
+      const key = `edupilot.examStudioDraft.${resolvedExamStudioCourseId ?? "course"}.${lectureId ?? "lecture"}`;
+      localStorage.setItem(
+        key,
+        JSON.stringify({
+          title: localExamDisplayName,
+          topic: localExamTopic,
+          examType: examProps.examType,
+          examCount: examProps.examCount,
+          startsAt: examStartsAt,
+          endsAt: examEndsAt,
+          timeLimit: examTimeLimit,
+          aiGradingEnabled: examAiGradingEnabled,
+          savedAt: new Date().toISOString(),
+        }),
+      );
+      window.alert("임시 저장되었습니다.");
+    } catch {
+      window.alert("임시 저장에 실패했습니다.");
+    }
+  }, [
+    examAiGradingEnabled,
+    examEndsAt,
+    examProps,
+    examStartsAt,
+    examTimeLimit,
+    lectureId,
+    localExamDisplayName,
+    localExamTopic,
+    resolvedExamStudioCourseId,
+  ]);
+  const incrementExamCount = useCallback(() => {
+    if (!examProps) return;
+    const next = Math.min(
+      examTypeMaxQuestionCount(examProps.examType),
+      examProps.examCount + 1,
+    );
+    examProps.setExamCount(next);
+  }, [examProps]);
   const tabButtonClass = (active: boolean) =>
     pdfLearningPanel
       ? `flex min-w-0 flex-1 items-center justify-center rounded-lg px-3 py-2 text-sm font-semibold transition-all ${
@@ -1437,7 +1525,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       )}
 
       {/* 강의 학습 | 시험(교사만) | 통합학습 — PDF 분할 패널에서 교사·학생 공통 탭 노출 */}
-      {examProps && viewMode === "course-detail" && (
+      {examProps && viewMode === "course-detail" && !examStudioPageMode && (
         <nav
           className={
             pdfLearningPanel
@@ -1492,7 +1580,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         </nav>
       )}
 
-      {/* 시험 만들기 모드: 옵션 선택 (유형/주제/문항 수 등) */}
+      {/* 시험 설계 모드 */}
       {examProps?.examMode ? (
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden exam-select-arrow-left">
           {examProps.recoverOpen && (
@@ -1516,373 +1604,584 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               <button type="button" onClick={() => examProps.setRecoverOpen(false)} className={examSecondaryButtonClass}>취소</button>
             </div>
           )}
-          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 flex flex-col gap-4 [scrollbar-gutter:stable]">
-            <section className={examCardClass}>
-              <div className="mb-3 flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className={examSectionTitleClass}>시험 설정</h3>
-                </div>
-                <span
-                  className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                    isDarkMode
-                      ? "bg-[#ffad9b]/15 text-[#ffad9b]"
-                      : "bg-[#fff2eb] text-[#ff824d]"
-                  }`}
-                >
-                  {examProps.examCount}문항
-                </span>
-              </div>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                <div className={examFieldShellClass}>
-                  <label className={examLabelClass}>시험 유형</label>
-                  <select value={examProps.examType} onChange={(e) => examProps.setExamType(e.target.value)} className={`${examControlClass} mt-1.5`} style={examControlStyle}>
-                    <option value="FLASH_CARD">플래시카드</option>
-                    <option value="OX_PROBLEM">OX 문제</option>
-                    <option value="FIVE_CHOICE">5지선다</option>
-                    <option value="SHORT_ANSWER">단답/서술형</option>
-                  </select>
-                </div>
-                <div className={examFieldShellClass}>
-                  <label className={examLabelClass}>문항 수</label>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="off"
-                    value={
-                      examCountFieldFocused
-                        ? examCountDraft
-                        : String(examProps.examCount)
-                    }
-                    onFocus={() => {
-                      examCountFieldFocusedRef.current = true;
-                      setExamCountFieldFocused(true);
-                      setExamCountDraft(String(examProps.examCount));
-                    }}
-                    onChange={(e) => {
-                      if (!examCountFieldFocusedRef.current) return;
-                      setExamCountDraft(e.target.value.replace(/\D/g, ""));
-                    }}
-                    onBlur={(e) => {
-                      examCountFieldFocusedRef.current = false;
-                      setExamCountFieldFocused(false);
-                      commitExamQuestionCountInput(
-                        e.target.value,
-                        examProps.examType,
-                        examProps.setExamCount,
-                      );
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key !== "Enter") return;
-                      e.preventDefault();
-                      (e.currentTarget as HTMLInputElement).blur();
-                    }}
-                    className={`${examControlClass} mt-1.5`}
-                    style={examControlStyle}
-                  />
-                </div>
-              </div>
-            </section>
-
-            <section className={examCardClass}>
-              <div className="mb-3">
-                <h3 className={examSectionTitleClass}>출제 방향</h3>
-              </div>
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-                <div className={examFieldShellClass}>
-                  <label className={examLabelClass}>난이도</label>
-                  <select value={examProps.profileProficiencyLevel} onChange={(e) => examProps.setProfileProficiencyLevel(e.target.value as "Beginner" | "Intermediate" | "Advanced")} className={`${examControlClass} mt-1.5`} style={examControlStyle}>
-                    <option value="Beginner">초급</option>
-                    <option value="Intermediate">중급</option>
-                    <option value="Advanced">고급</option>
-                  </select>
-                </div>
-                <div className={examFieldShellClass}>
-                  <label className={examLabelClass}>평가 중점</label>
-                  <select value={examProps.profileTargetDepth} onChange={(e) => examProps.setProfileTargetDepth(e.target.value as "Concept" | "Application" | "Derivation" | "Deep Understanding")} className={`${examControlClass} mt-1.5`} style={examControlStyle}>
-                    <option value="Concept">개념 이해</option>
-                    <option value="Application">응용</option>
-                    <option value="Derivation">증명/유도</option>
-                    <option value="Deep Understanding">심화 이해</option>
-                  </select>
-                </div>
-                <div className={examFieldShellClass}>
-                  <label className={examLabelClass}>문제 스타일</label>
-                  <select value={examProps.profileQuestionModality} onChange={(e) => examProps.setProfileQuestionModality(e.target.value as "Mathematical" | "Theoretical" | "Balance")} className={`${examControlClass} mt-1.5`} style={examControlStyle}>
-                    <option value="Mathematical">수학적</option>
-                    <option value="Theoretical">이론적</option>
-                    <option value="Balance">균형</option>
-                  </select>
-                </div>
-              </div>
-            </section>
-
-            <section className={examCardClass}>
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                <div className={examFieldShellClass}>
-                  <label className={examLabelClass}>
-                    시험 이름 <span className="font-normal opacity-70">(선택)</span>
-                  </label>
-                <input
-                  type="text"
-                  value={localExamDisplayName}
-                  onChange={(e) => setLocalExamDisplayName(e.target.value)}
-                  placeholder="시험 이름 (선택)"
-                  className={`${examControlClass} mt-1.5 block`}
-                  style={examControlStyle}
-                />
-              </div>
-              <div className={examFieldShellClass}>
-                <label className={examLabelClass}>주제</label>
-                <textarea
-                  rows={1}
-                  value={localExamTopic}
-                  onChange={(e) => setLocalExamTopic(e.target.value)}
-                  placeholder="이 시험이 다룰 내용"
-                  className={`${examControlClass} mt-1.5 block resize-none`}
-                  style={examControlStyle}
-                />
-              </div>
-            </div>
-            </section>
-            {examProps.isTeacher ? (
-              <div
-                className={`flex flex-col gap-3 ${examCardClass}`}
+          <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable]">
+            <div
+              className={`mx-auto flex w-full max-w-[96rem] flex-col gap-4 ${
+                examStudioPageMode ? "px-4 py-4 md:px-6 md:py-5" : "px-3 py-3"
+              }`}
+            >
+              <section
+                className={`rounded-lg border px-5 py-5 ${
+                  isDarkMode
+                    ? "border-[#343434] bg-[#202020]"
+                    : "border-[#cfdcf9] bg-[#f6f9ff]"
+                }`}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className={examSectionTitleClass}>AI 시험 작성 도우미</span>
-                  {examStudioContextId ? (
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${isDarkMode ? "bg-white/10 text-gray-100" : "bg-gray-100 text-gray-900"}`}>
-                      PDF 연결됨
-                    </span>
-                  ) : null}
-                </div>
-                <textarea
-                  rows={2}
-                  value={examStudioPrompt}
-                  onChange={(e) => setExamStudioPrompt(e.target.value)}
-                  placeholder="현재 PDF 기준으로 문제 구성, 난이도, 보완할 개념을 요청해보세요."
-                  disabled={!canUseExamStudio || examStudioLoading}
-                  className={`${examControlClass} block resize-none`}
-                  style={examControlStyle}
-                />
-                <div className="flex items-center justify-between gap-2">
-                  <span
-                    className={`text-xs ${
-                      canUseExamStudio
-                        ? isDarkMode
-                          ? "text-zinc-400"
-                          : "text-gray-500"
-                        : isDarkMode
-                          ? "text-zinc-400"
-                          : "text-gray-500"
-                    }`}
-                  >
-                    {canUseExamStudio ? "현재 PDF 문맥 사용" : "PDF 자료 선택 필요"}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => void handleExamStudioPrompt()}
-                    disabled={!canUseExamStudio || examStudioLoading || !examStudioPrompt.trim()}
-                    className={examPrimaryButtonClass}
-                  >
-                    {examStudioLoading ? "작성 중..." : "요청"}
-                  </button>
-                </div>
-                {examStudioError ? (
-                  <p className="text-xs text-red-500">{examStudioError}</p>
-                ) : null}
-                {examStudioOutput ? (
-                  <div
-                    className={`max-h-48 overflow-y-auto rounded-xl border px-3 py-2 text-xs leading-relaxed ${
-                      isDarkMode
-                        ? "border-[#1b3443] bg-[#102a35] text-zinc-200"
-                        : "border-[#d9d9dd] bg-[#eeece7] text-gray-700"
-                    }`}
-                  >
-                    <MarkdownContent content={examStudioOutput} />
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-            <div className={`flex flex-col gap-3 ${examCardClass}`}>
-              <div className="flex items-center justify-between mb-0.5">
-                <div>
-                  <span className={examSectionTitleClass}>시험 목록</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  {!examProps.examEditMode ? (
-                    <button
-                      type="button"
-                      onClick={() => examProps.onExamEditModeChange?.(true)}
-                      className={examIconButtonClass}
-                      aria-label="수정/삭제 모드"
-                      title="수정/삭제 모드"
-                    >
-                      <EditIcon className="w-4 h-4" />
-                    </button>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const ids = Object.keys(examProps.selectedExamIds || {}).filter((k) => examProps.selectedExamIds?.[k]);
-                          if (ids.length !== 1) {
-                            window.alert("수정할 시험을 1개 선택해주세요.");
-                            return;
-                          }
-                          const exam = examProps.recoverExams.find((e) => e.id === ids[0]);
-                          if (exam?.examSessionId) examProps.onExamClick?.(exam.examSessionId);
-                        }}
-                        className={examIconButtonClass}
-                        aria-label="수정"
-                        title="수정"
-                      >
-                        <EditIcon className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={examProps.onDeleteSelectedExams}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-500/10"
-                        aria-label="삭제"
-                        title="삭제"
-                      >
-                        <TrashIcon className="w-4 h-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => examProps.onExamEditModeChange?.(false)}
-                        className={`inline-flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${
-                          isDarkMode
-                            ? "bg-[#ffad9b] text-[#181818] hover:bg-[#ffd0c6]"
-                            : "bg-[#ff824d] text-white hover:bg-[#f26f37]"
-                        }`}
-                        aria-label="취소"
-                        title="취소"
-                      >
-                        <CloseIcon className="w-4 h-4" />
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-              <div className="flex flex-col gap-2">
-                {examProps.recoverExams.map((exam) => {
-                  const checked = !!examProps.selectedExamIds?.[exam.id];
-                  const inBulkMode = !!examProps.examEditMode;
-                  return (
-                  <div
-                    key={exam.id}
-                    role="button"
-                    tabIndex={examProps.examEditMode ? -1 : 0}
-                    onMouseDown={(e) => {
-                      if (examProps.examEditMode) e.preventDefault();
-                    }}
-                    onClick={() => {
-                      if (examProps.examEditMode) {
-                        examProps.onToggleExamSelect?.(exam.id);
-                      } else if (exam.examSessionId) {
-                        examProps.onExamClick?.(exam.examSessionId);
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        if (examProps.examEditMode) {
-                          examProps.onToggleExamSelect?.(exam.id);
-                        } else if (exam.examSessionId) {
-                          examProps.onExamClick?.(exam.examSessionId);
-                        }
-                      }
-                    }}
-                    className={`flex min-h-12 items-center gap-2 w-full text-left rounded-lg border px-3 py-2 cursor-pointer transition-colors ${
-                      isDarkMode
-                        ? "border-[#343434] bg-[#181818] hover:border-[#ffad9b] hover:bg-white/5"
-                        : "border-[#dedbd5] bg-[#fbfaf7] hover:border-[#ff824d] hover:bg-[#fff8f4]"
-                    } ${
-                      inBulkMode && checked
-                        ? isDarkMode
-                          ? "shadow-[inset_0_0_0_0.125rem_#ffad9b]"
-                          : "shadow-[inset_0_0_0_0.125rem_#ff824d]"
-                        : ""
-                    }`}
-                    style={{ color: sidebarTextColor }}
-                  >
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="min-w-0">
                     <span
-                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
-                        checked
-                          ? isDarkMode
-                            ? "bg-[#ffad9b] text-[#181818]"
-                            : "bg-[#ff824d] text-white"
-                          : isDarkMode
-                            ? "bg-white/10 text-[#ffad9b]"
-                            : "bg-white text-[#ff824d]"
+                      className={`mb-3 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                        isDarkMode
+                          ? "bg-white/10 text-zinc-200"
+                          : "bg-white text-gray-700"
                       }`}
-                      aria-hidden="true"
                     >
-                      {checked ? (
-                        <CheckIcon className="h-3.5 w-3.5" />
-                      ) : (
-                        <span className="text-xs font-bold">Q</span>
-                      )}
+                      평가 관리
                     </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-semibold">
-                        {exam.title || `시험 ${exam.id}`}
-                      </span>
-                      <span
-                        className={`mt-0.5 block truncate text-xs ${
-                          isDarkMode ? "text-zinc-400" : "text-gray-500"
+                    <h2
+                      className={`text-2xl font-bold tracking-normal md:text-3xl ${
+                        isDarkMode ? "text-white" : "text-gray-950"
+                      }`}
+                    >
+                      시험 설계
+                    </h2>
+                    <p className={`mt-2 text-sm ${examMutedTextClass}`}>
+                      시험 정보를 구성하고 게시하여 학생들이 응시할 수 있도록 설정합니다.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 sm:min-w-[24rem]">
+                    {[
+                      ["문항 수", `${examProps.examCount}`],
+                      ["제한 시간", `${examTimeLimit || "0"}분`],
+                      ["서술형 AI 채점", examAiGradingEnabled ? "사용" : "미사용"],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className={`rounded-lg border px-3 py-3 ${
+                          isDarkMode
+                            ? "border-[#343434] bg-[#262626]"
+                            : "border-[#e4e1db] bg-white"
                         }`}
                       >
-                        {inBulkMode ? "선택하여 수정 또는 삭제" : "클릭하여 시험 열기"}
-                      </span>
-                    </span>
+                        <span className={`block text-xs font-semibold ${examMutedTextClass}`}>
+                          {label}
+                        </span>
+                        <strong
+                          className={`mt-1 block text-xl font-bold ${
+                            isDarkMode ? "text-white" : "text-gray-950"
+                          }`}
+                        >
+                          {value}
+                        </strong>
+                      </div>
+                    ))}
                   </div>
-                );})}
-                {examProps.recoverExams.length === 0 && !examProps.submitting && (
-                  <div className="flex items-center justify-center py-8">
-                    <span className="text-xs opacity-60" style={{ color: sidebarTextColor }}>생성된 시험이 없습니다.</span>
-                  </div>
-                )}
-                {examProps.submitting && (
-                  <div
-                      className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
-                      isDarkMode ? "border-[#343434] bg-[#181818]" : "border-[#dedbd5] bg-[#fbfaf7]"
-                    }`}
-                    style={{ color: sidebarTextColor }}
-                  >
-                    <div
-                      className={`animate-spin rounded-full h-4 w-4 border-2 border-t-transparent shrink-0 ${
-                        isDarkMode ? "border-[#ffad9b]" : "border-[#ff824d]"
+                </div>
+              </section>
+
+              <div
+                className={`grid gap-4 ${
+                  examStudioPageMode
+                    ? "xl:grid-cols-[minmax(0,1fr)_24rem]"
+                    : "grid-cols-1"
+                }`}
+              >
+                <div className="flex min-w-0 flex-col gap-4">
+                  <section className={`rounded-lg border p-4 ${examPageSurfaceClass}`}>
+                    <h3 className={`mb-4 text-base font-bold ${isDarkMode ? "text-white" : "text-gray-950"}`}>
+                      기본 정보
+                    </h3>
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                      <div className={examFieldShellClass}>
+                        <label className={examLabelClass}>시험 제목</label>
+                        <input
+                          type="text"
+                          value={localExamDisplayName}
+                          onChange={(e) => setLocalExamDisplayName(e.target.value)}
+                          placeholder="새 시험"
+                          className={`${examControlClass} mt-1.5 block`}
+                          style={examControlStyle}
+                        />
+                      </div>
+                      <div className={examFieldShellClass}>
+                        <label className={examLabelClass}>시작</label>
+                        <input
+                          type="datetime-local"
+                          value={examStartsAt}
+                          onChange={(e) => setExamStartsAt(e.target.value)}
+                          className={`${examControlClass} mt-1.5 block`}
+                          style={examControlStyle}
+                        />
+                      </div>
+                      <div className={examFieldShellClass}>
+                        <label className={examLabelClass}>종료</label>
+                        <input
+                          type="datetime-local"
+                          value={examEndsAt}
+                          onChange={(e) => setExamEndsAt(e.target.value)}
+                          className={`${examControlClass} mt-1.5 block`}
+                          style={examControlStyle}
+                        />
+                      </div>
+                      <div className={examFieldShellClass}>
+                        <label className={examLabelClass}>제한 시간(분)</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={examTimeLimit}
+                          onChange={(e) => setExamTimeLimit(e.target.value.replace(/\D/g, ""))}
+                          className={`${examControlClass} mt-1.5 block`}
+                          style={examControlStyle}
+                        />
+                      </div>
+                      <div className="lg:col-span-2">
+                        <label className={examLabelClass}>설명</label>
+                        <textarea
+                          rows={3}
+                          value={localExamTopic}
+                          onChange={(e) => setLocalExamTopic(e.target.value)}
+                          placeholder="시험 범위, 요구사항, 학생에게 안내할 내용을 입력하세요."
+                          className={`${examControlClass} mt-1.5 block resize-none`}
+                          style={examControlStyle}
+                        />
+                      </div>
+                    </div>
+                    <label
+                      className={`mt-4 inline-flex items-center gap-2 text-sm font-semibold ${
+                        isDarkMode ? "text-zinc-200" : "text-gray-800"
                       }`}
-                    />
-                    <span className="text-sm font-medium">시험 생성중</span>
-                  </div>
-                )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={examAiGradingEnabled}
+                        onChange={(e) => setExamAiGradingEnabled(e.target.checked)}
+                        className="h-4 w-4 rounded border-[#D3CEC6] accent-[#ff824d]"
+                      />
+                      서술형 AI 채점 사용
+                    </label>
+                  </section>
+
+                  <section className={`rounded-lg border p-4 ${examPageSurfaceClass}`}>
+                    <div className="mb-4 flex items-center justify-between gap-3">
+                      <h3 className={`text-base font-bold ${isDarkMode ? "text-white" : "text-gray-950"}`}>
+                        문항
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={incrementExamCount}
+                        className={`${examPrimaryButtonClass} px-3 py-2`}
+                      >
+                        + 문항 추가
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_8rem]">
+                      <div className={examFieldShellClass}>
+                        <label className={examLabelClass}>문항 유형</label>
+                        <select
+                          value={examProps.examType}
+                          onChange={(e) => examProps.setExamType(e.target.value)}
+                          className={`${examControlClass} mt-1.5`}
+                          style={examControlStyle}
+                        >
+                          <option value="FLASH_CARD">플래시카드</option>
+                          <option value="OX_PROBLEM">OX</option>
+                          <option value="FIVE_CHOICE">객관식</option>
+                          <option value="SHORT_ANSWER">단답형</option>
+                        </select>
+                      </div>
+                      <div className={examFieldShellClass}>
+                        <label className={examLabelClass}>문항 수</label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="off"
+                          value={
+                            examCountFieldFocused
+                              ? examCountDraft
+                              : String(examProps.examCount)
+                          }
+                          onFocus={() => {
+                            examCountFieldFocusedRef.current = true;
+                            setExamCountFieldFocused(true);
+                            setExamCountDraft(String(examProps.examCount));
+                          }}
+                          onChange={(e) => {
+                            if (!examCountFieldFocusedRef.current) return;
+                            setExamCountDraft(e.target.value.replace(/\D/g, ""));
+                          }}
+                          onBlur={(e) => {
+                            examCountFieldFocusedRef.current = false;
+                            setExamCountFieldFocused(false);
+                            commitExamQuestionCountInput(
+                              e.target.value,
+                              examProps.examType,
+                              examProps.setExamCount,
+                            );
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter") return;
+                            e.preventDefault();
+                            (e.currentTarget as HTMLInputElement).blur();
+                          }}
+                          className={`${examControlClass} mt-1.5`}
+                          style={examControlStyle}
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+                      <div className={examFieldShellClass}>
+                        <label className={examLabelClass}>난이도</label>
+                        <select value={examProps.profileProficiencyLevel} onChange={(e) => examProps.setProfileProficiencyLevel(e.target.value as "Beginner" | "Intermediate" | "Advanced")} className={`${examControlClass} mt-1.5`} style={examControlStyle}>
+                          <option value="Beginner">초급</option>
+                          <option value="Intermediate">중급</option>
+                          <option value="Advanced">고급</option>
+                        </select>
+                      </div>
+                      <div className={examFieldShellClass}>
+                        <label className={examLabelClass}>평가 중점</label>
+                        <select value={examProps.profileTargetDepth} onChange={(e) => examProps.setProfileTargetDepth(e.target.value as "Concept" | "Application" | "Derivation" | "Deep Understanding")} className={`${examControlClass} mt-1.5`} style={examControlStyle}>
+                          <option value="Concept">개념 이해</option>
+                          <option value="Application">응용</option>
+                          <option value="Derivation">증명/유도</option>
+                          <option value="Deep Understanding">심화 이해</option>
+                        </select>
+                      </div>
+                      <div className={examFieldShellClass}>
+                        <label className={examLabelClass}>문제 스타일</label>
+                        <select value={examProps.profileQuestionModality} onChange={(e) => examProps.setProfileQuestionModality(e.target.value as "Mathematical" | "Theoretical" | "Balance")} className={`${examControlClass} mt-1.5`} style={examControlStyle}>
+                          <option value="Mathematical">수학적</option>
+                          <option value="Theoretical">이론적</option>
+                          <option value="Balance">균형</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="mt-4 overflow-hidden rounded-lg border" style={{ borderColor: controlBorder }}>
+                      {Array.from({ length: Math.min(examProps.examCount, 5) }).map((_, index) => (
+                        <div
+                          key={`question-preview-${index}`}
+                          className={`grid grid-cols-[3rem_minmax(0,1fr)_5rem] items-center gap-3 border-b px-3 py-3 last:border-b-0 ${
+                            isDarkMode ? "border-[#343434]" : "border-[#e4e1db]"
+                          }`}
+                        >
+                          <span className={`text-sm font-bold ${isDarkMode ? "text-white" : "text-gray-950"}`}>
+                            {index + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <span className={`block truncate text-sm font-semibold ${isDarkMode ? "text-zinc-100" : "text-gray-900"}`}>
+                              {selectedExamTypeLabel} 문항
+                            </span>
+                            <span className={`mt-0.5 block text-xs ${examMutedTextClass}`}>
+                              AI가 선택한 자료와 출제 방향을 기준으로 문항을 구성합니다.
+                            </span>
+                          </div>
+                          <span className={`text-right text-sm font-semibold ${examMutedTextClass}`}>
+                            {Math.max(1, Math.round(100 / Math.max(1, examProps.examCount)))}점
+                          </span>
+                        </div>
+                      ))}
+                      {examProps.examCount > 5 ? (
+                        <div className={`px-3 py-2 text-xs ${examMutedTextClass}`}>
+                          외 {examProps.examCount - 5}개 문항은 생성 시 함께 구성됩니다.
+                        </div>
+                      ) : null}
+                    </div>
+                  </section>
+
+                  <section className={`rounded-lg border p-4 ${examPageSurfaceClass}`}>
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                      <h3 className={`text-base font-bold ${isDarkMode ? "text-white" : "text-gray-950"}`}>
+                        생성된 시험
+                      </h3>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={examProps.onRecoverSession}
+                          className={examSecondaryButtonClass}
+                        >
+                          세션 복구
+                        </button>
+                        {!examProps.examEditMode ? (
+                          <button
+                            type="button"
+                            onClick={() => examProps.onExamEditModeChange?.(true)}
+                            className={examIconButtonClass}
+                            aria-label="수정/삭제 모드"
+                            title="수정/삭제 모드"
+                          >
+                            <EditIcon className="w-4 h-4" />
+                          </button>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const ids = Object.keys(examProps.selectedExamIds || {}).filter((k) => examProps.selectedExamIds?.[k]);
+                                if (ids.length !== 1) {
+                                  window.alert("수정할 시험을 1개 선택해주세요.");
+                                  return;
+                                }
+                                const exam = examProps.recoverExams.find((e) => e.id === ids[0]);
+                                if (exam?.examSessionId) examProps.onExamClick?.(exam.examSessionId);
+                              }}
+                              className={examIconButtonClass}
+                              aria-label="수정"
+                              title="수정"
+                            >
+                              <EditIcon className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={examProps.onDeleteSelectedExams}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-red-500 transition-colors hover:bg-red-500/10"
+                              aria-label="삭제"
+                              title="삭제"
+                            >
+                              <TrashIcon className="w-4 h-4" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => examProps.onExamEditModeChange?.(false)}
+                              className={examIconButtonClass}
+                              aria-label="완료"
+                              title="완료"
+                            >
+                              <CloseIcon className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      {examProps.recoverExams.map((exam) => {
+                        const checked = !!examProps.selectedExamIds?.[exam.id];
+                        const inBulkMode = !!examProps.examEditMode;
+                        return (
+                          <div
+                            key={exam.id}
+                            role="button"
+                            tabIndex={examProps.examEditMode ? -1 : 0}
+                            onMouseDown={(e) => {
+                              if (examProps.examEditMode) e.preventDefault();
+                            }}
+                            onClick={() => {
+                              if (examProps.examEditMode) {
+                                examProps.onToggleExamSelect?.(exam.id);
+                              } else if (exam.examSessionId) {
+                                examProps.onExamClick?.(exam.examSessionId);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                if (examProps.examEditMode) {
+                                  examProps.onToggleExamSelect?.(exam.id);
+                                } else if (exam.examSessionId) {
+                                  examProps.onExamClick?.(exam.examSessionId);
+                                }
+                              }
+                            }}
+                            className={`flex min-h-12 items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors ${
+                              isDarkMode
+                                ? "border-[#343434] bg-[#262626] hover:bg-white/5"
+                                : "border-[#e4e1db] bg-[#fbfaf7] hover:bg-[#fff8f4]"
+                            } ${
+                              inBulkMode && checked
+                                ? isDarkMode
+                                  ? "shadow-[inset_0_0_0_0.125rem_#ffad9b]"
+                                  : "shadow-[inset_0_0_0_0.125rem_#ff824d]"
+                                : ""
+                            }`}
+                          >
+                            <span
+                              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                                checked
+                                  ? isDarkMode
+                                    ? "bg-[#ffad9b] text-[#181818]"
+                                    : "bg-[#ff824d] text-white"
+                                  : isDarkMode
+                                    ? "bg-white/10 text-zinc-200"
+                                    : "bg-white text-gray-800"
+                              }`}
+                            >
+                              {checked ? <CheckIcon className="h-4 w-4" /> : "Q"}
+                            </span>
+                            <span className="min-w-0 flex-1">
+                              <span className={`block truncate text-sm font-semibold ${isDarkMode ? "text-white" : "text-gray-950"}`}>
+                                {exam.title || `시험 ${exam.id}`}
+                              </span>
+                              <span className={`mt-0.5 block truncate text-xs ${examMutedTextClass}`}>
+                                {inBulkMode ? "선택하여 수정 또는 삭제" : "클릭하여 시험 열기"}
+                              </span>
+                            </span>
+                          </div>
+                        );
+                      })}
+                      {examProps.recoverExams.length === 0 && !examProps.submitting ? (
+                        <div className={`rounded-lg border border-dashed px-4 py-8 text-center text-sm ${examMutedTextClass} ${examSoftSurfaceClass}`}>
+                          아직 생성된 시험이 없습니다.
+                        </div>
+                      ) : null}
+                      {examProps.submitting ? (
+                        <div className={`flex items-center gap-2 rounded-lg border px-3 py-3 ${examSoftSurfaceClass}`}>
+                          <div
+                            className={`h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-t-transparent ${
+                              isDarkMode ? "border-[#ffad9b]" : "border-[#ff824d]"
+                            }`}
+                          />
+                          <span className={`text-sm font-semibold ${isDarkMode ? "text-white" : "text-gray-950"}`}>
+                            시험 생성 중
+                          </span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </section>
+                </div>
+
+                {examProps.isTeacher ? (
+                  <aside className={`flex min-h-[30rem] flex-col overflow-hidden rounded-lg border ${examPageSurfaceClass}`}>
+                    <div
+                      className={`flex items-center gap-3 px-4 py-4 ${
+                        isDarkMode
+                          ? "bg-[#302f45] text-white"
+                          : "bg-[#eef1ff] text-gray-950"
+                      }`}
+                    >
+                      <span
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${
+                          isDarkMode
+                            ? "border-white/20 bg-white/10"
+                            : "border-[#d5dcff] bg-white"
+                        }`}
+                      >
+                        <SparklesIcon className="h-5 w-5 text-[#6f65ff]" />
+                      </span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="truncate text-base font-bold">AI 시험 설계 도우미</h3>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[0.6875rem] font-semibold ${
+                              isDarkMode
+                                ? "bg-white/10 text-zinc-100"
+                                : "bg-[#dfe4ff] text-[#4b45c8]"
+                            }`}
+                          >
+                            에이전트 모드
+                          </span>
+                        </div>
+                        <p className={`mt-1 text-xs ${isDarkMode ? "text-zinc-300" : "text-gray-600"}`}>
+                          문항 추가, 난이도 조정, 평가 기준을 제안합니다.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+                      <div className={`rounded-lg border p-4 ${examSoftSurfaceClass}`}>
+                        {examStudioOutput ? (
+                          <div className="max-h-72 overflow-y-auto text-sm leading-relaxed">
+                            <MarkdownContent content={examStudioOutput} />
+                          </div>
+                        ) : (
+                          <div className="flex min-h-44 flex-col items-center justify-center text-center">
+                            <SparklesIcon className="h-9 w-9 text-[#6f65ff]" />
+                            <p className={`mt-4 text-base font-bold ${isDarkMode ? "text-white" : "text-gray-950"}`}>
+                              AI 도우미와 함께 효과적인 시험을 설계해 보세요.
+                            </p>
+                            <p className={`mt-2 text-sm ${examMutedTextClass}`}>
+                              학습 자료와 요구사항을 바탕으로 문항 구성과 평가 기준을 제안합니다.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {[
+                          "난이도별 문항 구성 제안",
+                          "핵심 개념 중심으로 재구성",
+                          "평가 기준 추천",
+                          "취약 개념 확인 문제 제안",
+                        ].map((prompt) => (
+                          <button
+                            key={prompt}
+                            type="button"
+                            onClick={() => setExamStudioPrompt(prompt)}
+                            className={examSecondaryButtonClass}
+                          >
+                            {prompt}
+                          </button>
+                        ))}
+                      </div>
+                      {examStudioError ? (
+                        <p className="text-xs text-red-500">{examStudioError}</p>
+                      ) : null}
+                      <div className="mt-auto flex items-end gap-2">
+                        <textarea
+                          rows={2}
+                          value={examStudioPrompt}
+                          onChange={(e) => setExamStudioPrompt(e.target.value)}
+                          placeholder="AI와 시험을 설계해 보세요"
+                          disabled={!canUseExamStudio || examStudioLoading}
+                          className={`${examControlClass} block resize-none`}
+                          style={examControlStyle}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void handleExamStudioPrompt()}
+                          disabled={!canUseExamStudio || examStudioLoading || !examStudioPrompt.trim()}
+                          className={`${examPrimaryButtonClass} h-11 w-11 shrink-0 px-0`}
+                          aria-label="AI 도우미 요청"
+                        >
+                          {examStudioLoading ? (
+                            "..."
+                          ) : (
+                            <svg
+                              className="h-4 w-4"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                              aria-hidden="true"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M5 12h14M13 6l6 6-6 6"
+                              />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                      <span className={`text-xs ${examMutedTextClass}`}>
+                        {canUseExamStudio ? "현재 선택한 자료 문맥을 사용합니다." : "자료 목록에서 시험을 만들 자료를 먼저 선택해 주세요."}
+                      </span>
+                    </div>
+                  </aside>
+                ) : null}
               </div>
             </div>
           </div>
-          <div className={`shrink-0 border-t px-4 py-3 flex justify-between items-center gap-2 flex-wrap ${isDarkMode ? "border-[#2b2b2b]" : "border-[#dedbd5]"}`} style={{ backgroundColor: panelSurface }}>
-            <button
-              type="button"
-              onClick={examProps.onRecoverSession}
-              className={`${examSecondaryButtonClass} shrink-0 px-4 py-2.5 text-sm`}
-            >
-              세션 복구
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                examProps.onCreateExam(
-                  localExamTopic.trim(),
-                  localExamDisplayName.trim(),
-                )
-              }
-              disabled={examProps.submitting || !localExamTopic.trim()}
-              className={`${examPrimaryButtonClass} shrink-0 px-4 py-2.5 text-sm`}
-            >
-              {examProps.submitting ? "생성 시작 중..." : "시험 생성"}
-            </button>
+          <div
+            className={`shrink-0 border-t px-4 py-3 ${
+              isDarkMode ? "border-[#2b2b2b]" : "border-[#dedbd5]"
+            }`}
+            style={{ backgroundColor: panelSurface }}
+          >
+            <div className="mx-auto flex w-full max-w-[96rem] items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => examProps.onExamModeChange(false)}
+                className={`${examSecondaryButtonClass} px-4 py-2.5 text-sm`}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveExamDraft}
+                className={`${examSecondaryButtonClass} px-4 py-2.5 text-sm`}
+              >
+                임시 저장
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  examProps.onCreateExam(
+                    resolvedExamCreateTopic,
+                    localExamDisplayName.trim(),
+                  )
+                }
+                disabled={examProps.submitting || !resolvedExamCreateTopic}
+                className={`${examPrimaryButtonClass} px-4 py-2.5 text-sm`}
+              >
+                {examProps.submitting ? "게시 중..." : "게시"}
+              </button>
+            </div>
           </div>
         </div>
       ) : (

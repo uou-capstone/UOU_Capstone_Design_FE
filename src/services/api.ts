@@ -314,6 +314,41 @@ function normalizeStudentReportListItem(
     raw.student != null && typeof raw.student === "object" && !Array.isArray(raw.student)
       ? (raw.student as Record<string, unknown>)
       : null;
+  const userObj =
+    raw.user != null && typeof raw.user === "object" && !Array.isArray(raw.user)
+      ? (raw.user as Record<string, unknown>)
+      : null;
+  const studentId =
+    n(
+      raw.studentId ??
+        raw.student_id ??
+        raw.reportStudentId ??
+        raw.report_student_id ??
+        raw.enrolledStudentId ??
+        raw.enrolled_student_id ??
+        studentObj?.studentId ??
+        studentObj?.student_id ??
+        studentObj?.id ??
+        studentObj?.memberId ??
+        studentObj?.member_id ??
+        raw.memberId ??
+        raw.member_id ??
+        raw.userId ??
+        raw.user_id ??
+        userObj?.studentId ??
+        userObj?.student_id ??
+        userObj?.id,
+    ) ?? 0;
+  const userId =
+    n(
+      raw.userId ??
+        raw.user_id ??
+        studentObj?.userId ??
+        studentObj?.user_id ??
+        userObj?.userId ??
+        userObj?.user_id ??
+        userObj?.id,
+    ) ?? 0;
 
   const name =
     String(
@@ -369,8 +404,8 @@ function normalizeStudentReportListItem(
     raw.averageScorePercent;
 
   return {
-    studentId: Number(raw.studentId ?? raw.student_id ?? studentObj?.studentId ?? 0),
-    userId: Number(raw.userId ?? raw.user_id ?? studentObj?.userId ?? 0),
+    studentId,
+    userId,
     name,
     email: typeof email === "string" && email.trim() !== "" ? email : undefined,
     averageScorePercent: n(avg),
@@ -413,6 +448,10 @@ function normalizeStudentReportDetail(
   const studentObj =
     raw.student != null && typeof raw.student === "object" && !Array.isArray(raw.student)
       ? (raw.student as Record<string, unknown>)
+      : null;
+  const userObj =
+    raw.user != null && typeof raw.user === "object" && !Array.isArray(raw.user)
+      ? (raw.user as Record<string, unknown>)
       : null;
 
   const activityObj =
@@ -475,6 +514,37 @@ function normalizeStudentReportDetail(
       return Number(v);
     return undefined;
   };
+  const studentId =
+    n(
+      raw.studentId ??
+        raw.student_id ??
+        raw.reportStudentId ??
+        raw.report_student_id ??
+        raw.enrolledStudentId ??
+        raw.enrolled_student_id ??
+        studentObj?.studentId ??
+        studentObj?.student_id ??
+        studentObj?.id ??
+        studentObj?.memberId ??
+        studentObj?.member_id ??
+        raw.memberId ??
+        raw.member_id ??
+        raw.userId ??
+        raw.user_id ??
+        userObj?.studentId ??
+        userObj?.student_id ??
+        userObj?.id,
+    ) ?? 0;
+  const userId =
+    n(
+      raw.userId ??
+        raw.user_id ??
+        studentObj?.userId ??
+        studentObj?.user_id ??
+        userObj?.userId ??
+        userObj?.user_id ??
+        userObj?.id,
+    ) ?? 0;
 
   const competenciesRaw =
     raw.competencies ??
@@ -559,8 +629,8 @@ function normalizeStudentReportDetail(
   }
 
   return {
-    studentId: Number(raw.studentId ?? raw.student_id ?? studentObj?.studentId ?? 0),
-    userId: Number(raw.userId ?? raw.user_id ?? studentObj?.userId ?? 0),
+    studentId,
+    userId,
     name,
     email: typeof email === "string" && email.trim() !== "" ? email : undefined,
     reportStatus,

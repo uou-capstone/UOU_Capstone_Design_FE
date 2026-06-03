@@ -1,6 +1,6 @@
 import React from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { RefreshIcon } from "@/components/common/Icons";
+import { ClipboardIcon, RefreshIcon, SparklesIcon } from "@/components/common/Icons";
 import { formatKoreanDateTime } from "@/utils/dateFormat";
 import {
   discussionApi,
@@ -942,20 +942,21 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
     selectedNotice?.noticeId,
   ]);
 
-  const runDiscussionAssistant = React.useCallback(async () => {
-    if (tab !== "discussions" || !assistantTopic.trim()) return;
+  const runDiscussionAssistant = React.useCallback(async (promptOverride?: string) => {
+    const prompt = (promptOverride ?? assistantTopic).trim();
+    if (tab !== "discussions" || !prompt) return;
     setAssistantLoading(true);
     setError(null);
     setForm((prev) => ({
       ...prev,
-      title: prev.title || assistantTopic.trim(),
+      title: prev.title || prompt,
       contentMarkdown: "",
     }));
     try {
       await discussionApi.streamAssistant(
         courseId,
         {
-          topic: assistantTopic.trim(),
+          topic: prompt,
           category: form.discussionCategory,
           previousDraft: form.contentMarkdown || undefined,
         },
@@ -1000,6 +1001,652 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
   const editorSurfaceClass = isDarkMode
     ? "border-[#343434] bg-[#202020] text-gray-100"
     : "border-[#dedbd5] bg-white text-[#212121]";
+
+  if (tab === "discussions") {
+    const discussionPanelClass = `rounded-xl border ${
+      isDarkMode
+        ? "border-[#2b2b2b] bg-[#202020] text-gray-100"
+        : "border-[#dedbd5] bg-white text-[#212121]"
+    }`;
+    const discussionSoftPanelClass = `rounded-xl border ${
+      isDarkMode
+        ? "border-[#343434] bg-[#242424]"
+        : "border-[#e8e1d8] bg-[#fbfaf7]"
+    }`;
+    const discussionHeroClass = `rounded-xl border px-5 py-5 lg:px-7 lg:py-6 ${
+      isDarkMode
+        ? "border-[#343434] bg-[#202020] text-gray-100"
+        : "border-[#d7e4ff] bg-[#f5f8ff] text-[#172033]"
+    }`;
+    const discussionInputClass = `rounded-lg border px-3 py-2.5 text-sm outline-none transition-colors focus:ring-1 ${
+      isDarkMode
+        ? "border-[#343434] bg-[#181818] text-gray-100 placeholder:text-gray-500 focus:border-[#ffad9b] focus:ring-[#ffad9b]/20"
+        : "border-[#d9dfea] bg-white text-[#172033] placeholder:text-gray-400 focus:border-[#5f74ff] focus:ring-[#5f74ff]/20"
+    }`;
+    const discussionOutlineButtonClass = `inline-flex h-10 items-center justify-center rounded-lg border px-4 text-sm font-semibold transition-colors disabled:opacity-50 ${
+      isDarkMode
+        ? "border-[#343434] bg-[#202020] text-gray-100 hover:bg-[#262626]"
+        : "border-[#d9dfea] bg-white text-[#172033] hover:bg-[#f7f8fc]"
+    }`;
+    const discussionPrimaryButtonClass = `inline-flex h-10 items-center justify-center rounded-lg px-4 text-sm font-semibold text-white transition-colors disabled:opacity-50 ${
+      isDarkMode ? "bg-[#ff9b6a] hover:bg-[#ffad86]" : "bg-[#5f6cff] hover:bg-[#4f5be8]"
+    }`;
+    const discussionQuickPrompts = [
+      ["말투 다듬기", "작성 중인 토론 글을 학생들이 참여하기 쉬운 말투로 다듬어줘"],
+      ["질문형 문장 만들기", "현재 주제를 학생들이 답변하기 좋은 질문형 문장으로 바꿔줘"],
+      ["참여 안내문 추천", "토론 참여를 유도하는 짧은 안내문을 작성해줘"],
+      ["핵심 요약 생성", "작성 중인 내용을 토론 안내용 핵심 요약으로 정리해줘"],
+    ];
+    const hasDraft =
+      form.title.trim().length > 0 || !isRichContentEmpty(form.contentMarkdown);
+    const activeDiscussionCount = discussions.length;
+
+    return (
+      <div className="flex min-h-full flex-col gap-4 pb-6">
+        <section className={discussionHeroClass}>
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_36rem] lg:items-center">
+            <div className="min-w-0">
+              <span
+                className={`inline-flex rounded-full px-4 py-1.5 text-sm font-semibold ${
+                  isDarkMode ? "bg-white/[0.08] text-gray-100" : "bg-white text-[#172033]"
+                }`}
+              >
+                작성 스튜디오
+              </span>
+              <h2 className="mt-4 text-4xl font-semibold leading-tight lg:text-5xl">
+                게시글 작성
+              </h2>
+              <p className="mt-4 text-sm font-semibold leading-6">
+                질문, 자유 토론, 자료 공유 글을 작성하고 게시판에 바로 등록할 수 있습니다.
+              </p>
+              {scopedWeekLabel ? (
+                <p className={`mt-2 text-sm ${mutedClass}`}>
+                  {scopedWeekLabel}에 연결되는 토론으로 저장됩니다.
+                </p>
+              ) : null}
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {[
+                ["임시 저장", hasDraft ? "작성 중" : "없음", "message"],
+                ["첨부 파일", "0개", "clip"],
+                ["AI 도움", "사용 가능", "spark"],
+              ].map(([label, value, icon]) => (
+                <div
+                  key={label}
+                  className={`rounded-lg border px-5 py-4 ${
+                    isDarkMode
+                      ? "border-[#343434] bg-[#242424]"
+                      : "border-[#e2e7f2] bg-white"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`inline-flex h-9 w-9 items-center justify-center rounded-full ${
+                        isDarkMode ? "bg-white/[0.08] text-[#ffad9b]" : "bg-[#eef1ff] text-[#5f6cff]"
+                      }`}
+                    >
+                      {icon === "spark" ? (
+                        <SparklesIcon className="h-5 w-5" />
+                      ) : icon === "clip" ? (
+                        <ClipboardIcon className="h-5 w-5" />
+                      ) : (
+                        <span className="h-3 w-3 rounded-sm border-2 border-current" />
+                      )}
+                    </span>
+                    <div>
+                      <p className={`text-xs font-semibold ${mutedClass}`}>{label}</p>
+                      <p className="mt-1 text-xl font-semibold">{value}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {error ? (
+          <div className="rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
+
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_25rem]">
+          <section className={`${discussionPanelClass} px-5 py-5`}>
+            <form
+              className="grid gap-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void submitPost();
+              }}
+            >
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <h3 className="text-2xl font-semibold">게시글 편집</h3>
+                {onClose ? (
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className={discussionOutlineButtonClass}
+                  >
+                    자료 목록으로
+                  </button>
+                ) : null}
+              </div>
+
+              <label className="grid gap-2">
+                <span className="text-sm font-semibold">제목</span>
+                <input
+                  className={discussionInputClass}
+                  value={form.title}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, title: event.target.value }))
+                  }
+                  placeholder="예: 2주차 토론 주제 미리 의견 남겨주세요"
+                />
+              </label>
+
+              <div className="grid gap-3 lg:grid-cols-3">
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold">유형</span>
+                  <select
+                    className={discussionInputClass}
+                    value={form.discussionCategory}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        discussionCategory: event.target.value as DiscussionCategory,
+                      }))
+                    }
+                  >
+                    {Object.entries(DISCUSSION_CATEGORY_LABEL).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold">공개 범위</span>
+                  <select className={discussionInputClass} value="course" disabled>
+                    <option value="course">강의실 전체</option>
+                  </select>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold">작성자</span>
+                  <select className={discussionInputClass} value="me" disabled>
+                    <option value="me">{user?.name || "작성자"}</option>
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_11rem]">
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold">예약 발송</span>
+                  <input
+                    type="date"
+                    className={discussionInputClass}
+                    value={form.scheduledDate}
+                    disabled={form.immediateSend}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        scheduledDate: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold">시간</span>
+                  <input
+                    type="time"
+                    className={discussionInputClass}
+                    value={form.scheduledTime}
+                    disabled={form.immediateSend}
+                    onChange={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        scheduledTime: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <div className="flex items-end gap-4 pb-2">
+                  <label className="flex items-center gap-2 text-sm font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={form.immediateSend}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          immediateSend: event.target.checked,
+                        }))
+                      }
+                    />
+                    즉시 발송
+                  </label>
+                  <label className="flex items-center gap-2 text-sm font-semibold">
+                    <input
+                      type="checkbox"
+                      checked={form.allowComments}
+                      onChange={(event) =>
+                        setForm((prev) => ({
+                          ...prev,
+                          allowComments: event.target.checked,
+                        }))
+                      }
+                    />
+                    댓글 허용
+                  </label>
+                </div>
+              </div>
+
+              {scheduledJobs.length > 0 ? (
+                <div className={`${discussionSoftPanelClass} px-3 py-2 text-xs`}>
+                  <p className="font-semibold">예약 대기</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {scheduledJobs
+                      .filter((job) => job.tab === "discussions")
+                      .map((job) => (
+                        <span
+                          key={job.id}
+                          className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1 ${
+                            isDarkMode ? "bg-[#202020]" : "bg-white"
+                          }`}
+                        >
+                          {job.title} · {formatInstant(job.scheduledAt)}
+                          <button
+                            type="button"
+                            onClick={() => cancelScheduledJob(job.id)}
+                            className="font-semibold text-[#ff824d]"
+                          >
+                            취소
+                          </button>
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <label className="grid gap-2">
+                <span className="text-sm font-semibold">본문</span>
+                <div className={`overflow-hidden rounded-lg border ${editorSurfaceClass}`}>
+                  <div
+                    className={`flex h-10 items-center border-b ${
+                      isDarkMode
+                        ? "border-[#343434] bg-[#181818]"
+                        : "border-[#dedbd5] bg-white"
+                    }`}
+                  >
+                    {[
+                      ["paragraph", "본문"],
+                      ["bold", "B"],
+                      ["italic", "/"],
+                      ["underline", "U"],
+                      ["bullet", "•"],
+                      ["heading", "#"],
+                      ["undo", "↶"],
+                    ].map(([kind, label]) => (
+                      <button
+                        key={kind}
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() =>
+                          applyEditorCommand(
+                            kind as
+                              | "bold"
+                              | "italic"
+                              | "underline"
+                              | "bullet"
+                              | "heading"
+                              | "paragraph"
+                              | "undo",
+                          )
+                        }
+                        className={toolbarButtonClass}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div
+                    ref={contentEditorRef}
+                    contentEditable
+                    suppressContentEditableWarning
+                    data-placeholder="내용을 입력하세요."
+                    className={`min-h-[22rem] w-full overflow-y-auto px-4 py-4 text-sm leading-7 outline-none empty:before:pointer-events-none empty:before:text-gray-400 empty:before:content-[attr(data-placeholder)] [&_h3]:mb-2 [&_h3]:text-lg [&_h3]:font-semibold [&_li]:ml-5 [&_li]:list-disc ${
+                      isDarkMode
+                        ? "bg-[#202020] text-gray-100"
+                        : "bg-white text-[#212121]"
+                    }`}
+                    onInput={(event) => {
+                      editorHtmlRef.current = event.currentTarget.innerHTML;
+                    }}
+                    onBlur={(event) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        contentMarkdown: event.currentTarget.innerHTML,
+                      }))
+                    }
+                  />
+                  <div className={`border-t px-4 py-2 text-right text-xs font-semibold ${mutedClass} ${
+                    isDarkMode ? "border-[#343434]" : "border-[#dedbd5]"
+                  }`}>
+                    {stripBoardWeekScopeMarker(form.contentMarkdown)
+                      .replace(/<[^>]*>/g, "")
+                      .trim().length}{" "}
+                    / 12000
+                  </div>
+                </div>
+              </label>
+
+              <div className="grid gap-2">
+                <span className="text-sm font-semibold">첨부 파일 (0/8)</span>
+                <div
+                  className={`rounded-lg border border-dashed px-4 py-5 text-center text-sm font-semibold ${
+                    isDarkMode
+                      ? "border-[#343434] bg-[#181818] text-gray-400"
+                      : "border-[#cfd8ef] bg-[#f9fbff] text-gray-500"
+                  }`}
+                >
+                  첨부 파일 기능은 API 계약 확정 후 연결됩니다.
+                </div>
+              </div>
+
+              <div className="flex flex-wrap justify-end gap-2">
+                {editingId != null ? (
+                  <button
+                    type="button"
+                    onClick={resetForm}
+                    className={discussionOutlineButtonClass}
+                  >
+                    취소
+                  </button>
+                ) : null}
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className={discussionPrimaryButtonClass}
+                >
+                  {saving ? "저장 중" : editingId == null ? "게시" : "수정 저장"}
+                </button>
+              </div>
+            </form>
+          </section>
+
+          <aside className={`${discussionPanelClass} flex min-h-[30rem] flex-col px-5 py-5`}>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <SparklesIcon className={isDarkMode ? "h-5 w-5 text-[#ffad9b]" : "h-5 w-5 text-[#5f6cff]"} />
+                  <h3 className="text-2xl font-semibold">AI 작성 어시스턴트</h3>
+                </div>
+                <p className="mt-2 text-sm font-semibold">
+                  현재 작성 중인 게시글을 함께 읽고 도와드려요.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAssistantTopic("")}
+                className={discussionOutlineButtonClass}
+              >
+                초기화
+              </button>
+            </div>
+
+            <div className={`${discussionSoftPanelClass} mt-6 px-4 py-5`}>
+              <div className="flex items-center gap-4">
+                <span
+                  className={`inline-flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+                    isDarkMode ? "bg-[#202020] text-gray-100" : "bg-[#edf1ff] text-[#172033]"
+                  }`}
+                >
+                  AI
+                </span>
+                <p className="text-sm font-semibold leading-6">
+                  주제 정리, 문장 다듬기, 질문 확장, 요약 작성을 도와드려요.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              {discussionQuickPrompts.map(([label, prompt]) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => {
+                    setAssistantTopic(prompt);
+                    void runDiscussionAssistant(prompt);
+                  }}
+                  disabled={assistantLoading}
+                  className={discussionOutlineButtonClass}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className={`${discussionSoftPanelClass} mt-4 px-4 py-5 text-center text-sm font-semibold leading-6`}>
+              작성 중인 내용을 기반으로 더 정확한 도움을 드려요.
+              <br />
+              예: 학생들이 의견을 남기기 쉽게 문장을 다듬어줘
+            </div>
+
+            <div className="mt-auto grid gap-2 pt-5">
+              <textarea
+                value={assistantTopic}
+                onChange={(event) => setAssistantTopic(event.target.value)}
+                placeholder="AI에게 요청할 내용을 입력하세요"
+                className={`${discussionInputClass} min-h-20 resize-none`}
+              />
+              <button
+                type="button"
+                onClick={() => void runDiscussionAssistant()}
+                disabled={assistantLoading || !assistantTopic.trim()}
+                className={discussionPrimaryButtonClass}
+              >
+                {assistantLoading ? "작성 중" : "AI 도움 받기"}
+              </button>
+            </div>
+          </aside>
+        </div>
+
+        <div className="grid min-h-0 gap-4 xl:grid-cols-[0.34fr_1.66fr]">
+          <section className={discussionPanelClass}>
+            <div className="flex items-center justify-between border-b border-inherit px-4 py-3">
+              <div>
+                <h3 className="text-base font-semibold">토론 목록</h3>
+                <p className={`mt-0.5 text-xs ${mutedClass}`}>
+                  {activeDiscussionCount}개 게시글
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadList()}
+                disabled={loading}
+                aria-label="새로고침"
+                title="새로고침"
+                className={discussionOutlineButtonClass}
+              >
+                <RefreshIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              </button>
+            </div>
+            {loading ? (
+              <div className={`px-5 py-12 text-center text-sm ${mutedClass}`}>
+                목록을 불러오는 중입니다.
+              </div>
+            ) : discussions.length === 0 ? (
+              <div className={`px-5 py-12 text-center text-sm ${mutedClass}`}>
+                {scopedWeekLabel
+                  ? `${scopedWeekLabel}에 등록된 토론이 없습니다.`
+                  : "등록된 토론이 없습니다."}
+              </div>
+            ) : (
+              <ul className="divide-y divide-inherit">
+                {discussions.map((item) => {
+                  const selected = selectedDiscussion?.discussionId === item.discussionId;
+                  return (
+                    <li key={item.discussionId}>
+                      <button
+                        type="button"
+                        onClick={() => void selectDiscussion(item.discussionId)}
+                        className={`w-full px-5 py-4 text-left transition-colors ${
+                          selected
+                            ? isDarkMode
+                              ? "bg-white/[0.06]"
+                              : "bg-[#f3f5ff]"
+                            : ""
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {item.pinned ? (
+                            <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              isDarkMode ? "bg-white/10 text-gray-100" : "bg-[#eef1ff] text-[#5f6cff]"
+                            }`}>
+                              고정
+                            </span>
+                          ) : null}
+                          <h4 className="truncate text-sm font-semibold">{item.title}</h4>
+                        </div>
+                        <p className={`mt-2 text-xs ${mutedClass}`}>
+                          {item.authorName || "작성자"} · {formatInstant(item.createdAt)} · 조회 {item.viewCount}
+                        </p>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+
+          <section className={discussionPanelClass}>
+            {selectedDiscussion == null ? (
+              <div className={`px-5 py-16 text-center text-sm ${mutedClass}`}>
+                목록에서 토론을 선택하세요.
+              </div>
+            ) : (
+              <div className="flex min-h-full flex-col">
+                <div className="border-b border-inherit px-5 py-5">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold">{selectedDiscussion.title}</h3>
+                      <p className={`mt-2 text-xs ${mutedClass}`}>
+                        {selectedDiscussion.authorName || "작성자"} · {formatInstant(selectedDiscussion.createdAt)}
+                      </p>
+                    </div>
+                    {canEditSelected ? (
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={beginEdit}
+                          className={discussionOutlineButtonClass}
+                        >
+                          수정
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void deleteSelected()}
+                          className="inline-flex h-10 items-center justify-center rounded-lg border border-red-200 px-4 text-sm font-semibold text-red-600"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="border-b border-inherit px-5 py-5">
+                  {looksLikeHtml(selectedDiscussion.contentMarkdown) ? (
+                    <div
+                      className="text-sm leading-7 [&_h3]:mb-2 [&_h3]:text-lg [&_h3]:font-semibold [&_li]:ml-5 [&_li]:list-disc"
+                      dangerouslySetInnerHTML={{
+                        __html: sanitizeRichContent(selectedDiscussion.contentMarkdown),
+                      }}
+                    />
+                  ) : (
+                    <div className="whitespace-pre-wrap text-sm leading-7">
+                      {selectedDiscussion.contentMarkdown}
+                    </div>
+                  )}
+                </div>
+                <div className="px-5 py-5">
+                  <h4 className="text-sm font-semibold">댓글</h4>
+                  <div className="mt-3 space-y-2">
+                    {comments.length === 0 ? (
+                      <p className={`py-4 text-sm ${mutedClass}`}>댓글이 없습니다.</p>
+                    ) : (
+                      comments.map((comment) => {
+                        const canEditComment =
+                          isTeacher || comment.authorUserId === user?.userId;
+                        return (
+                          <div
+                            key={comment.commentId}
+                            className={`${discussionSoftPanelClass} px-4 py-3`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-xs font-semibold">{comment.authorName}</p>
+                                <p className={`mt-1 text-[11px] ${mutedClass}`}>
+                                  {formatInstant(comment.createdAt)}
+                                </p>
+                              </div>
+                              {canEditComment ? (
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingCommentId(comment.commentId);
+                                      setCommentText(comment.contentMarkdown);
+                                    }}
+                                    className="text-xs font-semibold text-[#ff824d]"
+                                  >
+                                    수정
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void deleteComment(comment.commentId)}
+                                    className="text-xs font-semibold text-red-500"
+                                  >
+                                    삭제
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                            <p className="mt-3 whitespace-pre-wrap text-sm leading-6">
+                              {comment.contentMarkdown}
+                            </p>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                  {selectedDiscussion.allowComments === false ? (
+                    <p className={`mt-4 text-sm ${mutedClass}`}>
+                      이 토론은 댓글 작성이 비활성화되어 있습니다.
+                    </p>
+                  ) : (
+                    <div className="mt-4 flex gap-2">
+                      <input
+                        className={`${discussionInputClass} flex-1`}
+                        value={commentText}
+                        onChange={(event) => setCommentText(event.target.value)}
+                        placeholder="댓글을 입력하세요"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void submitComment()}
+                        disabled={saving || !commentText.trim()}
+                        className={discussionPrimaryButtonClass}
+                      >
+                        {editingCommentId == null ? "등록" : "저장"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-full flex-col gap-4 pb-6">
