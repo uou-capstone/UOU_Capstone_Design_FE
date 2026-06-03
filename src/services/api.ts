@@ -5182,7 +5182,7 @@ function normalizeLearningChatMessagesPayload(raw: unknown): LearningChatMessage
     .map((item) => normalizeLearningChatMessage(item));
 }
 
-/** 요청 바디: { type, …필드 } 평탄화 (payload 중첩 제거). lectureId는 쿼리로만 전달 */
+/** 요청 바디: payload 계약을 보존하되 기존 루트 필드 호환도 유지. lectureId는 쿼리로만 전달 */
 const flattenLearningEventBody = (eventBody: {
   type: string;
   payload?: Record<string, unknown>;
@@ -5190,6 +5190,7 @@ const flattenLearningEventBody = (eventBody: {
   const flat: Record<string, unknown> = { type: eventBody.type };
   const p = eventBody.payload;
   if (p != null && typeof p === "object" && !Array.isArray(p)) {
+    flat.payload = p;
     Object.assign(flat, p);
   }
   return flat;

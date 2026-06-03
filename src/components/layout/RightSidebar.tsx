@@ -2294,6 +2294,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
                               <path d="M5 5h14v10H9l-4 4V5z" strokeLinejoin="round" />
                             </svg>
+                          ) : btn.id === "quiz_type_essay" ? (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
+                              <path d="M6 5h12M6 9h12M6 13h9M6 17h6" strokeLinecap="round" />
+                            </svg>
                           ) : null}
                           {btn.label}
                         </button>

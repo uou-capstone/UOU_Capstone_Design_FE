@@ -12,8 +12,6 @@ const STREAM_REVEAL_INTERVAL_MS = 42;
 const STREAM_REVEAL_CHARS_PER_TICK = 14;
 const INTEGRATED_WELCOME_TEXT_RE =
   /학습\s*세션에\s*오신\s*것을\s*환영합니다|학습\s*세션에\s*오신것을\s*환영합니다/;
-const INTEGRATED_QUIZ_REQUEST_RE =
-  /(퀴즈|quiz|문제\s*만들|문제\s*내|시험\s*만들|시험\s*내)/i;
 const INTERNAL_THOUGHT_DIAGNOSTIC_RE =
   /(validation\s*error|json\s*decode|jsondecodeerror|parse\s*error|parsing|parser|schema|enum|pydantic|zoderror|traceback|stack\s*trace|exception|typeerror|referenceerror|syntaxerror|keyerror|valueerror|cannot\s+deserialize|no\s+enum\s+constant|failed\s+to\s+parse)/i;
 const FRIENDLY_INTERNAL_THOUGHT_TEXT =
@@ -26,6 +24,20 @@ const PAGE_REQUEST_PATTERNS = [
   /(?:^|\s)(\d{1,4})\s*(?:페이지|쪽|page)\b/i,
   /\b(?:page|p)\.?\s*(\d{1,4})\b/i,
 ];
+const INTEGRATED_QUIZ_TYPE_BY_ACTION: Record<string, string> = {
+  quiz_type_five_choice: "Five_Choice",
+  quiz_type_ox_problem: "OX_Problem",
+  quiz_type_short_answer: "Short_Answer",
+  quiz_type_essay: "Essay",
+  quiz_type_flash_card: "Flash_Card",
+};
+const INTEGRATED_QUIZ_TYPE_LABELS: Record<string, string> = {
+  Five_Choice: "객관식",
+  OX_Problem: "OX",
+  Short_Answer: "단답형",
+  Essay: "서술형",
+  Flash_Card: "플래시카드",
+};
 
 function toUserFacingThoughtText(text: string): string {
   return INTERNAL_THOUGHT_DIAGNOSTIC_RE.test(text)
@@ -47,6 +59,68 @@ function extractRequestedPage(text: string): number | null {
     if (Number.isFinite(page) && page > 0) return Math.round(page);
   }
   return null;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function pickString(record: Record<string, unknown> | null, keys: string[]): string | null {
+  if (!record) return null;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function integratedQuizTypeLabel(type: string | null | undefined): string {
+  const normalized = String(type ?? "").trim();
+  if (!normalized) return "";
+  return INTEGRATED_QUIZ_TYPE_LABELS[normalized] ?? normalized.replace(/_/g, " ");
+}
+
+function collectUiPatchCandidates(
+  value: unknown,
+  out: Record<string, unknown>[],
+  depth = 0,
+): void {
+  const record = asRecord(value);
+  if (!record) return;
+  out.push(record);
+  if (depth >= 2) return;
+  for (const key of ["ui", "uiPatch", "ui_patch", "patch", "state"]) {
+    collectUiPatchCandidates(record[key], out, depth + 1);
+  }
+}
+
+function collectIntegratedLearningUiPatches(raw: unknown): Record<string, unknown>[] {
+  const root = asRecord(raw);
+  if (!root) return [];
+  const candidates: Record<string, unknown>[] = [];
+  collectUiPatchCandidates(root, candidates);
+  collectUiPatchCandidates(root.data, candidates);
+  collectUiPatchCandidates(root.payload, candidates);
+  return candidates;
+}
+
+function findIntegratedLearningUiValue(raw: unknown, keys: string[]): string | null {
+  for (const candidate of collectIntegratedLearningUiPatches(raw)) {
+    const value = pickString(candidate, keys);
+    if (value) return value;
+  }
+  return null;
+}
+
+function eventRequestsQuizTypePicker(event: IntegratedLearningMessage): boolean {
+  const modal = findIntegratedLearningUiValue(event.raw, ["modal"]);
+  return modal === "QUIZ_TYPE_PICKER";
+}
+
+function eventUiWidget(event: IntegratedLearningMessage): string | null {
+  return findIntegratedLearningUiValue(event.raw, ["widget"]);
 }
 
 export interface IntegratedChatMessage {
@@ -301,10 +375,11 @@ export function useIntegratedLearningChat(options: {
         assistantVariant: "orchestrator",
         text: "퀴즈 유형을 선택해 주세요.",
         actionButtons: [
-          { id: "quiz_type_flash_card", label: "플래시카드", variant: "primary" },
-          { id: "quiz_type_ox_problem", label: "OX 문제", variant: "muted" },
-          { id: "quiz_type_five_choice", label: "5지선다", variant: "muted" },
-          { id: "quiz_type_short_answer", label: "단답/서술형", variant: "muted" },
+          { id: "quiz_type_five_choice", label: "객관식", variant: "primary" },
+          { id: "quiz_type_ox_problem", label: "OX", variant: "muted" },
+          { id: "quiz_type_short_answer", label: "단답형", variant: "muted" },
+          { id: "quiz_type_essay", label: "서술형", variant: "muted" },
+          { id: "quiz_type_flash_card", label: "플래시카드", variant: "muted" },
         ],
       },
     ]);
@@ -600,18 +675,7 @@ export function useIntegratedLearningChat(options: {
         notifyDrainIfDone();
         await waitForRenderedDrain();
 
-        const hasQuizPickerModal = tail.some((ev) => {
-          const raw = ev.raw as Record<string, unknown> | undefined;
-          const data =
-            raw?.data != null && typeof raw.data === "object"
-              ? (raw.data as Record<string, unknown>)
-              : null;
-          const ui =
-            data?.ui != null && typeof data.ui === "object"
-              ? (data.ui as Record<string, unknown>)
-              : null;
-          return ui?.modal === "QUIZ_TYPE_PICKER";
-        });
+        const hasQuizPickerModal = tail.some(eventRequestsQuizTypePicker);
 
         if (gotBody && answerMessageId != null) {
           const overlay = parseIntegratedLearningQuizOverlayFromMessageTail(tail);
@@ -716,7 +780,7 @@ export function useIntegratedLearningChat(options: {
           lastRequestedQuizTypeRef.current = null;
         }
 
-        if (!gotBody && !gotThought) {
+        if (!gotBody && !gotThought && !hasQuizPickerModal) {
           appendAgentMessages(tail, {
             suppressWelcomeText: eventType === "SESSION_ENTERED",
           });
@@ -753,18 +817,7 @@ export function useIntegratedLearningChat(options: {
           appendQuizTypePicker();
         }
         const doneWidget = tail
-          .map((ev) => {
-            const raw = ev.raw as Record<string, unknown> | undefined;
-            const data =
-              raw?.data != null && typeof raw.data === "object"
-                ? (raw.data as Record<string, unknown>)
-                : null;
-            const ui =
-              data?.ui != null && typeof data.ui === "object"
-                ? (data.ui as Record<string, unknown>)
-                : null;
-            return typeof ui?.widget === "string" ? ui.widget : null;
-          })
+          .map(eventUiWidget)
           .find((w): w is string => !!w);
         if (doneWidget) {
           appendDecisionWidget(doneWidget);
@@ -818,16 +871,6 @@ export function useIntegratedLearningChat(options: {
         goToPage?.(requestedPage);
       }
       setMessages((prev) => [...prev, { id: nextMessageId(), isUser: true, text }]);
-      // 사용자가 퀴즈 생성을 요청하면, 즉시 생성하지 않고 유형 선택 UI를 먼저 노출한다.
-      if (INTEGRATED_QUIZ_REQUEST_RE.test(text)) {
-        try {
-          await ensureSession();
-        } catch {
-          // 세션 생성 실패 시에도 현재 화면에서는 유형 선택 UI를 보여준다.
-        }
-        appendQuizTypePicker();
-        return;
-      }
       setBusy(true);
       try {
         await runStreamingAgentTurn(
@@ -840,10 +883,8 @@ export function useIntegratedLearningChat(options: {
       }
     },
     [
-      appendQuizTypePicker,
       busy,
       enabled,
-      ensureSession,
       goToPage,
       lectureId,
       nextMessageId,
@@ -864,20 +905,7 @@ export function useIntegratedLearningChat(options: {
   const handleAction = useCallback(
     async (actionId: string) => {
       if (!lectureId || !enabled || busy) return;
-      const quizTypeMap: Record<string, string> = {
-        quiz_type_flash_card: "Flash_Card",
-        quiz_type_ox_problem: "OX_Problem",
-        quiz_type_five_choice: "Five_Choice",
-        quiz_type_short_answer: "Short_Answer",
-      };
-      const quizType = quizTypeMap[actionId];
-      const quizTypeLabelMap: Record<string, string> = {
-        Flash_Card: "플래시카드",
-        Five_Choice: "객관식",
-        OX_Problem: "OX",
-        Short_Answer: "단답형",
-        Essay: "서술형",
-      };
+      const quizType = INTEGRATED_QUIZ_TYPE_BY_ACTION[actionId];
       const decisionEventMap: Record<string, string> = {
         start_explanation_accept: "START_EXPLANATION_DECISION",
         start_explanation_reject: "START_EXPLANATION_DECISION",
@@ -919,15 +947,18 @@ export function useIntegratedLearningChat(options: {
       };
       const selectedLabel =
         actionLabelMap[actionId] ??
-        (quizType ? quizTypeLabelMap[quizType] ?? quizType : decisionEvent);
+        (quizType ? integratedQuizTypeLabel(quizType) : decisionEvent);
+      const selectedText = selectedLabel
+        ? `선택됨: ${selectedLabel}`
+        : "선택을 처리했습니다.";
       setMessages((prev) => [
         ...prev.map((message) =>
           message.actionButtons?.some((button) => button.id === actionId)
             ? {
                 ...message,
                 text: message.text
-                  ? `${message.text}\n\n선택됨: ${selectedLabel}`
-                  : `선택됨: ${selectedLabel}`,
+                  ? `${message.text}\n\n${selectedText}`
+                  : selectedText,
                 actionButtons: undefined,
               }
             : message,
