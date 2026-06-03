@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { RefreshIcon } from "@/components/common/Icons";
 import { useTheme } from "../../contexts/ThemeContext";
+import { formatKoreanDateTime } from "@/utils/dateFormat";
 
 type UpdatePart = "ALL" | "AI" | "BE" | "FE";
 type RepoPart = Exclude<UpdatePart, "ALL">;
@@ -85,15 +86,7 @@ function splitCommitMessage(message: string): { title: string; body?: string } {
 }
 
 function formatDateTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return new Intl.DateTimeFormat("ko-KR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
+  return formatKoreanDateTime(value);
 }
 
 function formatDateLabel(value: string): string {

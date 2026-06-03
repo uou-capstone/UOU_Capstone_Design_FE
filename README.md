@@ -202,12 +202,14 @@ yarn lint
 
 | 변수 | 설명 | 기본값 |
 |------|------|--------|
-| `VITE_API_URL` | 백엔드 API 기본 URL(시험 생성 포함 **모든** `apiRequest` 호출) | `https://dev.uouaitutor.duckdns.org` |
+| `VITE_API_BASE_URL` | 백엔드 API 기본 URL. Netlify 배포 환경변수로 우선 사용 | `VITE_API_URL` 값 |
+| `VITE_API_URL` | 백엔드 API 기본 URL(시험 생성 포함 **모든** `apiRequest` 호출). `VITE_API_BASE_URL`이 없을 때 사용 | `https://dev.uouaitutor.duckdns.org` |
 | `VITE_AI_SERVICE_URL` | (현재 코드에서 시험 생성 미사용) `aiServiceRequest`용 예비 URL | `VITE_API_URL`과 동일 |
 
 `.env` 예시:
 
 ```env
+VITE_API_BASE_URL=https://dev.uouaitutor.duckdns.org
 VITE_API_URL=https://dev.uouaitutor.duckdns.org
 # 시험 생성은 위 URL의 /api/exams/generation/async 만 사용합니다.
 ```

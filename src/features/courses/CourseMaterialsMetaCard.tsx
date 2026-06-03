@@ -45,6 +45,10 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
 }) => {
   const [copied, setCopied] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const editDescriptionRows = Math.min(
+    4,
+    Math.max(1, editDescription.split(/\r?\n/).length),
+  );
 
   useEffect(() => {
     return () => {
@@ -82,7 +86,7 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
               <form
                 id="course-meta-inline-edit-form"
                 onSubmit={onSaveCourseMeta}
-                className="min-w-0 flex-1 space-y-2"
+                className="min-w-0 flex-1 max-w-5xl space-y-2"
               >
                 <input
                   type="text"
@@ -171,7 +175,7 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
         </div>
 
         <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 max-w-5xl">
             {isEditingCourseMeta ? (
               <textarea
                 form="course-meta-inline-edit-form"
@@ -179,8 +183,8 @@ export const CourseMaterialsMetaCard: React.FC<CourseMaterialsMetaCardProps> = (
                 onChange={(event) => onEditDescriptionChange?.(event.target.value)}
                 disabled={editSaving}
                 maxLength={500}
-                rows={3}
-                className={`w-full resize-y rounded-[var(--app-control-radius)] border px-3 py-2 text-sm leading-5 outline-none transition-colors ${
+                rows={editDescriptionRows}
+                className={`w-full resize-none rounded-[var(--app-control-radius)] border px-3 py-2 text-sm leading-5 outline-none transition-colors ${
                   isDarkMode
                     ? "border-[#3a3a3a] bg-[#181818] text-gray-100 placeholder:text-gray-500 focus:border-[#ff824d]"
                     : "border-[#dedbd5] bg-white text-gray-900 placeholder:text-gray-400 focus:border-[#ff824d]"

@@ -376,7 +376,7 @@ const AppLayout: React.FC = () => {
           next.delete("exam");
           return next;
         },
-        { replace: true },
+        { replace: false },
       );
     }
   };

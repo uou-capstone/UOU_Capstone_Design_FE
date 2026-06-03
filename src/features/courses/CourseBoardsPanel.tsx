@@ -1,6 +1,7 @@
 import React from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { RefreshIcon } from "@/components/common/Icons";
+import { formatKoreanDateTime } from "@/utils/dateFormat";
 import {
   discussionApi,
   noticeApi,
@@ -212,10 +213,7 @@ function noticeIdFromOperation(operation: AiAgentOperation): number | null {
 }
 
 function formatInstant(value: string | undefined): string {
-  if (!value) return "-";
-  const time = Date.parse(value);
-  if (Number.isNaN(time)) return value;
-  return new Date(time).toLocaleString("ko-KR");
+  return formatKoreanDateTime(value);
 }
 
 function escapeHtml(value: string): string {

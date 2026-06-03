@@ -4,6 +4,7 @@ import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
 import { BellIcon } from "@/components/common/Icons";
 import { notificationsApi, type NotificationItem } from "@/services/api";
+import { formatKoreanDateTime } from "@/utils/dateFormat";
 
 function SettingsIcon({ className }: { className?: string }) {
   return (
@@ -43,15 +44,6 @@ function SystemIcon({ className }: { className?: string }) {
     <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path fill="currentColor" d="M12 12 L12 2 A10 10 0 0 0 12 22 Z" />
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2 A10 10 0 0 1 12 22" fill="none" />
-    </svg>
-  );
-}
-
-function BookOpenIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5.5A3.5 3.5 0 0 1 7.5 2H12v18H7.5A3.5 3.5 0 0 0 4 23.5v-18Z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 5.5A3.5 3.5 0 0 0 16.5 2H12v18h4.5a3.5 3.5 0 0 1 3.5 3.5v-18Z" />
     </svg>
   );
 }
@@ -284,12 +276,17 @@ const TopNav: React.FC<TopNavProps> = ({
         <button
           type="button"
           onClick={handleNavigateHome}
-          className={`flex min-w-0 items-center gap-3 text-lg font-semibold xl:text-xl 2xl:text-2xl ${isDarkMode ? "text-white" : "text-gray-900"}`}
+          className="flex min-w-0 items-center"
+          aria-label="EduPilot 홈"
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[#ff824d]" aria-hidden="true">
-            <BookOpenIcon className="h-7 w-7" />
+          <span className="flex h-10 w-40 shrink-0 items-center justify-center overflow-hidden sm:h-11 sm:w-44" aria-hidden="true">
+            <img
+              src="/edupilot-logo.svg"
+              alt=""
+              className="h-full w-full object-contain"
+              draggable={false}
+            />
           </span>
-          <span className="truncate">AI Tutor LMS</span>
         </button>
       </div>
       <div className="min-w-0 flex-1" aria-hidden="true" />
@@ -392,7 +389,7 @@ const TopNav: React.FC<TopNavProps> = ({
                                     {n.body}
                                   </div>
                                   <div className={`text-[11px] mt-2 opacity-70 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                                    {n.createdAt}
+                                    {formatKoreanDateTime(n.createdAt)}
                                   </div>
                                 </div>
                               </div>

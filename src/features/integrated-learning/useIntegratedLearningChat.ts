@@ -20,6 +20,8 @@ const FRIENDLY_INTERNAL_THOUGHT_TEXT =
   "생각 과정 중 내부 처리 정보를 정리하고 있습니다. 최종 답변에는 필요한 내용만 반영할게요.";
 const FRIENDLY_INTEGRATED_ERROR_TEXT =
   "통합학습 처리 중 내부 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.";
+const INTEGRATED_LEARNING_LOCAL_HISTORY_PREFIX =
+  "ai-tutor-integrated-learning-history";
 const PAGE_REQUEST_PATTERNS = [
   /(?:^|\s)(\d{1,4})\s*(?:페이지|쪽|page)\b/i,
   /\b(?:page|p)\.?\s*(\d{1,4})\b/i,
@@ -67,6 +69,99 @@ export interface IntegratedChatMessage {
   }[];
   /** 구조화 퀴즈가 있을 때 채팅에서 오버레이를 다시 열 수 있는 버튼 */
   integratedQuizOpenButton?: boolean;
+}
+
+type PersistedIntegratedChatMessage = Omit<
+  IntegratedChatMessage,
+  "file" | "isLoading" | "streamingMarkdown"
+>;
+
+interface PersistedIntegratedLearningHistory {
+  sessionId: string;
+  lectureId: number;
+  messages: PersistedIntegratedChatMessage[];
+  quizOverlayModel?: IntegratedQuizOverlayModel | null;
+  updatedAt: string;
+}
+
+function getIntegratedLearningLocalHistoryKey(
+  lectureId: number,
+  sessionId: string | number,
+): string {
+  return `${INTEGRATED_LEARNING_LOCAL_HISTORY_PREFIX}:${lectureId}:${sessionId}`;
+}
+
+function sanitizeIntegratedMessagesForStorage(
+  messages: IntegratedChatMessage[],
+): PersistedIntegratedChatMessage[] {
+  return messages
+    .filter((message) => !message.isLoading)
+    .slice(-120)
+    .map((message) => {
+      const rest = { ...message };
+      delete rest.file;
+      delete rest.isLoading;
+      delete rest.streamingMarkdown;
+      return rest;
+    });
+}
+
+function readIntegratedLearningLocalHistory(
+  lectureId: number,
+  sessionId: string | number,
+): PersistedIntegratedLearningHistory | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(
+      getIntegratedLearningLocalHistoryKey(lectureId, sessionId),
+    );
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PersistedIntegratedLearningHistory;
+    if (!Array.isArray(parsed.messages)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeIntegratedLearningLocalHistory(
+  lectureId: number,
+  sessionId: string | number,
+  messages: IntegratedChatMessage[],
+  quizOverlayModel: IntegratedQuizOverlayModel | null,
+): void {
+  if (typeof window === "undefined") return;
+  const cleanMessages = sanitizeIntegratedMessagesForStorage(messages);
+  if (cleanMessages.length === 0) return;
+  try {
+    const payload: PersistedIntegratedLearningHistory = {
+      lectureId,
+      sessionId: String(sessionId),
+      messages: cleanMessages,
+      quizOverlayModel,
+      updatedAt: new Date().toISOString(),
+    };
+    window.localStorage.setItem(
+      getIntegratedLearningLocalHistoryKey(lectureId, sessionId),
+      JSON.stringify(payload),
+    );
+  } catch {
+    // 저장소 용량 제한 등은 서버 히스토리 복원으로 대체한다.
+  }
+}
+
+function shouldPreferLocalIntegratedHistory(
+  localHistory: PersistedIntegratedLearningHistory | null,
+  serverMessages: IntegratedChatMessage[],
+): localHistory is PersistedIntegratedLearningHistory {
+  if (!localHistory?.messages?.length) return false;
+  const hasUiMetadata = localHistory.messages.some(
+    (message) =>
+      Boolean(message.thoughtSummary?.trim()) ||
+      Boolean(message.integratedQuizOpenButton) ||
+      Boolean(message.actionButtons?.length),
+  );
+  return hasUiMetadata || localHistory.messages.length >= serverMessages.length;
 }
 
 function learningHistoryToChatMessages(
@@ -125,6 +220,18 @@ export function useIntegratedLearningChat(options: {
   const openQuizOverlay = useCallback(() => {
     if (quizOverlayModel) setQuizOverlayOpen(true);
   }, [quizOverlayModel]);
+
+  useEffect(() => {
+    if (!enabled || !lectureId || !sessionIdRef.current || messages.length === 0) {
+      return;
+    }
+    writeIntegratedLearningLocalHistory(
+      lectureId,
+      sessionIdRef.current,
+      messages,
+      quizOverlayModel,
+    );
+  }, [enabled, lectureId, messages, quizOverlayModel]);
 
   const ensureSession = useCallback(async (): Promise<string> => {
     if (!lectureId) throw new Error("강의를 먼저 선택해 주세요.");
@@ -713,6 +820,11 @@ export function useIntegratedLearningChat(options: {
       setMessages((prev) => [...prev, { id: nextMessageId(), isUser: true, text }]);
       // 사용자가 퀴즈 생성을 요청하면, 즉시 생성하지 않고 유형 선택 UI를 먼저 노출한다.
       if (INTEGRATED_QUIZ_REQUEST_RE.test(text)) {
+        try {
+          await ensureSession();
+        } catch {
+          // 세션 생성 실패 시에도 현재 화면에서는 유형 선택 UI를 보여준다.
+        }
         appendQuizTypePicker();
         return;
       }
@@ -731,6 +843,7 @@ export function useIntegratedLearningChat(options: {
       appendQuizTypePicker,
       busy,
       enabled,
+      ensureSession,
       goToPage,
       lectureId,
       nextMessageId,
@@ -758,6 +871,13 @@ export function useIntegratedLearningChat(options: {
         quiz_type_short_answer: "Short_Answer",
       };
       const quizType = quizTypeMap[actionId];
+      const quizTypeLabelMap: Record<string, string> = {
+        Flash_Card: "플래시카드",
+        Five_Choice: "객관식",
+        OX_Problem: "OX",
+        Short_Answer: "단답형",
+        Essay: "서술형",
+      };
       const decisionEventMap: Record<string, string> = {
         start_explanation_accept: "START_EXPLANATION_DECISION",
         start_explanation_reject: "START_EXPLANATION_DECISION",
@@ -797,7 +917,9 @@ export function useIntegratedLearningChat(options: {
         retest_accept: "재시험 시작",
         retest_reject: "재시험 건너뛰기",
       };
-      const selectedLabel = actionLabelMap[actionId] ?? decisionEvent;
+      const selectedLabel =
+        actionLabelMap[actionId] ??
+        (quizType ? quizTypeLabelMap[quizType] ?? quizType : decisionEvent);
       setMessages((prev) => [
         ...prev.map((message) =>
           message.actionButtons?.some((button) => button.id === actionId)
@@ -926,8 +1048,20 @@ export function useIntegratedLearningChat(options: {
         }
 
         const restoredMessages = learningHistoryToChatMessages(selectedHistory);
-        setMessages(restoredMessages);
-        messageIdRef.current = restoredMessages.reduce(
+        const localHistory = readIntegratedLearningLocalHistory(
+          lectureId,
+          sessionIdRef.current,
+        );
+        const messagesToRestore = shouldPreferLocalIntegratedHistory(
+          localHistory,
+          restoredMessages,
+        )
+          ? (localHistory.messages as IntegratedChatMessage[])
+          : restoredMessages;
+        setMessages(messagesToRestore);
+        setQuizOverlayModel(localHistory?.quizOverlayModel ?? null);
+        setQuizOverlayOpen(false);
+        messageIdRef.current = messagesToRestore.reduce(
           (max, item) => Math.max(max, item.id),
           0,
         );

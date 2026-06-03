@@ -27,6 +27,33 @@ interface AuthContextType {
 // 자동 로그아웃 시간 (밀리초) - 30분
 const AUTO_LOGOUT_TIME = 30 * 60 * 1000;
 
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const isAuthStatusFailure = (error: unknown): boolean => {
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    /\b(401|403)\b/.test(message) ||
+    message.includes('unauthorized') ||
+    message.includes('forbidden') ||
+    message.includes('인증이 필요합니다') ||
+    message.includes('로그인이 필요합니다') ||
+    message.includes('권한이 없습니다')
+  );
+};
+
+const isNetworkTransportFailure = (error: unknown): boolean => {
+  const message = getErrorMessage(error).toLowerCase();
+  return (
+    message.includes('네트워크 연결 실패') ||
+    message.includes('failed to fetch') ||
+    message.includes('network') ||
+    message.includes('cors') ||
+    message.includes('서버에서 응답이 없습니다') ||
+    message.includes('서버가 일시적으로 응답하지 않습니다')
+  );
+};
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const useAuth = (): AuthContextType => {
@@ -70,8 +97,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           }
         } catch (error) {
           lastError = error;
-          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorMessage = getErrorMessage(error);
           console.warn(`초기 로드 getMe 호출 실패 (시도 ${attempt + 1}/3):`, errorMessage);
+
+          if (isAuthStatusFailure(error) || !isNetworkTransportFailure(error)) {
+            break;
+          }
 
           if (attempt < 2) {
             await new Promise(resolve => setTimeout(resolve, 500));
@@ -80,23 +111,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       if (lastError) {
-        const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
+        const errorMessage = getErrorMessage(lastError);
         console.error('초기 로드 getMe 호출이 모든 재시도 후에도 실패했습니다:', errorMessage);
 
-        if (errorMessage.includes('네트워크 연결 실패') || 
-            errorMessage.includes('Failed to fetch') ||
-            errorMessage.includes('404') ||
-            errorMessage.includes('405') ||
-            errorMessage.includes('Not Found') ||
-            errorMessage.includes('Method Not Allowed') ||
-            errorMessage.includes('CORS')) {
-          setUser(null);
-        } else if (errorMessage.includes('인증이 필요합니다') || 
-                   errorMessage.includes('401') ||
-                   errorMessage.includes('Unauthorized')) {
+        if (isAuthStatusFailure(lastError)) {
           removeAuthToken();
+          removeRefreshToken();
           setUser(null);
         } else {
+          // /api/users/me 네트워크 오류는 health와 별개로 취급한다.
+          // 서버 OFFLINE 판정은 checkServerStatus(/api/health)에서만 수행한다.
           setUser(null);
         }
       }
@@ -125,7 +149,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             } catch (getMeError) {
               lastError = getMeError;
               console.warn(`getMe 호출 실패 (시도 ${attempt + 1}/3):`, getMeError);
-              
+
+              if (
+                isAuthStatusFailure(getMeError) ||
+                !isNetworkTransportFailure(getMeError)
+              ) {
+                break;
+              }
+
               // 마지막 시도가 아니면 잠시 대기 후 재시도
               if (attempt < 2) {
                 await new Promise(resolve => setTimeout(resolve, 500));
@@ -135,12 +166,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           
           // 모든 시도 실패 시 에러 로깅
           console.error('getMe 호출이 모든 재시도 후에도 실패했습니다:', lastError);
-          const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
+          const errorMessage = getErrorMessage(lastError);
           console.error('에러 상세:', {
             message: errorMessage,
             stack: lastError instanceof Error ? lastError.stack : undefined,
           });
-          
+
+          if (isAuthStatusFailure(lastError)) {
+            removeAuthToken();
+            removeRefreshToken();
+            setUser(null);
+            throw new Error('로그인 세션을 확인할 수 없습니다. 다시 로그인해주세요.');
+          }
+
           // getMe 실패해도 로그인은 성공한 것으로 간주 (토큰이 있으므로)
           // 하지만 사용자 정보는 null로 설정
           setUser(null);
@@ -263,7 +301,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const userData = await authApi.getMe();
       setUser(userData);
     } catch (error) {
-      removeAuthToken();
+      if (isAuthStatusFailure(error)) {
+        removeAuthToken();
+        removeRefreshToken();
+      }
       setUser(null);
       throw error;
     }

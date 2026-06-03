@@ -219,8 +219,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const examCountFieldFocusedRef = useRef(false);
   const [examCountFieldFocused, setExamCountFieldFocused] = useState(false);
   const [examCountDraft, setExamCountDraft] = useState("");
-  const [examNameInfoOpen, setExamNameInfoOpen] = useState(false);
-  const examNameInfoRef = useRef<HTMLDivElement>(null);
   /** 시험 이름·주제: 부모(MainContent)로 끌어올리지 않고 로컬에서만 관리 → 마크다운 미리보기 전체 리렌더 방지 */
   const [localExamTopic, setLocalExamTopic] = useState("");
   const [localExamDisplayName, setLocalExamDisplayName] = useState("");
@@ -398,9 +396,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   }`;
   const examSectionTitleClass = `text-sm font-semibold ${
     isDarkMode ? "text-white" : "text-gray-950"
-  }`;
-  const examSectionCaptionClass = `text-xs ${
-    isDarkMode ? "text-zinc-400" : "text-gray-500"
   }`;
   const examSecondaryButtonClass = `inline-flex items-center justify-center rounded-lg border px-3 py-2 text-xs font-semibold transition-colors ${
     isDarkMode
@@ -998,20 +993,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     };
   }, [isActionMenuOpen]);
 
-  useEffect(() => {
-    if (!examNameInfoOpen) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        examNameInfoRef.current &&
-        !examNameInfoRef.current.contains(event.target as Node)
-      ) {
-        setExamNameInfoOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [examNameInfoOpen]);
-
   // 스트리밍: 다음 세그먼트 가져오기
   const fetchNextSegment = async (loadingMessageId?: number) => {
     if (!currentLectureId || isFetchingNext) return;
@@ -1539,9 +1520,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <h3 className={examSectionTitleClass}>시험 설정</h3>
-                  <p className={`mt-1 ${examSectionCaptionClass}`}>
-                    유형과 문항 수를 먼저 정한 뒤 시험 내용을 입력합니다.
-                  </p>
                 </div>
                 <span
                   className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
@@ -1607,9 +1585,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             <section className={examCardClass}>
               <div className="mb-3">
                 <h3 className={examSectionTitleClass}>출제 방향</h3>
-                <p className={`mt-1 ${examSectionCaptionClass}`}>
-                  난이도, 깊이, 문제 스타일을 조합해 시험 성격을 맞춥니다.
-                </p>
               </div>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
                 <div className={examFieldShellClass}>
@@ -1642,44 +1617,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
             <section className={examCardClass}>
               <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-              <div className={examFieldShellClass}>
-                <div className="relative" ref={examNameInfoRef}>
-                  <div className="flex items-center gap-1">
-                    <label className={examLabelClass}>
-                      시험 이름 <span className="font-normal opacity-70">(선택)</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setExamNameInfoOpen((prev) => !prev);
-                      }}
-                      className={`inline-flex h-4 w-4 items-center justify-center rounded-full text-xs border cursor-pointer ${
-                        isDarkMode
-                          ? "border-[#2c5a50] text-zinc-300 hover:bg-white/10"
-                          : "border-[#d9d9dd] text-gray-600 hover:bg-[#eeece7]"
-                      }`}
-                      aria-label="시험 이름 안내"
-                      title="시험 이름 안내"
-                    >
-                      i
-                    </button>
-                  </div>
-                  {examNameInfoOpen && (
-                    <div
-                      className={`absolute left-2 top-6 z-20 w-80 rounded-lg border px-2.5 py-2 text-xs leading-snug shadow-lg ${
-                        isDarkMode
-                          ? "bg-[#102a35] border-[#2c5a50] text-zinc-200"
-                          : "bg-white border-[#d9d9dd] text-gray-700"
-                      }`}
-                    >
-                      비워 두면 유형 · 문항 수 형식으로 붙습니다. 같은 유형·문항 수 조합이 이미 있으면 (2), (3)…이 자동으로 붙습니다.
-                      <br />
-                      이름 예시 — 개념 정리를 위한 플래시카드, 중간고사 대비 암기용 문제, 빠른 복습용 테스트
-                    </div>
-                  )}
-                </div>
+                <div className={examFieldShellClass}>
+                  <label className={examLabelClass}>
+                    시험 이름 <span className="font-normal opacity-70">(선택)</span>
+                  </label>
                 <input
                   type="text"
                   value={localExamDisplayName}
@@ -1766,9 +1707,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               <div className="flex items-center justify-between mb-0.5">
                 <div>
                   <span className={examSectionTitleClass}>시험 목록</span>
-                  <p className={`mt-1 ${examSectionCaptionClass}`}>
-                    생성된 시험을 열거나 편집 모드에서 정리합니다.
-                  </p>
                 </div>
                 <div className="flex items-center gap-1">
                   {!examProps.examEditMode ? (

@@ -1,5 +1,6 @@
 import React from "react";
 import { RefreshIcon } from "@/components/common/Icons";
+import { formatKoreanDateTime } from "@/utils/dateFormat";
 import {
   courseApi,
   type AttendanceRecord,
@@ -17,6 +18,7 @@ interface AttendanceSessionsPanelProps {
   lectures?: CourseDetail["lectures"];
   isDarkMode: boolean;
   isTeacher: boolean;
+  embedded?: boolean;
 }
 
 type SessionFormState = {
@@ -70,10 +72,7 @@ function formatDate(value: string): string {
 }
 
 function formatInstant(value: string | undefined): string {
-  if (value == null || value.trim() === "") return "-";
-  const time = Date.parse(value);
-  if (Number.isNaN(time)) return value;
-  return new Date(time).toLocaleString("ko-KR");
+  return formatKoreanDateTime(value);
 }
 
 function formatTimeRange(session: AttendanceSession): string {
@@ -121,6 +120,7 @@ export const AttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
   courseId,
   isDarkMode,
   isTeacher,
+  embedded = false,
   ...rest
 }) => {
   if (!isTeacher) {
@@ -131,6 +131,7 @@ export const AttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
       courseId={courseId}
       isDarkMode={isDarkMode}
       isTeacher={isTeacher}
+      embedded={embedded}
       {...rest}
     />
   );
@@ -140,6 +141,7 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
   courseId,
   lectures,
   isDarkMode,
+  embedded = false,
 }) => {
   const [page, setPage] = React.useState(0);
   const [sessions, setSessions] = React.useState<AttendanceSession[]>([]);
@@ -405,50 +407,306 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
   }, [courseId, loadMatrix, loadRecords, records, selectedSession]);
 
   const surfaceClass = isDarkMode
-    ? "border-[#1b4d44] bg-[#0b241f] text-gray-100"
-    : "border-[#d9d9dd] bg-white text-gray-900";
+    ? "border-[#2b2b2b] bg-[#202020] text-gray-100"
+    : "border-[#dedbd5] bg-white text-gray-900";
   const softSurfaceClass = isDarkMode
-    ? "border-[#1b3443] bg-white/[0.04]"
-    : "border-[#d9d9dd] bg-[#eeece7]";
+    ? "border-[#2b2b2b] bg-white/[0.04]"
+    : "border-[#dedbd5] bg-[#fbfaf7]";
   const mutedTextClass = isDarkMode ? "text-gray-400" : "text-gray-500";
   const inputClass = `h-10 rounded-lg border px-3 text-sm outline-none transition-colors focus:ring-1 disabled:opacity-60 ${
     isDarkMode
-      ? "border-[#1b3443] bg-[#102a35] text-gray-100 placeholder:text-gray-500 focus:border-[#ffad9b] focus:ring-[#ffad9b]/20"
-      : "border-[#d9d9dd] bg-white text-gray-900 placeholder:text-gray-400 focus:border-[#1863dc] focus:ring-[#1863dc]/20"
+      ? "border-[#343434] bg-[#181818] text-gray-100 placeholder:text-gray-500 focus:border-[#ffad9b] focus:ring-[#ffad9b]/20"
+      : "border-[#dedbd5] bg-white text-gray-900 placeholder:text-gray-400 focus:border-[#ff824d] focus:ring-[#ff824d]/20"
   }`;
   const labelClass = `text-xs font-semibold ${mutedTextClass}`;
   const busy = loading || saving || detailLoading || deletingId != null;
 
-  return (
-    <div className="flex min-h-full flex-col gap-4 pb-6">
-      <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
-        <div className="mb-4 flex min-h-10 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold">출석 회차 관리</h2>
+  if (embedded) {
+    return (
+      <section className={`rounded-xl border ${surfaceClass}`}>
+        <div className="flex flex-col gap-3 border-b border-inherit px-4 py-4">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="text-base font-semibold">출석 관리</h3>
+            <button
+              type="button"
+              onClick={() => void loadSessions(page)}
+              disabled={busy}
+              aria-label="새로고침"
+              title="새로고침"
+              className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-semibold transition-colors disabled:opacity-50 ${
+                isDarkMode
+                  ? "border-[#343434] text-gray-200 hover:bg-white/10"
+                  : "border-[#dedbd5] text-gray-700 hover:bg-[#f7f5f1]"
+              }`}
+            >
+              <RefreshIcon className={`h-4 w-4 ${busy ? "animate-spin" : ""}`} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => void loadSessions(page)}
-            disabled={busy}
-            aria-label="새로고침"
-            title="새로고침"
-            className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-xs font-semibold transition-colors disabled:opacity-50 ${
-              isDarkMode
-                ? "border-zinc-600 text-gray-200 hover:bg-white/10"
-                : "border-gray-300 text-gray-700 hover:bg-gray-100"
-            }`}
+
+          <form
+            className="grid gap-3 xl:grid-cols-[1.2fr_0.9fr_0.7fr_0.7fr_1fr_auto]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleSubmit();
+            }}
           >
-            <RefreshIcon className={`h-4 w-4 ${busy ? "animate-spin" : ""}`} />
-          </button>
+            <label className="flex min-w-0 flex-col gap-1.5">
+              <span className={labelClass}>회차 제목</span>
+              <input
+                className={inputClass}
+                value={form.title}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, title: event.target.value }))
+                }
+                placeholder="예: 5주차 출석"
+                disabled={saving}
+              />
+            </label>
+            <label className="flex min-w-0 flex-col gap-1.5">
+              <span className={labelClass}>출석 날짜</span>
+              <input
+                className={inputClass}
+                type="date"
+                value={form.sessionDate}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, sessionDate: event.target.value }))
+                }
+                disabled={saving}
+              />
+            </label>
+            <label className="flex min-w-0 flex-col gap-1.5">
+              <span className={labelClass}>시작</span>
+              <input
+                className={inputClass}
+                type="time"
+                value={form.startTime}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, startTime: event.target.value }))
+                }
+                disabled={saving}
+              />
+            </label>
+            <label className="flex min-w-0 flex-col gap-1.5">
+              <span className={labelClass}>종료</span>
+              <input
+                className={inputClass}
+                type="time"
+                value={form.endTime}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, endTime: event.target.value }))
+                }
+                disabled={saving}
+              />
+            </label>
+            <label className="flex min-w-0 flex-col gap-1.5">
+              <span className={labelClass}>연결 강의</span>
+              <select
+                className={inputClass}
+                value={form.lectureId}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, lectureId: event.target.value }))
+                }
+                disabled={saving}
+              >
+                <option value="">강의 연결 안 함</option>
+                {sortedLectures.map((lecture) => (
+                  <option key={lecture.lectureId} value={lecture.lectureId}>
+                    {lecture.weekNumber}주차 · {lecture.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="flex items-end gap-2">
+              <button
+                type="submit"
+                disabled={saving}
+                className={`h-10 rounded-lg px-4 text-sm font-semibold transition-colors disabled:opacity-50 ${
+                  isDarkMode ? "bg-white text-[#141414]" : "bg-[#141414] text-white hover:bg-black"
+                }`}
+              >
+                {saving
+                  ? "저장 중"
+                  : editingSessionId == null
+                    ? "회차 생성"
+                    : "수정 저장"}
+              </button>
+              {editingSessionId != null ? (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  disabled={saving}
+                  className={`h-10 rounded-lg border px-4 text-sm font-semibold transition-colors disabled:opacity-50 ${
+                    isDarkMode
+                      ? "border-[#343434] text-gray-200 hover:bg-white/10"
+                      : "border-[#dedbd5] text-gray-700 hover:bg-[#f7f5f1]"
+                  }`}
+                >
+                  취소
+                </button>
+              ) : null}
+            </div>
+          </form>
         </div>
 
-        <form
-          className="grid gap-3 lg:grid-cols-[1.2fr_0.9fr_0.7fr_0.7fr_1fr_auto]"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void handleSubmit();
-          }}
-        >
+        {error ? (
+          <div
+            className={`border-b border-inherit px-4 py-3 text-sm ${
+              isDarkMode ? "text-red-300" : "text-red-600"
+            }`}
+          >
+            {error}
+          </div>
+        ) : null}
+
+        <div className="flex items-center justify-between gap-3 border-b border-inherit px-4 py-3">
+          <h4 className="text-sm font-semibold">출석 회차 목록</h4>
+          <span className={`text-xs ${mutedTextClass}`}>
+            {page + 1} / {totalPages}
+          </span>
+        </div>
+
+        {loading ? (
+          <div className={`px-5 py-12 text-center text-sm ${mutedTextClass}`}>
+            불러오는 중...
+          </div>
+        ) : sessions.length === 0 ? (
+          <div className={`px-5 py-12 text-center text-sm ${mutedTextClass}`}>
+            등록된 출석 회차가 없습니다.
+          </div>
+        ) : (
+          <ul className="divide-y divide-inherit">
+            {sessions.map((session) => {
+              const selected = selectedSession?.sessionId === session.sessionId;
+              const editing = editingSessionId === session.sessionId;
+              return (
+                <li
+                  key={session.sessionId}
+                  className={`px-4 py-3 transition-colors ${
+                    selected
+                      ? isDarkMode
+                        ? "bg-white/[0.06]"
+                        : "bg-gray-100"
+                      : ""
+                  }`}
+                >
+                  <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSession(session)}
+                      className="min-w-0 flex-1 text-left"
+                    >
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="truncate text-sm font-semibold">{session.title}</h4>
+                        {editing ? (
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              isDarkMode ? "bg-white/10 text-gray-100" : "bg-gray-100 text-gray-900"
+                            }`}
+                          >
+                            수정 중
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className={`mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs ${mutedTextClass}`}>
+                        <span>{formatDate(session.sessionDate)}</span>
+                        <span>{formatTimeRange(session)}</span>
+                        <span>{lectureLabel(lectures, session.lectureId)}</span>
+                      </div>
+                      <div className={`mt-1 text-[11px] ${mutedTextClass}`}>
+                        생성: {formatInstant(session.createdAt)}
+                      </div>
+                    </button>
+
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                      <ActionButton
+                        isDarkMode={isDarkMode}
+                        onClick={() => handleEdit(session)}
+                        disabled={saving}
+                      >
+                        수정
+                      </ActionButton>
+                      <ActionButton
+                        isDarkMode={isDarkMode}
+                        danger
+                        onClick={() => void handleDelete(session)}
+                        disabled={deletingId === session.sessionId}
+                      >
+                        {deletingId === session.sessionId ? "삭제 중" : "삭제"}
+                      </ActionButton>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {totalPages > 1 ? (
+          <div className="flex items-center justify-between border-t border-inherit px-4 py-3">
+            <button
+              type="button"
+              onClick={() => setPage((prev) => Math.max(0, prev - 1))}
+              disabled={page <= 0 || loading}
+              className={`h-9 rounded-lg border px-4 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                isDarkMode
+                  ? "border-[#343434] text-gray-200 hover:bg-white/10"
+                  : "border-[#dedbd5] text-gray-700 hover:bg-[#f7f5f1]"
+              }`}
+            >
+              이전
+            </button>
+            <span className={`text-xs ${mutedTextClass}`}>
+              {page + 1} / {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPage((prev) => Math.min(totalPages - 1, prev + 1))}
+              disabled={page + 1 >= totalPages || loading}
+              className={`h-9 rounded-lg border px-4 text-xs font-semibold transition-colors disabled:opacity-50 ${
+                isDarkMode
+                  ? "border-[#343434] text-gray-200 hover:bg-white/10"
+                  : "border-[#dedbd5] text-gray-700 hover:bg-[#f7f5f1]"
+              }`}
+            >
+              다음
+            </button>
+          </div>
+        ) : null}
+      </section>
+    );
+  }
+
+  return (
+    <div className="flex min-h-full flex-col gap-4 pb-6">
+      <section className={`mb-3 flex shrink-0 flex-col rounded-2xl border px-5 py-5 lg:px-6 ${surfaceClass}`}>
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-2xl font-semibold leading-tight">출석 회차 관리</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => void loadSessions(page)}
+              disabled={busy}
+              aria-label="새로고침"
+              title="새로고침"
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-xs font-semibold transition-colors disabled:opacity-50 ${
+                isDarkMode
+                  ? "border-zinc-600 text-gray-200 hover:bg-white/10"
+                  : "border-gray-300 text-gray-700 hover:bg-gray-100"
+              }`}
+            >
+              <RefreshIcon className={`h-4 w-4 ${busy ? "animate-spin" : ""}`} />
+            </button>
+          </div>
+
+          <form
+            className="grid gap-3 lg:grid-cols-[1.2fr_0.9fr_0.7fr_0.7fr_1fr_auto]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleSubmit();
+            }}
+          >
           <label className="flex min-w-0 flex-col gap-1.5">
             <span className={labelClass}>회차 제목</span>
             <input
@@ -546,9 +804,10 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
           </div>
         </form>
 
-        <p className={`mt-3 text-xs ${mutedTextClass}`}>
+        <p className={`text-xs ${mutedTextClass}`}>
           회차를 생성하면 활성 수강생 전체에 결석 기록이 자동으로 생성됩니다.
         </p>
+        </div>
       </section>
 
       {error ? (
@@ -954,26 +1213,28 @@ function StudentAttendanceSummaryPanel({
 
   return (
     <div className="flex min-h-full flex-col gap-4 pb-6">
-      <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className={`text-xs font-semibold uppercase tracking-wide ${mutedClass}`}>
-              My Attendance
-            </p>
-            <h2 className="mt-1 text-xl font-semibold">내 출석 요약</h2>
+      <section className={`mb-3 flex shrink-0 flex-col rounded-2xl border px-5 py-5 lg:px-6 ${surfaceClass}`}>
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0 flex-1">
+              <p className={`text-xs font-semibold uppercase tracking-wide ${mutedClass}`}>
+                My Attendance
+              </p>
+              <h2 className="mt-1 text-2xl font-semibold leading-tight">내 출석 요약</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => void load()}
+              disabled={loading}
+              aria-label="새로고침"
+              title="새로고침"
+              className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-xs font-semibold ${
+                isDarkMode ? "border-zinc-600" : "border-gray-300"
+              }`}
+            >
+              <RefreshIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => void load()}
-            disabled={loading}
-            aria-label="새로고침"
-            title="새로고침"
-            className={`inline-flex h-9 w-9 items-center justify-center rounded-full border text-xs font-semibold ${
-              isDarkMode ? "border-zinc-600" : "border-gray-300"
-            }`}
-          >
-            <RefreshIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          </button>
         </div>
       </section>
 

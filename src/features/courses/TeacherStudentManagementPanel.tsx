@@ -1,16 +1,16 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { RefreshIcon } from "@/components/common/Icons";
+import { formatKoreanDateTime } from "@/utils/dateFormat";
 import {
   courseApi,
+  type CourseDetail,
   type CourseJoinRequestListItem,
 } from "@/services/api";
+import { AttendanceSessionsPanel } from "@/features/courses/AttendanceSessionsPanel";
 import { EnrolledStudentsPanel } from "@/features/courses/EnrolledStudentsPanel";
 
 function formatJoinRequestInstant(iso: string | undefined): string {
-  if (iso == null || String(iso).trim() === "") return "—";
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return iso;
-  return new Date(t).toLocaleString("ko-KR");
+  return formatKoreanDateTime(iso);
 }
 
 function extractJoinRequestErrorCode(message: string): string | null {
@@ -27,12 +27,13 @@ function extractJoinRequestErrorCode(message: string): string | null {
 
 interface TeacherStudentManagementPanelProps {
   courseId: number;
+  lectures?: CourseDetail["lectures"];
   isDarkMode: boolean;
 }
 
 export const TeacherStudentManagementPanel: React.FC<
   TeacherStudentManagementPanelProps
-> = ({ courseId, isDarkMode }) => {
+> = ({ courseId, lectures, isDarkMode }) => {
   const [listPage, setListPage] = useState(0);
   const [rows, setRows] = useState<CourseJoinRequestListItem[]>([]);
   const [totalPages, setTotalPages] = useState(1);
@@ -159,7 +160,6 @@ export const TeacherStudentManagementPanel: React.FC<
   const surfaceClass = isDarkMode
     ? "border-[#2b2b2b] bg-[#202020] text-gray-100"
     : "border-[#dedbd5] bg-white text-gray-900";
-  const mutedText = isDarkMode ? "text-gray-400" : "text-gray-500";
   const headerRowClass = isDarkMode
     ? "border-[#2b2b2b] bg-[#181818] text-gray-400"
     : "border-[#dedbd5] bg-[#f7f5f1] text-gray-500";
@@ -171,36 +171,30 @@ export const TeacherStudentManagementPanel: React.FC<
 
   return (
     <div className="flex min-h-full flex-col gap-4 pb-6">
-      <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
-        <div className="flex min-h-10 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold">학생 관리</h2>
-            <p className={`mt-2 text-sm ${mutedText}`}>
-              수강 중인 학생과 대기 중인 가입 요청을 한 화면에서 관리합니다.
-            </p>
+      <section className={`mb-3 flex shrink-0 flex-col rounded-2xl border px-5 py-5 lg:px-6 ${surfaceClass}`}>
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-2xl font-semibold leading-tight">학생·출석 관리</h2>
+            </div>
           </div>
         </div>
       </section>
 
-      <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
+      <div className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+      <section className={`order-2 rounded-xl border px-4 py-4 lg:order-2 lg:row-span-2 ${surfaceClass}`}>
         <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h3 className="text-base font-semibold">수강 학생</h3>
-            <p className={`mt-1 text-xs ${mutedText}`}>
-              승인 완료된 학생 목록입니다.
-            </p>
           </div>
         </div>
         <EnrolledStudentsPanel courseId={courseId} isDarkMode={isDarkMode} />
       </section>
 
-      <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
+      <section className={`order-1 rounded-xl border px-4 py-4 lg:order-1 ${surfaceClass}`}>
         <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h3 className="text-base font-semibold">가입 요청</h3>
-            <p className={`mt-1 text-xs ${mutedText}`}>
-              아직 승인되지 않은 학생 요청입니다.
-            </p>
           </div>
           <div className="flex flex-wrap items-center justify-start gap-2">
             <button
@@ -381,6 +375,16 @@ export const TeacherStudentManagementPanel: React.FC<
           </div>
         ) : null}
       </section>
+      <div className="order-3 lg:order-3">
+        <AttendanceSessionsPanel
+          courseId={courseId}
+          lectures={lectures}
+          isDarkMode={isDarkMode}
+          isTeacher
+          embedded
+        />
+      </div>
+      </div>
     </div>
   );
 };

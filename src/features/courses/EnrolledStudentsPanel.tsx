@@ -1,12 +1,15 @@
 import React from "react";
 import { RefreshIcon } from "@/components/common/Icons";
+import { formatKoreanDateTime } from "@/utils/dateFormat";
 import { courseApi, type CourseStudentListItem } from "@/services/api";
 
 function formatInstant(iso: string | undefined): string {
-  if (iso == null || String(iso).trim() === "") return "—";
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return iso;
-  return new Date(t).toLocaleString("ko-KR");
+  return formatKoreanDateTime(iso);
+}
+
+function formatAttendanceRate(value: number | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${Math.round(value * 100)}%`;
 }
 
 interface EnrolledStudentsPanelProps {
@@ -23,6 +26,7 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
   const [totalPages, setTotalPages] = React.useState(1);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [attendanceRates, setAttendanceRates] = React.useState<Record<number, number>>({});
 
   const [selected, setSelected] = React.useState<Record<number, boolean>>({});
   const selectedIds = React.useMemo(
@@ -48,11 +52,36 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
       setRows(content);
       setTotalPages(Math.max(res.totalPages ?? 1, 1));
       setSelected({});
+      try {
+        const matrix = await courseApi.getAttendanceMatrix(courseId, {
+          page: 0,
+          size: 100,
+          sort: "name,asc",
+        });
+        const nextRates: Record<number, number> = {};
+        for (const row of matrix.students.content ?? []) {
+          if (row.presentRatio != null && Number.isFinite(row.presentRatio)) {
+            nextRates[row.studentId] = row.presentRatio;
+            continue;
+          }
+          const statuses = Object.values(row.records ?? {});
+          if (statuses.length === 0) continue;
+          const attended = statuses.filter(
+            (status) =>
+              status === "PRESENT" || status === "LATE" || status === "EXCUSED",
+          ).length;
+          nextRates[row.studentId] = attended / statuses.length;
+        }
+        setAttendanceRates(nextRates);
+      } catch {
+        setAttendanceRates({});
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "수강 학생 목록을 불러오지 못했습니다.");
       setRows([]);
       setTotalPages(1);
       setSelected({});
+      setAttendanceRates({});
     } finally {
       setLoading(false);
     }
@@ -189,16 +218,16 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
           }`}
         >
           <div
-            className={`grid min-w-[48rem] grid-cols-[minmax(12rem,1.35fr)_minmax(5rem,0.5fr)_minmax(14rem,1.3fr)_minmax(12rem,0.95fr)] items-center gap-3 border-b px-4 py-2 text-xs font-semibold ${
+            className={`grid min-w-[48rem] grid-cols-[minmax(12rem,1.15fr)_minmax(14rem,1.35fr)_minmax(12rem,1fr)_minmax(6rem,0.5fr)] items-center gap-3 border-b px-4 py-2 text-xs font-semibold ${
               isDarkMode
                 ? "border-[#2b2b2b] bg-[#181818] text-gray-400"
                 : "border-[#dedbd5] bg-[#f7f5f1] text-gray-500"
             }`}
           >
             <span>학생 이름</span>
-            <span>ID</span>
             <span>이메일</span>
             <span>등록시간</span>
+            <span>출석률</span>
           </div>
           <ul
             className={`min-w-[48rem] divide-y ${
@@ -210,7 +239,7 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
               return (
                 <li
                   key={row.enrollmentId || row.studentId}
-                  className={`grid grid-cols-[minmax(12rem,1.35fr)_minmax(5rem,0.5fr)_minmax(14rem,1.3fr)_minmax(12rem,0.95fr)] items-center gap-3 px-4 py-3 text-sm ${
+                  className={`grid grid-cols-[minmax(12rem,1.15fr)_minmax(14rem,1.35fr)_minmax(12rem,1fr)_minmax(6rem,0.5fr)] items-center gap-3 px-4 py-3 text-sm ${
                     isDarkMode ? "bg-[#202020] text-gray-100" : "bg-white text-[#212121]"
                   }`}
                 >
@@ -231,9 +260,6 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
                       {row.studentName || "이름 없음"}
                     </span>
                   </span>
-                  <span className="min-w-0 truncate font-mono text-xs tabular-nums opacity-80">
-                    {row.studentId}
-                  </span>
                   <span
                     className={`min-w-0 truncate ${
                       isDarkMode ? "text-gray-400" : "text-gray-600"
@@ -243,6 +269,9 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
                   </span>
                   <span className="min-w-0 truncate text-xs opacity-75">
                     {formatInstant(row.enrolledAt)}
+                  </span>
+                  <span className="min-w-0 truncate text-sm font-semibold tabular-nums">
+                    {formatAttendanceRate(attendanceRates[row.studentId])}
                   </span>
                 </li>
               );

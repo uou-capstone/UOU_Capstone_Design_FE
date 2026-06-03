@@ -3,7 +3,8 @@ import { sanitizePostLoginNext } from "../utils/sanitizePostLoginNext";
 const BACKEND_URL = 'https://dev.uouaitutor.duckdns.org';
 // 일부 TS 설정에서는 import.meta.env 타입 선언이 없어 오류가 나므로 any 캐스트로 우회한다.
 const META_ENV = (import.meta as any)?.env ?? {};
-export const API_BASE_URL = META_ENV.VITE_API_URL || BACKEND_URL;
+export const API_BASE_URL =
+  META_ENV.VITE_API_BASE_URL || META_ENV.VITE_API_URL || BACKEND_URL;
 const AI_SERVICE_URL = META_ENV.VITE_AI_SERVICE_URL || API_BASE_URL;
 
 // API 응답 타입
@@ -4154,6 +4155,19 @@ export interface MaterialsLatestSessionResponse {
   [key: string]: unknown;
 }
 
+function isLatestSessionEmptyError(error: unknown): boolean {
+  const message =
+    error instanceof Error ? error.message : String(error ?? "");
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("session_not_found") ||
+    normalized.includes("latest-session") ||
+    (normalized.includes("404") && normalized.includes("session")) ||
+    (message.includes("세션") &&
+      (message.includes("없") || message.includes("찾을 수 없습니다")))
+  );
+}
+
 // Phase 3~5 비동기 실행 (한 번에 실행)
 export interface MaterialsGenerationAsyncRequest {
   sessionId: number;
@@ -4441,11 +4455,20 @@ export const materialGenerationApi = {
   },
 
   // 특정 강의의 최근 세션 조회
-  getLatestSessionForLecture: async (lectureId: number): Promise<MaterialsLatestSessionResponse> => {
-    return apiRequest<MaterialsLatestSessionResponse>(
-      `/api/materials/generation/lectures/${lectureId}/latest-session`,
-      { method: "GET" }
-    );
+  getLatestSessionForLecture: async (
+    lectureId: number,
+  ): Promise<MaterialsLatestSessionResponse | null> => {
+    try {
+      return await apiRequest<MaterialsLatestSessionResponse>(
+        `/api/materials/generation/lectures/${lectureId}/latest-session`,
+        { method: "GET" },
+      );
+    } catch (error) {
+      if (isLatestSessionEmptyError(error)) {
+        return null;
+      }
+      throw error;
+    }
   },
 
   // 세션 복구 (에러 메시지 제거 후 재시도 가능 상태로 변경)
@@ -5478,6 +5501,40 @@ function mergeIntegratedQuizItemRecord(item: Record<string, unknown>): Record<st
   return item;
 }
 
+const INTEGRATED_LEARNING_QUIZ_TYPE_LABELS: Record<string, string> = {
+  Flash_Card: "플래시카드",
+  Five_Choice: "객관식",
+  OX_Problem: "OX",
+  Short_Answer: "단답형",
+  Essay: "서술형",
+};
+
+function integratedLearningQuizTypeLabelFromRaw(raw: string): string {
+  const normalized = raw.trim();
+  if (!normalized) return "";
+  return INTEGRATED_LEARNING_QUIZ_TYPE_LABELS[normalized] ?? normalized.replace(/_/g, " ");
+}
+
+function pickIntegratedLearningQuizTypeRaw(
+  event: Record<string, unknown>,
+  data: Record<string, unknown>,
+): string {
+  const eventPayload =
+    event.payload != null && typeof event.payload === "object" && !Array.isArray(event.payload)
+      ? (event.payload as Record<string, unknown>)
+      : {};
+  const dataPayload =
+    data.payload != null && typeof data.payload === "object" && !Array.isArray(data.payload)
+      ? (data.payload as Record<string, unknown>)
+      : {};
+  return (
+    pickFirstString(data, ["quizType", "quiz_type"]) ??
+    pickFirstString(dataPayload, ["quizType", "quiz_type"]) ??
+    pickFirstString(eventPayload, ["quizType", "quiz_type"]) ??
+    ""
+  );
+}
+
 /** 단일 퀴즈/플래시카드 항목 → 마크다운 (BE 스키마 차이 흡수) */
 function formatIntegratedLearningQuizItem(
   item: Record<string, unknown>,
@@ -5699,12 +5756,6 @@ function formatIntegratedLearningQuizPayload(
     .join("\n\n");
 }
 
-function integratedLearningQuizTypeLabel(data: Record<string, unknown>): string {
-  const raw = pickFirstString(data, ["quiz_type", "quizType"]) ?? "";
-  if (!raw) return "";
-  return raw.replace(/_/g, " ");
-}
-
 /** 통합학습 SSE 이벤트 객체에서 퀴즈 전용 `done`만 골라 마크다운으로 변환 (FE 병합용) */
 export function formatIntegratedLearningQuizFromSseEvent(
   event: Record<string, unknown> | null | undefined,
@@ -5715,10 +5766,10 @@ export function formatIntegratedLearningQuizFromSseEvent(
       ? (event.data as Record<string, unknown>)
       : {};
   const quiz = data.quiz ?? data.quiz_json ?? data.quizPayload;
-  const typeRaw = pickFirstString(data, ["quiz_type", "quizType"]) ?? "";
+  const typeRaw = pickIntegratedLearningQuizTypeRaw(event, data);
   const body = formatIntegratedLearningQuizPayload(quiz, typeRaw);
   if (!body.trim()) return "";
-  const typeLine = integratedLearningQuizTypeLabel(data);
+  const typeLine = integratedLearningQuizTypeLabelFromRaw(typeRaw);
   const header = typeLine ? `## 생성된 퀴즈 · ${typeLine}\n\n` : "## 생성된 퀴즈\n\n";
   return `${header}${body}`;
 }
@@ -5934,14 +5985,14 @@ export function parseIntegratedLearningQuizOverlayFromSseEvent(
       return null;
     }
   }
-  const typeRaw = pickFirstString(data, ["quiz_type", "quizType"]) ?? "";
+  const typeRaw = pickIntegratedLearningQuizTypeRaw(event, data);
   const rawItems = extractIntegratedLearningQuizItems(parsed);
   if (rawItems.length === 0) return null;
   const items = rawItems.map((it, i) =>
     rawIntegratedQuizItemToDisplayItem(it, i, typeRaw),
   );
   const title = typeRaw
-    ? `생성된 퀴즈 · ${typeRaw.replace(/_/g, " ")}`
+    ? `생성된 퀴즈 · ${integratedLearningQuizTypeLabelFromRaw(typeRaw)}`
     : "생성된 퀴즈";
   return { title, quizTypeRaw: typeRaw, items };
 }
@@ -6525,6 +6576,8 @@ export interface ExamGenerationRequest {
   lectureContent: string;
   topic?: string;
   userProfile?: ExamUserProfile;
+  /** Swagger 기준 출제 기준 자료 ID */
+  materialId?: number;
   /** 출제 기준 업로드 PDF (선택). BE가 저장·목록 필터에 반영 */
   sourceMaterialId?: number;
   /** 출제 기준 AI 생성 문서 세션 (선택) */
@@ -6548,6 +6601,8 @@ export interface ExamGenerationAsyncRequest {
   userProfile?: ExamUserProfile;
   /** 시험 목록 표시용 이름(선택). 미전달 시 BE 기본 규칙에 따름 */
   displayName?: string;
+  /** Swagger 기준 출제 기준 자료 ID */
+  materialId?: number;
   sourceMaterialId?: number;
   sourceGenerationSessionId?: number;
   /**
@@ -7007,13 +7062,12 @@ function buildExamGenerationBody(payload: ExamGenerationRequest): string {
   };
   if (payload.topic != null && payload.topic !== '') body.topic = payload.topic;
   if (payload.userProfile != null) body.userProfile = payload.userProfile;
-  if (payload.sourceMaterialId != null) {
-    body.sourceMaterialId = payload.sourceMaterialId;
-    body.source_material_id = payload.sourceMaterialId;
+  const materialId = payload.materialId ?? payload.sourceMaterialId;
+  if (materialId != null) {
+    body.materialId = materialId;
   }
   if (payload.sourceGenerationSessionId != null) {
     body.sourceGenerationSessionId = payload.sourceGenerationSessionId;
-    body.source_generation_session_id = payload.sourceGenerationSessionId;
   }
   return JSON.stringify(body);
 }
@@ -7030,12 +7084,20 @@ export const examGenerationApi = {
     });
   },
   runAsync: async (payload: ExamGenerationAsyncRequest): Promise<ExamGenerationAsyncResponse> => {
-    const body: Record<string, unknown> = { ...payload };
-    if (payload.sourceMaterialId != null) {
-      body.source_material_id = payload.sourceMaterialId;
+    const body: Record<string, unknown> = {
+      lectureId: payload.lectureId,
+      examType: payload.examType,
+      targetCount: payload.targetCount,
+      lectureContent: payload.lectureContent,
+    };
+    if (payload.topic != null && payload.topic !== "") body.topic = payload.topic;
+    if (payload.userProfile != null) body.userProfile = payload.userProfile;
+    const materialId = payload.materialId ?? payload.sourceMaterialId;
+    if (materialId != null) {
+      body.materialId = materialId;
     }
     if (payload.sourceGenerationSessionId != null) {
-      body.source_generation_session_id = payload.sourceGenerationSessionId;
+      body.sourceGenerationSessionId = payload.sourceGenerationSessionId;
     }
     if (
       payload.sourcePdfPage != null &&
