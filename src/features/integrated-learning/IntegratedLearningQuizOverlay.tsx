@@ -9,10 +9,42 @@ type Props = {
   model: IntegratedQuizOverlayModel;
   onClose: () => void;
   isDarkMode: boolean;
+  submitting?: boolean;
+  onSubmitAnswers?: (payload: {
+    quizType: string;
+    answers: { answer: string }[];
+  }) => Promise<void> | void;
 };
 
 type OxUserChoice = "O" | "X";
 type ExamProblemViewMode = "single" | "all";
+type IntegratedQuizSubmitKind = "ox" | "mcq" | "short";
+
+const STANDARD_QUIZ_TYPES = new Set([
+  "Five_Choice",
+  "OX_Problem",
+  "Short_Answer",
+  "Essay",
+  "Flash_Card",
+]);
+
+function normalizeQuizTypeForSubmit(
+  raw: string | null | undefined,
+  kind: IntegratedQuizSubmitKind,
+): string {
+  const trimmed = String(raw ?? "").trim();
+  if (STANDARD_QUIZ_TYPES.has(trimmed)) return trimmed;
+  const compact = trimmed.toLowerCase().replace(/[\s_-]/g, "");
+  if (compact.includes("ox") || compact.includes("truefalse")) return "OX_Problem";
+  if (compact.includes("five") || compact.includes("choice") || compact.includes("mcq")) {
+    return "Five_Choice";
+  }
+  if (compact.includes("essay") || compact.includes("서술")) return "Essay";
+  if (compact.includes("short") || compact.includes("단답")) return "Short_Answer";
+  if (kind === "ox") return "OX_Problem";
+  if (kind === "mcq") return "Five_Choice";
+  return "Short_Answer";
+}
 
 function normalizeExamOxCorrectAnswer(raw: string): OxUserChoice | null {
   const t = raw.trim();
@@ -469,7 +501,13 @@ function IntegratedFlashExamSection(props: {
   );
 }
 
-export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Props) {
+export function IntegratedLearningQuizOverlay({
+  model,
+  onClose,
+  isDarkMode,
+  submitting = false,
+  onSubmitAnswers,
+}: Props) {
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -520,6 +558,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
   const [oxGraded, setOxGraded] = useState(false);
   const [mcqGraded, setMcqGraded] = useState(false);
   const [shortGraded, setShortGraded] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const modelKey = useMemo(
     () => `${model.title}\0${model.items.map((i) => i.id).join(",")}`,
@@ -538,6 +577,7 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
     setOxGraded(false);
     setMcqGraded(false);
     setShortGraded(false);
+    setSubmitError(null);
   }, [modelKey]);
 
   const oxStats = useMemo(() => {
@@ -593,6 +633,64 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
     if (mcqGraded) return;
     setMcqUserAnswers((p) => ({ ...p, [String(idx)]: key }));
   };
+
+  const submitQuizAnswers = useCallback(
+    async (kind: IntegratedQuizSubmitKind) => {
+      if (!onSubmitAnswers || submitting) return;
+      const quizType = normalizeQuizTypeForSubmit(model.quizTypeRaw, kind);
+      const answers =
+        kind === "ox"
+          ? oxStats.list.map((_, idx) => ({
+              answer: oxUserAnswers[String(idx)] ?? "",
+            }))
+          : kind === "mcq"
+            ? mcqStats.list.map((_, idx) => ({
+                answer: mcqUserAnswers[String(idx)] ?? "",
+              }))
+            : shortStats.list.map((_, idx) => ({
+                answer: (shortUserAnswers[String(idx)] ?? "").trim(),
+              }));
+      setSubmitError(null);
+      try {
+        await onSubmitAnswers({ quizType, answers });
+      } catch (error) {
+        setSubmitError(
+          error instanceof Error
+            ? error.message
+            : "퀴즈 결과 전송에 실패했습니다.",
+        );
+      }
+    },
+    [
+      mcqStats.list,
+      mcqUserAnswers,
+      model.quizTypeRaw,
+      onSubmitAnswers,
+      oxStats.list,
+      oxUserAnswers,
+      shortStats.list,
+      shortUserAnswers,
+      submitting,
+    ],
+  );
+
+  const handleGradeOx = useCallback(() => {
+    if (!oxStats.allAnswered || oxGraded || submitting) return;
+    setOxGraded(true);
+    void submitQuizAnswers("ox");
+  }, [oxGraded, oxStats.allAnswered, submitQuizAnswers, submitting]);
+
+  const handleGradeMcq = useCallback(() => {
+    if (!mcqStats.allAnswered || mcqGraded || submitting) return;
+    setMcqGraded(true);
+    void submitQuizAnswers("mcq");
+  }, [mcqGraded, mcqStats.allAnswered, submitQuizAnswers, submitting]);
+
+  const handleGradeShort = useCallback(() => {
+    if (!shortStats.allAnswered || shortGraded || submitting) return;
+    setShortGraded(true);
+    void submitQuizAnswers("short");
+  }, [shortGraded, shortStats.allAnswered, submitQuizAnswers, submitting]);
 
   const panelClass = isDarkMode
     ? "border-zinc-600 bg-zinc-900/95 text-white shadow-black/40"
@@ -655,6 +753,17 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
           </button>
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          {submitError ? (
+            <div
+              className={`mb-4 rounded-lg border px-3 py-2 text-xs ${
+                isDarkMode
+                  ? "border-red-500/50 bg-red-950/30 text-red-200"
+                  : "border-red-200 bg-red-50 text-red-700"
+              }`}
+            >
+              {submitError}
+            </div>
+          ) : null}
           <div className="flex flex-col gap-8">
             {flashItems.length > 0 ? (
               <IntegratedFlashExamSection items={flashItems} isDarkMode={isDarkMode} />
@@ -781,13 +890,13 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                         <>
                           <button
                             type="button"
-                            onClick={() => setOxGraded(true)}
-                            disabled={!oxStats.allAnswered || oxGraded}
+                            onClick={handleGradeOx}
+                            disabled={!oxStats.allAnswered || oxGraded || submitting}
                             className={`inline-flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
                               isDarkMode ? "bg-emerald-600 text-white" : "bg-emerald-600 text-white"
                             }`}
                           >
-                            채점하기
+                            {submitting ? "전송 중..." : "채점하기"}
                           </button>
                           {oxGraded && hasGradableOxMeta ? (
                             <p
@@ -902,13 +1011,13 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                     <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <button
                         type="button"
-                        onClick={() => setOxGraded(true)}
-                        disabled={!oxStats.allAnswered || oxGraded}
+                        onClick={handleGradeOx}
+                        disabled={!oxStats.allAnswered || oxGraded || submitting}
                         className={`inline-flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
                           isDarkMode ? "bg-emerald-600 text-white" : "bg-emerald-600 text-white"
                         }`}
                       >
-                        채점하기
+                        {submitting ? "전송 중..." : "채점하기"}
                       </button>
                       {oxGraded && hasGradableOxMeta ? (
                         <p
@@ -1039,13 +1148,13 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                         <>
                           <button
                             type="button"
-                            onClick={() => setMcqGraded(true)}
-                            disabled={!mcqStats.allAnswered || mcqGraded}
+                            onClick={handleGradeMcq}
+                            disabled={!mcqStats.allAnswered || mcqGraded || submitting}
                             className={`inline-flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
                               isDarkMode ? "bg-emerald-600 text-white" : "bg-emerald-600 text-white"
                             }`}
                           >
-                            채점하기
+                            {submitting ? "전송 중..." : "채점하기"}
                           </button>
                           {mcqGraded && mcqItems.some((q) => resolveMcqCorrectKey(q)) ? (
                             <p
@@ -1153,13 +1262,13 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                     })}
                     <button
                       type="button"
-                      onClick={() => setMcqGraded(true)}
-                      disabled={!mcqStats.allAnswered || mcqGraded}
+                      onClick={handleGradeMcq}
+                      disabled={!mcqStats.allAnswered || mcqGraded || submitting}
                       className={`inline-flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
                         isDarkMode ? "bg-emerald-600 text-white" : "bg-emerald-600 text-white"
                       }`}
                     >
-                      채점하기
+                      {submitting ? "전송 중..." : "채점하기"}
                     </button>
                     {mcqGraded && mcqItems.some((q) => resolveMcqCorrectKey(q)) ? (
                       <p
@@ -1240,13 +1349,13 @@ export function IntegratedLearningQuizOverlay({ model, onClose, isDarkMode }: Pr
                 <div className="flex flex-col items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setShortGraded(true)}
-                    disabled={!shortStats.allAnswered || shortGraded}
+                    onClick={handleGradeShort}
+                    disabled={!shortStats.allAnswered || shortGraded || submitting}
                     className={`inline-flex cursor-pointer items-center justify-center rounded px-3 py-1.5 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50 ${
                       isDarkMode ? "bg-emerald-600 text-white" : "bg-emerald-600 text-white"
                     }`}
                   >
-                    제출·해설 보기
+                    {submitting ? "전송 중..." : "제출·해설 보기"}
                   </button>
                   <ExamQuestionProgressDots
                     total={shortStats.total}

@@ -1086,6 +1086,11 @@ export interface NoticeAssistantStreamRequest {
 
 export interface CriteriaAssistantChatStreamRequest {
   message: string;
+  messages?: unknown[];
+  history?: unknown[];
+  currentProposal?: Record<string, unknown>;
+  model?: string;
+  responseJsonSchema?: Record<string, unknown>;
   criteria?: ReportCriterion[];
   currentDraft?: Partial<ReportCriterionPayload> & { criterionId?: number | null };
   selectedCriterion?: Partial<ReportCriterion> | null;
@@ -1884,12 +1889,6 @@ const isDevHost = (): boolean =>
 const resolveApiEndpointUrl = (endpoint: string): string => {
   const shouldUseViteProxy = isDevHost() && endpoint.startsWith('/api');
   return shouldUseViteProxy ? endpoint : (API_BASE_URL ? `${String(API_BASE_URL).replace(/\/$/, '')}${endpoint}` : endpoint);
-};
-
-const resolveAiEndpointUrl = (endpoint: string): string => {
-  if (/^https?:\/\//i.test(endpoint)) return endpoint;
-  const base = String(AI_SERVICE_URL || API_BASE_URL || "").replace(/\/$/, "");
-  return base ? `${base}${endpoint}` : endpoint;
 };
 
 const AUTH_REFRESH_ENDPOINT = '/api/auth/refresh';
@@ -3120,7 +3119,7 @@ async function postJsonAgentBridgeStream(
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(resolveAiEndpointUrl(endpoint), {
+  const res = await fetch(resolveApiEndpointUrl(endpoint), {
     method: "POST",
     headers,
     body: JSON.stringify(body),
@@ -3308,24 +3307,11 @@ export const noticeApi = {
       onEvent?: (payload: Record<string, unknown>) => void;
     },
   ): Promise<AiAgentStreamResult> => {
-    const message = payload.message.trim();
-    return postJsonAgentBridgeStream(
-      `/bridge/notice_assistant_stream`,
-      {
-        courseId,
-        course_id: courseId,
-        message,
-        userMessage: message,
-        user_message: message,
-        prompt: message,
-        currentDraft: payload.currentDraft,
-        current_draft: payload.currentDraft,
-        selectedNotice: payload.selectedNotice,
-        selected_notice: payload.selectedNotice,
-        notices: payload.notices,
-        context: payload.context,
-      },
-      options,
+    void courseId;
+    void payload;
+    void options;
+    throw new Error(
+      "공지 AI 도우미는 아직 Spring 공개 API 계약이 확정되지 않았습니다. BE에 POST /api/courses/{courseId}/notices/assistant/stream 추가가 필요합니다.",
     );
   },
 };
@@ -3541,20 +3527,22 @@ export const reportCriteriaApi = {
     },
   ): Promise<AiAgentStreamResult> => {
     const message = payload.message.trim();
+    const currentProposal =
+      payload.currentProposal ??
+      payload.currentDraft ??
+      payload.selectedCriterion ??
+      undefined;
     return postJsonAgentBridgeStream(
-      `/bridge/report/criteria_assistant_chat_stream`,
+      `/api/courses/${encodeURIComponent(courseId)}/reports/criteria/assistant/chat/stream`,
       {
-        courseId,
-        course_id: courseId,
         message,
-        userMessage: message,
-        user_message: message,
-        prompt: message,
-        criteria: payload.criteria,
-        currentDraft: payload.currentDraft,
-        current_draft: payload.currentDraft,
-        selectedCriterion: payload.selectedCriterion,
-        selected_criterion: payload.selectedCriterion,
+        ...(payload.messages ? { messages: payload.messages } : {}),
+        ...(payload.history ? { history: payload.history } : {}),
+        ...(currentProposal ? { currentProposal } : {}),
+        ...(payload.model ? { model: payload.model } : {}),
+        ...(payload.responseJsonSchema
+          ? { responseJsonSchema: payload.responseJsonSchema }
+          : {}),
         context: payload.context,
       },
       options,
@@ -4695,7 +4683,15 @@ export const monitoringApi = {
   },
 };
 
-const learningSessionByLecture = new Map<number, LearningSessionState>();
+const learningSessionByLecture = new Map<string, LearningSessionState>();
+
+function getLearningSessionCacheKey(
+  lectureId: number,
+  scopeKey?: string | null,
+): string {
+  const normalizedScope = String(scopeKey ?? "").trim();
+  return normalizedScope ? `${lectureId}:${normalizedScope}` : String(lectureId);
+}
 
 /**
  * 인증(Authorization) 헤더가 필요한 SSE는 브라우저 `EventSource`로 설정할 수 없다.
@@ -4999,10 +4995,11 @@ const unwrapSpringSessionJson = (raw: Record<string, unknown>): Record<string, u
 const ensureLearningSession = async (
   lectureId: number,
   pdfPath?: string,
-  opts?: { sessionId?: string },
+  opts?: { sessionId?: string; cacheKey?: string },
 ): Promise<LearningSessionState> => {
+  const cacheKey = getLearningSessionCacheKey(lectureId, opts?.cacheKey ?? pdfPath);
   if (!opts?.sessionId) {
-    const cached = learningSessionByLecture.get(lectureId);
+    const cached = learningSessionByLecture.get(cacheKey);
     if (cached) return cached;
   }
 
@@ -5100,7 +5097,7 @@ const ensureLearningSession = async (
       throw new Error("학습 세션 생성 응답에 session_id가 없습니다.");
     }
     const session = { sessionId: String(rawSessionId), lectureId };
-    learningSessionByLecture.set(lectureId, session);
+    learningSessionByLecture.set(cacheKey, session);
     return session;
   }
 
@@ -6446,7 +6443,7 @@ export const streamingApi = {
     };
   },
   cancel: async (lectureId: number): Promise<void> => {
-    const session = learningSessionByLecture.get(lectureId);
+    const session = learningSessionByLecture.get(getLearningSessionCacheKey(lectureId));
     if (!session) return;
     try {
       await postLearningEventAndCollect(
@@ -6455,7 +6452,7 @@ export const streamingApi = {
         lectureId,
       );
     } finally {
-      learningSessionByLecture.delete(lectureId);
+      learningSessionByLecture.delete(getLearningSessionCacheKey(lectureId));
     }
   },
 };
@@ -6482,10 +6479,11 @@ export const integratedLearningApi = {
   },
   openSession: async (
     lectureId: number,
-    options?: { pdfPath?: string; sessionId?: string },
+    options?: { pdfPath?: string; sessionId?: string; cacheKey?: string },
   ): Promise<{ sessionId: string; lectureId: number }> => {
     const s = await ensureLearningSession(lectureId, options?.pdfPath, {
       sessionId: options?.sessionId,
+      cacheKey: options?.cacheKey,
     });
     return { sessionId: s.sessionId, lectureId: s.lectureId };
   },
@@ -6510,8 +6508,12 @@ export const integratedLearningApi = {
     );
     return mapLearningEventsToIntegratedMessages(events);
   },
-  closeSession: async (lectureId: number): Promise<void> => {
-    const session = learningSessionByLecture.get(lectureId);
+  closeSession: async (
+    lectureId: number,
+    options?: { cacheKey?: string },
+  ): Promise<void> => {
+    const cacheKey = getLearningSessionCacheKey(lectureId, options?.cacheKey);
+    const session = learningSessionByLecture.get(cacheKey);
     if (!session) return;
     try {
       await postLearningEventAndCollect(
@@ -6520,7 +6522,7 @@ export const integratedLearningApi = {
         lectureId,
       );
     } finally {
-      learningSessionByLecture.delete(lectureId);
+      learningSessionByLecture.delete(cacheKey);
     }
   },
 };

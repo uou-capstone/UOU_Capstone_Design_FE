@@ -145,6 +145,11 @@ export interface IntegratedChatMessage {
   integratedQuizOpenButton?: boolean;
 }
 
+export interface IntegratedQuizSubmitPayload {
+  quizType: string;
+  answers: { answer: string }[];
+}
+
 type PersistedIntegratedChatMessage = Omit<
   IntegratedChatMessage,
   "file" | "isLoading" | "streamingMarkdown"
@@ -153,16 +158,26 @@ type PersistedIntegratedChatMessage = Omit<
 interface PersistedIntegratedLearningHistory {
   sessionId: string;
   lectureId: number;
+  materialId?: number | null;
+  materialScopeKey?: string;
   messages: PersistedIntegratedChatMessage[];
   quizOverlayModel?: IntegratedQuizOverlayModel | null;
   updatedAt: string;
 }
 
+function getIntegratedLearningMaterialScopeKey(
+  materialId: number | null | undefined,
+): string {
+  return materialId != null && materialId > 0
+    ? `material:${materialId}`
+    : "material:none";
+}
+
 function getIntegratedLearningLocalHistoryKey(
   lectureId: number,
-  sessionId: string | number,
+  materialScopeKey: string,
 ): string {
-  return `${INTEGRATED_LEARNING_LOCAL_HISTORY_PREFIX}:${lectureId}:${sessionId}`;
+  return `${INTEGRATED_LEARNING_LOCAL_HISTORY_PREFIX}:${lectureId}:${materialScopeKey}`;
 }
 
 function sanitizeIntegratedMessagesForStorage(
@@ -182,12 +197,12 @@ function sanitizeIntegratedMessagesForStorage(
 
 function readIntegratedLearningLocalHistory(
   lectureId: number,
-  sessionId: string | number,
+  materialScopeKey: string,
 ): PersistedIntegratedLearningHistory | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(
-      getIntegratedLearningLocalHistoryKey(lectureId, sessionId),
+      getIntegratedLearningLocalHistoryKey(lectureId, materialScopeKey),
     );
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PersistedIntegratedLearningHistory;
@@ -201,6 +216,8 @@ function readIntegratedLearningLocalHistory(
 function writeIntegratedLearningLocalHistory(
   lectureId: number,
   sessionId: string | number,
+  materialId: number | null | undefined,
+  materialScopeKey: string,
   messages: IntegratedChatMessage[],
   quizOverlayModel: IntegratedQuizOverlayModel | null,
 ): void {
@@ -211,12 +228,14 @@ function writeIntegratedLearningLocalHistory(
     const payload: PersistedIntegratedLearningHistory = {
       lectureId,
       sessionId: String(sessionId),
+      materialId: materialId ?? null,
+      materialScopeKey,
       messages: cleanMessages,
       quizOverlayModel,
       updatedAt: new Date().toISOString(),
     };
     window.localStorage.setItem(
-      getIntegratedLearningLocalHistoryKey(lectureId, sessionId),
+      getIntegratedLearningLocalHistoryKey(lectureId, materialScopeKey),
       JSON.stringify(payload),
     );
   } catch {
@@ -268,10 +287,12 @@ function learningHistoryToChatMessages(
 export function useIntegratedLearningChat(options: {
   enabled: boolean;
   lectureId: number | null;
+  materialId?: number | null;
   currentPage?: number | null;
   goToPage?: (page: number) => void;
 }) {
-  const { enabled, lectureId, currentPage, goToPage } = options;
+  const { enabled, lectureId, materialId, currentPage, goToPage } = options;
+  const materialScopeKey = getIntegratedLearningMaterialScopeKey(materialId);
   const [messages, setMessages] = useState<IntegratedChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [quizOverlayModel, setQuizOverlayModel] =
@@ -302,18 +323,22 @@ export function useIntegratedLearningChat(options: {
     writeIntegratedLearningLocalHistory(
       lectureId,
       sessionIdRef.current,
+      materialId,
+      materialScopeKey,
       messages,
       quizOverlayModel,
     );
-  }, [enabled, lectureId, messages, quizOverlayModel]);
+  }, [enabled, lectureId, materialId, materialScopeKey, messages, quizOverlayModel]);
 
   const ensureSession = useCallback(async (): Promise<string> => {
     if (!lectureId) throw new Error("강의를 먼저 선택해 주세요.");
     if (sessionIdRef.current) return sessionIdRef.current;
-    const opened = await integratedLearningApi.openSession(lectureId);
+    const opened = await integratedLearningApi.openSession(lectureId, {
+      cacheKey: materialScopeKey,
+    });
     sessionIdRef.current = opened.sessionId;
     return opened.sessionId;
-  }, [lectureId]);
+  }, [lectureId, materialScopeKey]);
 
   const appendAgentMessages = useCallback(
     (
@@ -676,6 +701,9 @@ export function useIntegratedLearningChat(options: {
         await waitForRenderedDrain();
 
         const hasQuizPickerModal = tail.some(eventRequestsQuizTypePicker);
+        const doneWidget = tail
+          .map(eventUiWidget)
+          .find((w): w is string => !!w);
 
         if (gotBody && answerMessageId != null) {
           const overlay = parseIntegratedLearningQuizOverlayFromMessageTail(tail);
@@ -780,7 +808,7 @@ export function useIntegratedLearningChat(options: {
           lastRequestedQuizTypeRef.current = null;
         }
 
-        if (!gotBody && !gotThought && !hasQuizPickerModal) {
+        if (!gotBody && !gotThought && !hasQuizPickerModal && !doneWidget) {
           appendAgentMessages(tail, {
             suppressWelcomeText: eventType === "SESSION_ENTERED",
           });
@@ -816,11 +844,16 @@ export function useIntegratedLearningChat(options: {
         if (hasQuizPickerModal) {
           appendQuizTypePicker();
         }
-        const doneWidget = tail
-          .map(eventUiWidget)
-          .find((w): w is string => !!w);
         if (doneWidget) {
           appendDecisionWidget(doneWidget);
+          if (
+            eventType === "QUIZ_SUBMITTED" &&
+            (doneWidget === "REVIEW_DECISION" ||
+              doneWidget === "NEXT_PAGE_DECISION" ||
+              doneWidget === "RETEST_DECISION")
+          ) {
+            setQuizOverlayOpen(false);
+          }
         }
       } catch (e) {
         if (cancelled || (e instanceof Error && e.name === "AbortError")) {
@@ -992,13 +1025,38 @@ export function useIntegratedLearningChat(options: {
     [busy, currentPage, enabled, goToPage, lectureId, runStreamingAgentTurn],
   );
 
+  const submitQuizAnswers = useCallback(
+    async (payload: IntegratedQuizSubmitPayload) => {
+      if (!lectureId || !enabled || busy) return;
+      const quizType = String(payload.quizType ?? "").trim();
+      const answers = Array.isArray(payload.answers)
+        ? payload.answers
+            .map((item) => ({ answer: String(item.answer ?? "").trim() }))
+            .filter((item) => item.answer.length > 0)
+        : [];
+      if (!quizType || answers.length === 0) return;
+      setBusy(true);
+      try {
+        await runStreamingAgentTurn("QUIZ_SUBMITTED", {
+          quizType,
+          answers,
+        });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, enabled, lectureId, runStreamingAgentTurn],
+  );
+
   const stop = useCallback(async () => {
     abortRef.current?.abort();
     abortRef.current = null;
     if (!lectureId) return;
     setBusy(false);
     try {
-      await integratedLearningApi.closeSession(lectureId);
+      await integratedLearningApi.closeSession(lectureId, {
+        cacheKey: materialScopeKey,
+      });
       sessionIdRef.current = null;
       setMessages((prev) => [
         ...prev,
@@ -1012,7 +1070,7 @@ export function useIntegratedLearningChat(options: {
     } catch {
       // ignore
     }
-  }, [lectureId, nextMessageId]);
+  }, [lectureId, materialScopeKey, nextMessageId]);
 
   useEffect(() => {
     if (!enabled) {
@@ -1048,6 +1106,38 @@ export function useIntegratedLearningChat(options: {
 
     void (async () => {
       try {
+        const localHistory = readIntegratedLearningLocalHistory(
+          lectureId,
+          materialScopeKey,
+        );
+        if (localHistory?.messages?.length) {
+          try {
+            const opened = await integratedLearningApi.openSession(lectureId, {
+              sessionId: localHistory.sessionId,
+              cacheKey: materialScopeKey,
+            });
+            if (cancelled) return;
+            sessionIdRef.current = opened.sessionId;
+          } catch {
+            if (cancelled) return;
+            sessionIdRef.current = null;
+          }
+          const restoredLocalMessages =
+            localHistory.messages as IntegratedChatMessage[];
+          setMessages(restoredLocalMessages);
+          setQuizOverlayModel(localHistory.quizOverlayModel ?? null);
+          setQuizOverlayOpen(false);
+          messageIdRef.current = restoredLocalMessages.reduce(
+            (max, item) => Math.max(max, item.id),
+            0,
+          );
+          return;
+        }
+
+        if (materialId != null && materialId > 0) {
+          return;
+        }
+
         const sessions = await integratedLearningApi.getChatSessions(lectureId, {
           page: 0,
           size: 5,
@@ -1071,6 +1161,7 @@ export function useIntegratedLearningChat(options: {
         try {
           const opened = await integratedLearningApi.openSession(lectureId, {
             sessionId: String(selectedSession.chatSessionId),
+            cacheKey: materialScopeKey,
           });
           if (cancelled) return;
           sessionIdRef.current = opened.sessionId;
@@ -1079,10 +1170,6 @@ export function useIntegratedLearningChat(options: {
         }
 
         const restoredMessages = learningHistoryToChatMessages(selectedHistory);
-        const localHistory = readIntegratedLearningLocalHistory(
-          lectureId,
-          sessionIdRef.current,
-        );
         const messagesToRestore = shouldPreferLocalIntegratedHistory(
           localHistory,
           restoredMessages,
@@ -1107,7 +1194,7 @@ export function useIntegratedLearningChat(options: {
     return () => {
       cancelled = true;
     };
-  }, [enabled, lectureId]);
+  }, [enabled, lectureId, materialId, materialScopeKey]);
 
   return {
     messages,
@@ -1121,5 +1208,6 @@ export function useIntegratedLearningChat(options: {
     stop,
     toggleThoughtExpanded,
     handleAction,
+    submitQuizAnswers,
   };
 }

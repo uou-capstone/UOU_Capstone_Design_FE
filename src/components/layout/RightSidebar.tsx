@@ -478,6 +478,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       viewMode === "course-detail" &&
       resolvedLectureId != null,
     lectureId: resolvedLectureId,
+    materialId: assistantMaterialId ?? null,
     currentPage: previewCurrentPdfPage ?? null,
     goToPage: goToPdfPage ?? undefined,
   });
@@ -2440,6 +2441,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         model={integratedLearning.quizOverlayModel}
         onClose={integratedLearning.dismissQuizOverlay}
         isDarkMode={isDarkMode}
+        submitting={integratedLearning.busy}
+        onSubmitAnswers={integratedLearning.submitQuizAnswers}
       />
     ) : null}
     </>
