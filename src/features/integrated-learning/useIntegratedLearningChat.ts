@@ -1030,6 +1030,7 @@ export function useIntegratedLearningChat(options: {
       setBusy(true);
       try {
         await runStreamingAgentTurn("QUIZ_SUBMITTED", {
+          quiz_type: quizType,
           quizType,
           answers,
         });

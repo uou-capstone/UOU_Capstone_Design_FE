@@ -1266,7 +1266,7 @@ const MainContent: React.FC<MainContentProps> = ({
     null,
   );
 
-  /** 시험 출처: materialId 상태 우선, 없으면 미리보기 URL(/api/materials/{id}/file)에서 복구 */
+  /** 시험 출처: materialId 상태 우선, 없으면 URL/자료 목록에서 복구 */
   const examSourceMaterialId = React.useMemo(() => {
     if (
       previewMaterialId != null &&
@@ -1278,9 +1278,27 @@ const MainContent: React.FC<MainContentProps> = ({
     if (typeof previewFileUrl === "string" && previewFileUrl.length > 0) {
       const fromUrl = parseMaterialIdFromMaterialFileUrl(previewFileUrl);
       if (fromUrl != null) return fromUrl;
+      if (!previewIsAiGenerationDoc && previewLinkedGenerationSessionId == null) {
+        const fromMaterials = resolveMaterialIdFromSidebarSync(
+          selectedLectureId,
+          previewFileUrl,
+          previewFileName ?? "",
+          localMaterials,
+          null,
+        );
+        if (fromMaterials != null) return fromMaterials;
+      }
     }
     return null;
-  }, [previewMaterialId, previewFileUrl]);
+  }, [
+    localMaterials,
+    previewFileName,
+    previewFileUrl,
+    previewIsAiGenerationDoc,
+    previewLinkedGenerationSessionId,
+    previewMaterialId,
+    selectedLectureId,
+  ]);
 
   const activeExamResourceFilter = React.useMemo(
     () =>
@@ -1643,6 +1661,19 @@ const MainContent: React.FC<MainContentProps> = ({
       { replace: true },
     );
   }, [setSearchParams, selectedLectureId]);
+
+  React.useEffect(() => {
+    if (previewMaterialId != null || examSourceMaterialId == null) return;
+    if (previewIsAiGenerationDoc || previewLinkedGenerationSessionId != null) return;
+    setPreviewMaterialId(examSourceMaterialId);
+    patchResourceInUrl({ material: examSourceMaterialId }, { replace: true });
+  }, [
+    examSourceMaterialId,
+    patchResourceInUrl,
+    previewIsAiGenerationDoc,
+    previewLinkedGenerationSessionId,
+    previewMaterialId,
+  ]);
 
   const sortedCourses = React.useMemo(() => {
     if (courseListSortOrder !== "name") return courses;
@@ -8920,7 +8951,7 @@ const MainContent: React.FC<MainContentProps> = ({
               viewMode="course-detail"
               courseDetail={courseDetail}
               previewCurrentPdfPage={previewCurrentPdfPage}
-              assistantMaterialId={previewMaterialId}
+              assistantMaterialId={examSourceMaterialId}
               assistantPdfActive={
                 Boolean(previewBlobUrl) && previewMarkdownContent == null
               }
@@ -10152,7 +10183,7 @@ const MainContent: React.FC<MainContentProps> = ({
 	                    courseDetail={courseDetail}
 	                    examStudioPage
 	                    previewCurrentPdfPage={previewCurrentPdfPage}
-	                    assistantMaterialId={previewMaterialId}
+	                    assistantMaterialId={examSourceMaterialId}
 	                    assistantPdfActive={false}
 	                    goToPdfPage={(page) => pdfViewerRef.current?.goToPage(page)}
 	                    userPdfNav={userPdfNav}

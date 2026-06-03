@@ -2107,7 +2107,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                           value={examStudioPrompt}
                           onChange={(e) => setExamStudioPrompt(e.target.value)}
                           placeholder="AI와 시험을 설계해 보세요"
-                          disabled={!canUseExamStudio || examStudioLoading}
+                          disabled={examStudioLoading}
                           className={`${examControlClass} block resize-none`}
                           style={examControlStyle}
                         />
