@@ -2263,9 +2263,8 @@ const MainContent: React.FC<MainContentProps> = ({
         : "border-[#dedbd5] bg-white"
     }`;
     const mutedText = isDarkMode ? "text-gray-400" : "text-[#111111]";
-    const lightModeProseTextClass = isDarkMode
-      ? ""
-      : "text-[#111111] prose-p:text-[#111111] prose-li:text-[#111111] prose-strong:text-[#111111] prose-headings:text-[#111111] prose-blockquote:text-[#111111]";
+    const assistantReportMessageTextClass =
+      "text-[#111111] [&_*]:text-[#111111] prose-p:text-[#111111] prose-li:text-[#111111] prose-strong:text-[#111111] prose-headings:text-[#111111] prose-blockquote:text-[#111111] prose-code:text-[#111111]";
     const buttonClass = `rounded-[var(--app-control-radius)] border px-3 py-2 text-xs font-semibold transition-colors disabled:opacity-50 ${
       isDarkMode
         ? "border-[#3a3a3a] text-gray-200 hover:bg-white/10"
@@ -3099,21 +3098,19 @@ const MainContent: React.FC<MainContentProps> = ({
 	                    className={`max-w-[84%] rounded-[var(--app-control-radius)] px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
 	                      message.role === "user"
 	                        ? "bg-[#ff824d] text-white"
-	                        : isDarkMode
-	                          ? "border border-[#343434] bg-[#181818] text-gray-100"
-	                          : "border border-[#dedbd5] bg-white text-[#212121]"
+	                        : "border border-[#dedbd5] bg-white text-[#111111]"
 	                    }`}
 	                  >
 	                    <p
 	                      className={`mb-1 text-[11px] font-semibold ${
-	                        isDarkMode ? "opacity-70" : "text-[#111111]"
+	                        message.role === "user" ? "text-white/80" : "text-[#111111]"
 	                      }`}
 	                    >
 	                      {message.role === "user" ? "나" : "AI Tutor"}
 	                    </p>
 	                    {message.role === "assistant" && message.text ? (
 	                      <div
-	                        className={`prose prose-sm max-w-none dark:prose-invert ${lightModeProseTextClass}`}
+	                        className={`prose prose-sm max-w-none ${assistantReportMessageTextClass}`}
 	                      >
 	                        <MarkdownContent>{message.text}</MarkdownContent>
 	                      </div>
@@ -10227,14 +10224,12 @@ const MainContent: React.FC<MainContentProps> = ({
                                     className={`max-w-[84%] rounded-xl px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap ${
                                       message.role === "user"
                                         ? "bg-[#ff824d] text-white"
-                                        : isDarkMode
-                                          ? "border border-[#343434] bg-[#181818] text-gray-100"
-                                          : "border border-[#dedbd5] bg-white text-[#212121]"
+                                        : "border border-[#dedbd5] bg-white text-[#111111]"
                                     }`}
                                   >
                                     <p
                                       className={`mb-1 text-[11px] font-semibold ${
-                                        isDarkMode ? "opacity-70" : "text-[#111111]"
+                                        message.role === "user" ? "text-white/80" : "text-[#111111]"
                                       }`}
                                     >
                                       {message.role === "user" ? "나" : "AI Tutor"}
