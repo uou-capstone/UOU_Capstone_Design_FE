@@ -138,6 +138,68 @@ function withBoardWeekScopeMarker(value: string, scope: BoardWeekScope | null): 
   return scope ? `${buildBoardWeekScopeMarker(scope)}${content}` : content;
 }
 
+function hasMeaningfulRichContent(value: string | undefined): boolean {
+  return typeof value === "string" && !isRichContentEmpty(value);
+}
+
+function hydrateNoticeAfterSave(
+  saved: NoticeDetail,
+  snapshot: BoardForm,
+  contentMarkdown: string,
+  courseId: number,
+  fallbackNoticeId: number | null,
+): NoticeDetail {
+  const noticeId =
+    saved.noticeId > 0
+      ? saved.noticeId
+      : fallbackNoticeId != null && fallbackNoticeId > 0
+        ? fallbackNoticeId
+        : 0;
+  return {
+    ...saved,
+    noticeId,
+    courseId: saved.courseId || courseId,
+    title: saved.title.trim() ? saved.title : snapshot.title.trim(),
+    category: saved.category ?? snapshot.noticeCategory,
+    priority: saved.priority ?? snapshot.priority,
+    pinned: saved.pinned ?? snapshot.pinned,
+    contentMarkdown: stripBoardWeekScopeMarker(
+      hasMeaningfulRichContent(saved.contentMarkdown)
+        ? saved.contentMarkdown
+        : contentMarkdown,
+    ),
+  };
+}
+
+function hydrateDiscussionAfterSave(
+  saved: DiscussionDetail,
+  snapshot: BoardForm,
+  contentMarkdown: string,
+  courseId: number,
+  fallbackDiscussionId: number | null,
+): DiscussionDetail {
+  const discussionId =
+    saved.discussionId > 0
+      ? saved.discussionId
+      : fallbackDiscussionId != null && fallbackDiscussionId > 0
+        ? fallbackDiscussionId
+        : 0;
+  return {
+    ...saved,
+    discussionId,
+    courseId: saved.courseId || courseId,
+    title: saved.title.trim() ? saved.title : snapshot.title.trim(),
+    category: saved.category ?? snapshot.discussionCategory,
+    pinned: saved.pinned ?? snapshot.pinned,
+    allowComments: saved.allowComments ?? snapshot.allowComments,
+    contentMarkdown: stripBoardWeekScopeMarker(
+      hasMeaningfulRichContent(saved.contentMarkdown)
+        ? saved.contentMarkdown
+        : contentMarkdown,
+    ),
+  };
+}
+
 function asPlainRecord(value: unknown): Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -511,12 +573,34 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
           targetEditingId == null
             ? await noticeApi.createNotice(courseId, payload)
             : await noticeApi.updateNotice(courseId, targetEditingId, payload);
-        setSelectedNotice({
-          ...saved,
-          contentMarkdown: stripBoardWeekScopeMarker(saved.contentMarkdown),
-        });
+        let resolved = hydrateNoticeAfterSave(
+          saved,
+          snapshot,
+          contentMarkdown,
+          courseId,
+          targetEditingId,
+        );
+        if (resolved.noticeId > 0) {
+          try {
+            const detail = await noticeApi.getNotice(courseId, resolved.noticeId);
+            resolved = hydrateNoticeAfterSave(
+              detail,
+              snapshot,
+              contentMarkdown,
+              courseId,
+              resolved.noticeId,
+            );
+          } catch {
+            /* 저장 응답만으로도 화면을 유지할 수 있게 fallback 사용 */
+          }
+        }
+        setSelectedNotice(resolved);
         setSelectedDiscussion(null);
-        await loadComments(saved.noticeId);
+        if (resolved.noticeId > 0) {
+          await loadComments(resolved.noticeId);
+        } else {
+          setComments([]);
+        }
       } else {
         const payload = {
           title: snapshot.title.trim(),
@@ -529,12 +613,37 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
           targetEditingId == null
             ? await discussionApi.createDiscussion(courseId, payload)
             : await discussionApi.updateDiscussion(courseId, targetEditingId, payload);
-        setSelectedDiscussion({
-          ...saved,
-          contentMarkdown: stripBoardWeekScopeMarker(saved.contentMarkdown),
-        });
+        let resolved = hydrateDiscussionAfterSave(
+          saved,
+          snapshot,
+          contentMarkdown,
+          courseId,
+          targetEditingId,
+        );
+        if (resolved.discussionId > 0) {
+          try {
+            const detail = await discussionApi.getDiscussion(
+              courseId,
+              resolved.discussionId,
+            );
+            resolved = hydrateDiscussionAfterSave(
+              detail,
+              snapshot,
+              contentMarkdown,
+              courseId,
+              resolved.discussionId,
+            );
+          } catch {
+            /* 저장 응답만으로도 화면을 유지할 수 있게 fallback 사용 */
+          }
+        }
+        setSelectedDiscussion(resolved);
         setSelectedNotice(null);
-        await loadComments(saved.discussionId);
+        if (resolved.discussionId > 0) {
+          await loadComments(resolved.discussionId);
+        } else {
+          setComments([]);
+        }
       }
     },
     [courseId, loadComments, scopedWeekTarget],

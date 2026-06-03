@@ -996,6 +996,10 @@ export function useIntegratedLearningChat(options: {
       if (nextPage != null) {
         goToPage?.(nextPage);
       }
+      if (actionId === "quiz_decision_reject") {
+        appendDecisionWidget("NEXT_PAGE_DECISION");
+        return;
+      }
       setBusy(true);
       try {
         if (quizType) {
@@ -1014,7 +1018,15 @@ export function useIntegratedLearningChat(options: {
         setBusy(false);
       }
     },
-    [busy, currentPage, enabled, goToPage, lectureId, runStreamingAgentTurn],
+    [
+      appendDecisionWidget,
+      busy,
+      currentPage,
+      enabled,
+      goToPage,
+      lectureId,
+      runStreamingAgentTurn,
+    ],
   );
 
   const submitQuizAnswers = useCallback(

@@ -1340,6 +1340,28 @@ const MainContent: React.FC<MainContentProps> = ({
     previewMaterialId,
   ]);
 
+  const examStudioAssistantMaterialId = React.useMemo(() => {
+    if (
+      examStudioSelectedGenerationSessionId != null &&
+      Number.isFinite(examStudioSelectedGenerationSessionId) &&
+      examStudioSelectedGenerationSessionId > 0
+    ) {
+      return null;
+    }
+    if (
+      examStudioSelectedMaterialId != null &&
+      Number.isFinite(examStudioSelectedMaterialId) &&
+      examStudioSelectedMaterialId > 0
+    ) {
+      return examStudioSelectedMaterialId;
+    }
+    return examSourceMaterialId;
+  }, [
+    examSourceMaterialId,
+    examStudioSelectedGenerationSessionId,
+    examStudioSelectedMaterialId,
+  ]);
+
   const activeExamResourceFilter = React.useMemo(
     () =>
       buildActiveExamResourceFilter(
@@ -2240,7 +2262,10 @@ const MainContent: React.FC<MainContentProps> = ({
         ? "border-[#2b2b2b] bg-[#202020]"
         : "border-[#dedbd5] bg-white"
     }`;
-    const mutedText = isDarkMode ? "text-gray-400" : "text-gray-500";
+    const mutedText = isDarkMode ? "text-gray-400" : "text-[#111111]";
+    const lightModeProseTextClass = isDarkMode
+      ? ""
+      : "text-[#111111] prose-p:text-[#111111] prose-li:text-[#111111] prose-strong:text-[#111111] prose-headings:text-[#111111] prose-blockquote:text-[#111111]";
     const buttonClass = `rounded-[var(--app-control-radius)] border px-3 py-2 text-xs font-semibold transition-colors disabled:opacity-50 ${
       isDarkMode
         ? "border-[#3a3a3a] text-gray-200 hover:bg-white/10"
@@ -3079,11 +3104,17 @@ const MainContent: React.FC<MainContentProps> = ({
 	                          : "border border-[#dedbd5] bg-white text-[#212121]"
 	                    }`}
 	                  >
-	                    <p className="mb-1 text-[11px] font-semibold opacity-70">
+	                    <p
+	                      className={`mb-1 text-[11px] font-semibold ${
+	                        isDarkMode ? "opacity-70" : "text-[#111111]"
+	                      }`}
+	                    >
 	                      {message.role === "user" ? "나" : "AI Tutor"}
 	                    </p>
 	                    {message.role === "assistant" && message.text ? (
-	                      <div className="prose prose-sm max-w-none dark:prose-invert">
+	                      <div
+	                        className={`prose prose-sm max-w-none dark:prose-invert ${lightModeProseTextClass}`}
+	                      >
 	                        <MarkdownContent>{message.text}</MarkdownContent>
 	                      </div>
 	                    ) : (
@@ -3114,7 +3145,7 @@ const MainContent: React.FC<MainContentProps> = ({
 	              className={`min-w-0 flex-1 rounded-[var(--app-control-radius)] border px-3 py-2 text-sm outline-none ${
 	                isDarkMode
 	                  ? "border-[#343434] bg-[#181818] text-white placeholder:text-gray-500"
-	                  : "border-[#dedbd5] bg-white text-[#212121] placeholder:text-gray-400"
+	                  : "border-[#dedbd5] bg-white text-[#212121] placeholder:text-[#111111]"
 	              } disabled:opacity-50`}
 	            />
 	            {reportChatSending ? (
@@ -10201,7 +10232,11 @@ const MainContent: React.FC<MainContentProps> = ({
                                           : "border border-[#dedbd5] bg-white text-[#212121]"
                                     }`}
                                   >
-                                    <p className="mb-1 text-[11px] font-semibold opacity-70">
+                                    <p
+                                      className={`mb-1 text-[11px] font-semibold ${
+                                        isDarkMode ? "opacity-70" : "text-[#111111]"
+                                      }`}
+                                    >
                                       {message.role === "user" ? "나" : "AI Tutor"}
                                     </p>
                                     {message.text ||
@@ -10237,7 +10272,7 @@ const MainContent: React.FC<MainContentProps> = ({
                               className={`min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm ${
                                 isDarkMode
                                   ? "border-[#343434] bg-[#181818] text-white placeholder:text-gray-500"
-                                  : "border-[#dedbd5] bg-white text-[#212121] placeholder:text-gray-400"
+                                  : "border-[#dedbd5] bg-white text-[#212121] placeholder:text-[#111111]"
                               } disabled:opacity-50`}
                             />
                             {reportChatSending ? (
@@ -10307,7 +10342,7 @@ const MainContent: React.FC<MainContentProps> = ({
 	                    courseDetail={courseDetail}
 	                    examStudioPage
 	                    previewCurrentPdfPage={previewCurrentPdfPage}
-	                    assistantMaterialId={examSourceMaterialId}
+	                    assistantMaterialId={examStudioAssistantMaterialId}
 	                    assistantPdfActive={false}
 	                    goToPdfPage={(page) => pdfViewerRef.current?.goToPage(page)}
 	                    userPdfNav={userPdfNav}
@@ -13959,7 +13994,7 @@ const MainContent: React.FC<MainContentProps> = ({
                     </div>
                     <section className="space-y-2">
                       <h4 className="text-sm font-semibold">서술 리포트</h4>
-                      <div className={`rounded-lg border p-4 text-sm whitespace-pre-wrap ${isDarkMode ? "border-zinc-700 bg-zinc-900/40 text-gray-200" : "border-gray-200 bg-gray-50 text-gray-700"}`}>
+                      <div className={`rounded-lg border p-4 text-sm whitespace-pre-wrap ${isDarkMode ? "border-zinc-700 bg-zinc-900/40 text-gray-200" : "border-gray-200 bg-gray-50 text-[#111111]"}`}>
                         {studentReportDetail.narrativeReport?.trim() || "리포트 본문이 없습니다."}
                       </div>
                     </section>
@@ -13979,7 +14014,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                 </span>
                               </div>
                               {competency.feedback ? (
-                                <p className={`text-sm mt-2 whitespace-pre-wrap ${isDarkMode ? "text-gray-300" : "text-gray-600"}`}>
+                                <p className={`text-sm mt-2 whitespace-pre-wrap ${isDarkMode ? "text-gray-300" : "text-[#111111]"}`}>
                                   {competency.feedback}
                                 </p>
                               ) : null}
@@ -14005,7 +14040,7 @@ const MainContent: React.FC<MainContentProps> = ({
                               <div
                                 className={`rounded-lg border p-3 text-xs ${isDarkMode ? "border-zinc-700 bg-zinc-900/40" : "border-gray-200 bg-white"}`}
                               >
-                                <p className="opacity-70">강의</p>
+                                <p className={isDarkMode ? "opacity-70" : "text-[#111111]"}>강의</p>
                                 <p className="font-medium mt-1">
                                   {studentAiContext.course?.courseName || `courseId ${studentAiContext.course?.courseId ?? ""}`}
                                 </p>
@@ -14016,7 +14051,7 @@ const MainContent: React.FC<MainContentProps> = ({
                               <div
                                 className={`rounded-lg border p-3 text-xs ${isDarkMode ? "border-zinc-700 bg-zinc-900/40" : "border-gray-200 bg-white"}`}
                               >
-                                <p className="opacity-70">학생</p>
+                                <p className={isDarkMode ? "opacity-70" : "text-[#111111]"}>학생</p>
                                 <p className="font-medium mt-1">
                                   {studentAiContext.student?.studentName || ""}
                                   {studentAiContext.student?.enrollmentStatus
@@ -14037,7 +14072,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                 {studentAiContext.activitySummary.missingCount ?? "-"}
                               </p>
                               {studentAiContext.activitySummary.latestSubmittedAt ? (
-                                <p className="opacity-80">
+                                <p className={isDarkMode ? "opacity-80" : "text-[#111111]"}>
                                   최근 제출: {studentAiContext.activitySummary.latestSubmittedAt}
                                 </p>
                               ) : null}
@@ -14060,7 +14095,7 @@ const MainContent: React.FC<MainContentProps> = ({
                               ) : null}
                               {studentAiContext.scoreSummary.recentTrend &&
                               studentAiContext.scoreSummary.recentTrend.length > 0 ? (
-                                <p className="opacity-80 font-mono">
+                                <p className={`font-mono ${isDarkMode ? "opacity-80" : "text-[#111111]"}`}>
                                   최근: [{studentAiContext.scoreSummary.recentTrend.join(", ")}]
                                 </p>
                               ) : null}
@@ -14089,7 +14124,7 @@ const MainContent: React.FC<MainContentProps> = ({
                     <p className="text-xs font-semibold opacity-80">리포트 팔로업 질문</p>
                     <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1">
                       {reportChatMessages.length === 0 ? (
-                        <p className={`text-xs ${isDarkMode ? "text-gray-500" : "text-gray-500"}`}>
+                        <p className={`text-xs ${isDarkMode ? "text-gray-500" : "text-[#111111]"}`}>
                           학생 리포트에 대해 추가 질문을 입력하세요.
                         </p>
                       ) : (
@@ -14106,7 +14141,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                   : "bg-white border border-gray-200 mr-4"
                             }`}
                           >
-                            <span className="font-semibold opacity-70">
+                            <span className={`font-semibold ${isDarkMode ? "opacity-70" : "text-[#111111]"}`}>
                               {m.role === "user" ? "나" : "AI"}
                             </span>
                             <div className="mt-0.5">{m.text || (m.role === "assistant" ? "…" : "")}</div>

@@ -1556,32 +1556,50 @@ function normalizeStudentAttendanceSummary(
   };
 }
 
+function unwrapBoardRecord(raw: Record<string, unknown>): Record<string, unknown> {
+  for (const key of ["data", "result", "payload"]) {
+    const value = raw[key];
+    if (value != null && typeof value === "object" && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+  }
+  return raw;
+}
+
 function normalizeNoticeListItem(raw: Record<string, unknown>): NoticeListItem {
+  const value = unwrapBoardRecord(raw);
   return {
-    noticeId: Number(raw.noticeId ?? raw.notice_id ?? 0),
+    noticeId: Number(value.noticeId ?? value.notice_id ?? value.id ?? 0),
     authorUserId:
-      raw.authorUserId == null && raw.author_user_id == null
+      value.authorUserId == null && value.author_user_id == null
         ? undefined
-        : Number(raw.authorUserId ?? raw.author_user_id),
-    authorName: String(raw.authorName ?? raw.author_name ?? ""),
-    title: String(raw.title ?? ""),
-    category: String(raw.category ?? "GENERAL") as NoticeCategory,
-    priority: String(raw.priority ?? "NORMAL") as NoticePriority,
-    pinned: Boolean(raw.pinned ?? false),
-    createdAt: pickFirstNonEmptyString(raw, ["createdAt", "created_at"]) || undefined,
-    updatedAt: pickFirstNonEmptyString(raw, ["updatedAt", "updated_at"]) || undefined,
+        : Number(value.authorUserId ?? value.author_user_id),
+    authorName: String(value.authorName ?? value.author_name ?? ""),
+    title: String(value.title ?? ""),
+    category: String(value.category ?? "GENERAL") as NoticeCategory,
+    priority: String(value.priority ?? "NORMAL") as NoticePriority,
+    pinned: Boolean(value.pinned ?? false),
+    createdAt: pickFirstNonEmptyString(value, ["createdAt", "created_at"]) || undefined,
+    updatedAt: pickFirstNonEmptyString(value, ["updatedAt", "updated_at"]) || undefined,
   };
 }
 
 function normalizeNoticeDetail(raw: Record<string, unknown>): NoticeDetail {
+  const value = unwrapBoardRecord(raw);
   return {
-    ...normalizeNoticeListItem(raw),
-    courseId: Number(raw.courseId ?? raw.course_id ?? 0),
+    ...normalizeNoticeListItem(value),
+    courseId: Number(value.courseId ?? value.course_id ?? 0),
     authorTeacherId:
-      raw.authorTeacherId == null && raw.author_teacher_id == null
+      value.authorTeacherId == null && value.author_teacher_id == null
         ? undefined
-        : Number(raw.authorTeacherId ?? raw.author_teacher_id),
-    contentMarkdown: String(raw.contentMarkdown ?? raw.content_markdown ?? ""),
+        : Number(value.authorTeacherId ?? value.author_teacher_id),
+    contentMarkdown: String(
+      value.contentMarkdown ??
+        value.content_markdown ??
+        value.content ??
+        value.body ??
+        "",
+    ),
   };
 }
 
@@ -1605,28 +1623,39 @@ function normalizeNoticeComment(raw: Record<string, unknown>): NoticeComment {
 }
 
 function normalizeDiscussionListItem(raw: Record<string, unknown>): DiscussionListItem {
+  const value = unwrapBoardRecord(raw);
   return {
-    discussionId: Number(raw.discussionId ?? raw.discussion_id ?? 0),
+    discussionId: Number(value.discussionId ?? value.discussion_id ?? value.id ?? 0),
     authorUserId:
-      raw.authorUserId == null && raw.author_user_id == null
+      value.authorUserId == null && value.author_user_id == null
         ? undefined
-        : Number(raw.authorUserId ?? raw.author_user_id),
-    authorName: String(raw.authorName ?? raw.author_name ?? ""),
-    title: String(raw.title ?? ""),
-    category: String(raw.category ?? "FREE") as DiscussionCategory,
-    pinned: Boolean(raw.pinned ?? false),
-    allowComments: raw.allowComments == null ? true : Boolean(raw.allowComments),
-    viewCount: Number(raw.viewCount ?? raw.view_count ?? 0),
-    createdAt: pickFirstNonEmptyString(raw, ["createdAt", "created_at"]) || undefined,
-    updatedAt: pickFirstNonEmptyString(raw, ["updatedAt", "updated_at"]) || undefined,
+        : Number(value.authorUserId ?? value.author_user_id),
+    authorName: String(value.authorName ?? value.author_name ?? ""),
+    title: String(value.title ?? ""),
+    category: String(value.category ?? "FREE") as DiscussionCategory,
+    pinned: Boolean(value.pinned ?? false),
+    allowComments:
+      value.allowComments == null && value.allow_comments == null
+        ? true
+        : Boolean(value.allowComments ?? value.allow_comments),
+    viewCount: Number(value.viewCount ?? value.view_count ?? 0),
+    createdAt: pickFirstNonEmptyString(value, ["createdAt", "created_at"]) || undefined,
+    updatedAt: pickFirstNonEmptyString(value, ["updatedAt", "updated_at"]) || undefined,
   };
 }
 
 function normalizeDiscussionDetail(raw: Record<string, unknown>): DiscussionDetail {
+  const value = unwrapBoardRecord(raw);
   return {
-    ...normalizeDiscussionListItem(raw),
-    courseId: Number(raw.courseId ?? raw.course_id ?? 0),
-    contentMarkdown: String(raw.contentMarkdown ?? raw.content_markdown ?? ""),
+    ...normalizeDiscussionListItem(value),
+    courseId: Number(value.courseId ?? value.course_id ?? 0),
+    contentMarkdown: String(
+      value.contentMarkdown ??
+        value.content_markdown ??
+        value.content ??
+        value.body ??
+        "",
+    ),
   };
 }
 
