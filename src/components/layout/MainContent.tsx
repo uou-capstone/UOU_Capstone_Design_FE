@@ -1262,6 +1262,13 @@ const MainContent: React.FC<MainContentProps> = ({
   /** AI 문서 미리보기 시 연결된 generation sessionId — 시험 목록을 해당 자료로 한정 */
   const [previewLinkedGenerationSessionId, setPreviewLinkedGenerationSessionId] =
     React.useState<number | null>(null);
+  /** 시험 스튜디오 직접 진입 시 사용할 강의자료 선택값 */
+  const [examStudioSelectedMaterialId, setExamStudioSelectedMaterialId] =
+    React.useState<number | null>(null);
+  const [
+    examStudioSelectedGenerationSessionId,
+    setExamStudioSelectedGenerationSessionId,
+  ] = React.useState<number | null>(null);
   const [previewBlobUrl, setPreviewBlobUrl] = React.useState<string | null>(
     null,
   );
@@ -1289,8 +1296,17 @@ const MainContent: React.FC<MainContentProps> = ({
         if (fromMaterials != null) return fromMaterials;
       }
     }
+    if (previewFileUrl != null || previewMaterialId != null) return null;
+    if (
+      examStudioSelectedMaterialId != null &&
+      Number.isFinite(examStudioSelectedMaterialId) &&
+      examStudioSelectedMaterialId > 0
+    ) {
+      return examStudioSelectedMaterialId;
+    }
     return null;
   }, [
+    examStudioSelectedMaterialId,
     localMaterials,
     previewFileName,
     previewFileUrl,
@@ -1300,13 +1316,37 @@ const MainContent: React.FC<MainContentProps> = ({
     selectedLectureId,
   ]);
 
+  const examSourceGenerationSessionId = React.useMemo(() => {
+    if (
+      previewLinkedGenerationSessionId != null &&
+      Number.isFinite(previewLinkedGenerationSessionId) &&
+      previewLinkedGenerationSessionId > 0
+    ) {
+      return previewLinkedGenerationSessionId;
+    }
+    if (previewFileUrl != null || previewMaterialId != null) return null;
+    if (
+      examStudioSelectedGenerationSessionId != null &&
+      Number.isFinite(examStudioSelectedGenerationSessionId) &&
+      examStudioSelectedGenerationSessionId > 0
+    ) {
+      return examStudioSelectedGenerationSessionId;
+    }
+    return null;
+  }, [
+    examStudioSelectedGenerationSessionId,
+    previewFileUrl,
+    previewLinkedGenerationSessionId,
+    previewMaterialId,
+  ]);
+
   const activeExamResourceFilter = React.useMemo(
     () =>
       buildActiveExamResourceFilter(
         examSourceMaterialId,
-        previewLinkedGenerationSessionId,
+        examSourceGenerationSessionId,
       ),
-    [examSourceMaterialId, previewLinkedGenerationSessionId],
+    [examSourceGenerationSessionId, examSourceMaterialId],
   );
 
   const examsForActiveResource = React.useMemo(() => {
@@ -1663,6 +1703,12 @@ const MainContent: React.FC<MainContentProps> = ({
   }, [setSearchParams, selectedLectureId]);
 
   React.useEffect(() => {
+    setExamStudioSelectedMaterialId(null);
+    setExamStudioSelectedGenerationSessionId(null);
+  }, [selectedLectureId]);
+
+  React.useEffect(() => {
+    if (!previewFileUrl) return;
     if (previewMaterialId != null || examSourceMaterialId == null) return;
     if (previewIsAiGenerationDoc || previewLinkedGenerationSessionId != null) return;
     setPreviewMaterialId(examSourceMaterialId);
@@ -1670,6 +1716,7 @@ const MainContent: React.FC<MainContentProps> = ({
   }, [
     examSourceMaterialId,
     patchResourceInUrl,
+    previewFileUrl,
     previewIsAiGenerationDoc,
     previewLinkedGenerationSessionId,
     previewMaterialId,
@@ -4702,11 +4749,11 @@ const MainContent: React.FC<MainContentProps> = ({
       }
       const resourceFilter = buildActiveExamResourceFilter(
         examSourceMaterialId,
-        previewLinkedGenerationSessionId,
+        examSourceGenerationSessionId,
       );
       if (resourceFilter == null) {
         window.alert(
-          "시험을 만들 자료(PDF 또는 AI 문서)를 먼저 선택해 주세요.\n좌측에서 자료 카드를 클릭해 미리보기를 연 뒤 다시 시도해 주세요.",
+          "시험을 만들 자료(PDF 또는 AI 문서)를 먼저 선택해 주세요.\n기본 정보의 강의자료에서 자료를 선택한 뒤 다시 시도해 주세요.",
         );
         return;
       }
@@ -4837,8 +4884,8 @@ const MainContent: React.FC<MainContentProps> = ({
     examType,
     examCount,
     examsForActiveResource,
+    examSourceGenerationSessionId,
     examSourceMaterialId,
-    previewLinkedGenerationSessionId,
     previewBlobUrl,
     previewCurrentPdfPage,
     selectedLectureId,
@@ -7196,6 +7243,80 @@ const MainContent: React.FC<MainContentProps> = ({
       );
     };
 
+    const examSourceOptions: NonNullable<
+      RightSidebarExamProps["sourceOptions"]
+    > = (() => {
+      const items =
+        selectedLectureId != null ? localMaterials[selectedLectureId] ?? [] : [];
+      const options = new Map<
+        string,
+        NonNullable<RightSidebarExamProps["sourceOptions"]>[number]
+      >();
+
+      items.filter(isPdfOrMarkdownResourceItem).forEach((item) => {
+        const parsedMaterialId =
+          item.materialId ??
+          (item.fileUrl ? parseMaterialIdFromMaterialFileUrl(item.fileUrl) : null);
+        const generationSessionId = parseGenerationSessionIdFromMaterialItem(item);
+        const label = (item.title ?? "").trim() || "이름 없는 강의자료";
+
+        if (parsedMaterialId != null) {
+          const value = `material:${parsedMaterialId}`;
+          if (!options.has(value)) {
+            options.set(value, {
+              value,
+              label,
+              meta: "업로드 자료",
+            });
+          }
+          return;
+        }
+
+        if (generationSessionId != null) {
+          const value = `generation:${generationSessionId}`;
+          if (!options.has(value)) {
+            options.set(value, {
+              value,
+              label,
+              meta: "AI 생성 자료",
+            });
+          }
+        }
+      });
+
+      return Array.from(options.values());
+    })();
+
+    const selectedExamSourceValue =
+      examSourceMaterialId != null
+        ? `material:${examSourceMaterialId}`
+        : examSourceGenerationSessionId != null
+          ? `generation:${examSourceGenerationSessionId}`
+          : "";
+
+    const handleExamSourceSelect = (value: string) => {
+      if (!value) {
+        setExamStudioSelectedMaterialId(null);
+        setExamStudioSelectedGenerationSessionId(null);
+        return;
+      }
+
+      const [kind, rawId] = value.split(":");
+      const id = Number(rawId);
+      if (!Number.isFinite(id) || id <= 0) return;
+
+      if (kind === "material") {
+        setExamStudioSelectedMaterialId(id);
+        setExamStudioSelectedGenerationSessionId(null);
+        return;
+      }
+
+      if (kind === "generation") {
+        setExamStudioSelectedMaterialId(null);
+        setExamStudioSelectedGenerationSessionId(id);
+      }
+    };
+
     const courseExamSidebarProps: RightSidebarExamProps = isTeacher
       ? {
           examMode: rightSidebarExamMode,
@@ -7236,6 +7357,9 @@ const MainContent: React.FC<MainContentProps> = ({
           onToggleExamSelect: handleToggleExamSelect,
           onDeleteSelectedExams: handleDeleteSelectedExams,
           onDeleteExam: handleDeleteSingleExam,
+          sourceOptions: examSourceOptions,
+          selectedSourceValue: selectedExamSourceValue,
+          onSourceSelect: handleExamSourceSelect,
         }
       : STUDENT_PDF_SIDEBAR_EXAM_PROPS;
 

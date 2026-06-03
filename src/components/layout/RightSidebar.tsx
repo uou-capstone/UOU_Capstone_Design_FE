@@ -168,6 +168,13 @@ export interface RightSidebarExamProps {
   onDeleteSelectedExams?: () => void;
   /** 단일 시험 삭제 (항목 왼쪽 삭제 버튼용) */
   onDeleteExam?: (examSessionId: string) => void;
+  sourceOptions?: Array<{
+    value: string;
+    label: string;
+    meta?: string;
+  }>;
+  selectedSourceValue?: string;
+  onSourceSelect?: (value: string) => void;
 }
 
 interface RightSidebarProps {
@@ -348,6 +355,23 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       setExamStudioLoading(false);
     }
   }, [ensureExamStudioContext, examStudioPrompt, resolvedExamStudioCourseId]);
+
+  const handleExamStudioPromptKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key !== "Enter" || event.shiftKey) return;
+      event.preventDefault();
+      if (!canUseExamStudio || examStudioLoading || !examStudioPrompt.trim()) {
+        return;
+      }
+      void handleExamStudioPrompt();
+    },
+    [
+      canUseExamStudio,
+      examStudioLoading,
+      examStudioPrompt,
+      handleExamStudioPrompt,
+    ],
+  );
 
   useEffect(() => {
     if (learningTab !== "integrated") {
@@ -1606,8 +1630,10 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
           )}
           <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable]">
             <div
-              className={`mx-auto flex w-full max-w-[96rem] flex-col gap-4 ${
-                examStudioPageMode ? "px-4 py-4 md:px-6 md:py-5" : "px-3 py-3"
+              className={`flex w-full flex-col gap-4 ${
+                examStudioPageMode
+                  ? "px-4 py-4 md:px-6 md:py-5"
+                  : "mx-auto max-w-[96rem] px-3 py-3"
               }`}
             >
               <section
@@ -1692,6 +1718,29 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                           className={`${examControlClass} mt-1.5 block`}
                           style={examControlStyle}
                         />
+                      </div>
+                      <div className={examFieldShellClass}>
+                        <label className={examLabelClass}>강의자료</label>
+                        <select
+                          value={examProps.selectedSourceValue ?? ""}
+                          onChange={(e) => examProps.onSourceSelect?.(e.target.value)}
+                          disabled={!examProps.sourceOptions?.length}
+                          className={`${examControlClass} mt-1.5 block disabled:cursor-not-allowed disabled:opacity-60`}
+                          style={examControlStyle}
+                        >
+                          <option value="">
+                            {examProps.sourceOptions?.length
+                              ? "시험을 만들 자료를 선택하세요"
+                              : "선택 가능한 강의자료가 없습니다"}
+                          </option>
+                          {(examProps.sourceOptions ?? []).map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.meta
+                                ? `${option.label} · ${option.meta}`
+                                : option.label}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                       <div className={examFieldShellClass}>
                         <label className={examLabelClass}>시작</label>
@@ -2106,6 +2155,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                           rows={2}
                           value={examStudioPrompt}
                           onChange={(e) => setExamStudioPrompt(e.target.value)}
+                          onKeyDown={handleExamStudioPromptKeyDown}
                           placeholder="AI와 시험을 설계해 보세요"
                           disabled={examStudioLoading}
                           className={`${examControlClass} block resize-none`}
@@ -2153,7 +2203,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
             }`}
             style={{ backgroundColor: panelSurface }}
           >
-            <div className="mx-auto flex w-full max-w-[96rem] items-center justify-end gap-2">
+            <div
+              className={`flex w-full items-center justify-end gap-2 ${
+                examStudioPageMode ? "" : "mx-auto max-w-[96rem]"
+              }`}
+            >
               <button
                 type="button"
                 onClick={() => examProps.onExamModeChange(false)}
