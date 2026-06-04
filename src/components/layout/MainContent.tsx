@@ -268,22 +268,60 @@ function formatReportQuizType(value: string | undefined): string {
   return labels[normalized] ?? normalized;
 }
 
-function formatReportLearningEvidenceSummary(
-  item: StudentReportLearningEvidenceItem,
-): string {
-  const quizTypeLabel = formatReportQuizType(item.quizType);
-  const scoreText = formatReportRatioPercent(item.scoreRatio);
-  return [
-    quizTypeLabel ? `유형: ${quizTypeLabel}` : null,
-    scoreText !== "-" ? `점수: ${scoreText}` : null,
-    item.passed != null ? `결과: ${item.passed ? "통과" : "미통과"}` : null,
-    item.weakConcepts.length
-      ? `관련 개념: ${item.weakConcepts.join(", ")}`
-      : null,
-    item.wrongItems.length ? `오답 ${item.wrongItems.length}개` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
+function formatReportWeakConceptLabel(value: string | undefined): string {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return "";
+  const labels: Record<string, string> = {
+    Fact_Check: "사실 확인",
+    Logic_Trap: "논리 함정",
+    Common_Misconception: "흔한 오개념",
+  };
+  return labels[normalized] ?? normalized;
+}
+
+function formatReportWrongItemLabel(value: string, index: number): string {
+  const fallback = `오답 ${index + 1}번`;
+  const raw = String(value ?? "").trim();
+  if (!raw) return fallback;
+
+  if (raw.startsWith("{") || raw.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      const record =
+        parsed != null && typeof parsed === "object" && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : null;
+      if (!record) return fallback;
+
+      const rawQuestionIndex =
+        record.questionIndex ?? record.question_index ?? record.index ?? record.number;
+      const parsedQuestionIndex = Number(rawQuestionIndex);
+      const questionNumber = Number.isFinite(parsedQuestionIndex)
+        ? Math.max(1, Math.trunc(parsedQuestionIndex) + 1)
+        : index + 1;
+      const studentAnswer =
+        typeof record.studentAnswer === "string"
+          ? record.studentAnswer
+          : typeof record.student_answer === "string"
+            ? record.student_answer
+            : "";
+      const correctAnswer =
+        typeof record.correctAnswer === "string"
+          ? record.correctAnswer
+          : typeof record.correct_answer === "string"
+            ? record.correct_answer
+            : "";
+
+      if (studentAnswer || correctAnswer) {
+        return `오답 ${questionNumber}번 (${studentAnswer || "-"} → ${correctAnswer || "-"})`;
+      }
+      return `오답 ${questionNumber}번`;
+    } catch {
+      return fallback;
+    }
+  }
+
+  return raw.startsWith("오답") ? raw : `오답 ${raw}`;
 }
 
 function formatReportCount(value: number | undefined, suffix = "회"): string {
@@ -2263,7 +2301,7 @@ const MainContent: React.FC<MainContentProps> = ({
     const headline =
       studentReportDetail?.headline ||
       (score < 50
-        ? "기초 체력을 올리면서 약점 개념을 좁혀가야 하는 구간입니다."
+        ? "기초 체력을 올리면서 취약 유형을 좁혀가야 하는 구간입니다."
         : score < 75
           ? "핵심 개념은 잡혀 있으나 보완 학습이 필요한 구간입니다."
           : "학습 흐름이 안정적이며 심화 적용을 시도할 수 있습니다.");
@@ -2297,7 +2335,7 @@ const MainContent: React.FC<MainContentProps> = ({
           item,
         ])
       : [
-          ["약점 개념 점검", weakCompetencies[0]?.competencyName || "핵심 개념 복습"],
+          ["취약 유형 점검", weakCompetencies[0]?.competencyName || "핵심 개념 복습"],
           ["짧은 퀴즈 재투입", "오답 유형을 기준으로 미니 퀴즈를 제공합니다."],
           ["질문 로그 유지", "학습 중 막힌 부분을 그대로 남기도록 안내합니다."],
         ];
@@ -2444,31 +2482,34 @@ const MainContent: React.FC<MainContentProps> = ({
     return (
       <div className="flex min-h-0 w-full flex-col gap-3 pb-4">
         <section
-          className={`${reportHeaderCardClass} relative overflow-hidden px-5 py-5 lg:px-6`}
+          className={`${reportHeaderCardClass} relative overflow-visible px-5 py-6 lg:px-6`}
         >
           <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="min-w-0">
-              <h2 className="text-2xl font-semibold leading-tight">
-                {courseDetail?.title ?? "강의실"} 학생별 역량 리포트
-              </h2>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                ["기본 항목", `${baseCriteriaCount}개`],
-                ["추가 항목", `${additionalCriteriaCount}개`],
-                [
-                  "분석 기준",
-                  reportCriteriaSummary?.criteriaStatus ||
-                    (classroomAnalyzeStreaming ? "반영 중" : "적용 중"),
-                ],
-              ].map(([label, value]) => (
-                <div key={label} className={`${softCardClass} min-w-[7rem] px-4 py-3`}>
-                  <p className={`text-xs font-semibold ${mutedText}`}>{label}</p>
-                  <p className="mt-1 text-xl font-semibold">{value}</p>
-                </div>
-              ))}
-            </div>
+            <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="min-w-0 flex-1">
+                <h2 className="break-keep text-2xl font-semibold leading-normal">
+                  {courseDetail?.title ?? "강의실"} 학생별 역량 리포트
+                </h2>
+              </div>
+              <div className="grid shrink-0 grid-cols-1 gap-2 sm:grid-cols-3 lg:max-w-[26rem]">
+                {[
+                  ["기본 항목", `${baseCriteriaCount}개`],
+                  ["추가 항목", `${additionalCriteriaCount}개`],
+                  [
+                    "분석 기준",
+                    reportCriteriaSummary?.criteriaStatus ||
+                      (classroomAnalyzeStreaming ? "반영 중" : "적용 중"),
+                  ],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className={`${softCardClass} min-w-[7rem] px-4 py-3`}
+                  >
+                    <p className={`text-xs font-semibold ${mutedText}`}>{label}</p>
+                    <p className="mt-1 text-xl font-semibold leading-tight">{value}</p>
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="flex min-w-0 justify-end">
               <nav
@@ -2492,19 +2533,19 @@ const MainContent: React.FC<MainContentProps> = ({
               </nav>
             </div>
           </div>
-		        </section>
+        </section>
 
-	        {classroomReportTab === "students" ? (
-	        <section className={`${cardClass} px-4 py-3`}>
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-              <span className="font-semibold">선택 학생</span>
-              <span className="font-semibold">{selectedName}</span>
-              {selectedEmail ? <span className={mutedText}>{selectedEmail}</span> : null}
-              <span className={mutedText}>
-                마지막 저장 {formatActivityMonthForKo(selectedLatest)}
-              </span>
-            </div>
+        {classroomReportTab === "students" ? (
+          <section className={`${cardClass} px-4 py-3`}>
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+                <span className="font-semibold">선택 학생</span>
+                <span className="font-semibold">{selectedName}</span>
+                {selectedEmail ? <span className={mutedText}>{selectedEmail}</span> : null}
+                <span className={mutedText}>
+                  마지막 저장 {formatActivityMonthForKo(selectedLatest)}
+                </span>
+              </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
@@ -2867,40 +2908,40 @@ const MainContent: React.FC<MainContentProps> = ({
             </div>
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
               <div className={`${softCardClass} px-4 py-3`}>
-                <p className="text-sm font-semibold">약점 개념</p>
+                <p className="text-sm font-semibold">취약 유형</p>
                 {integratedWeakConcepts.length ? (
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {integratedWeakConcepts.slice(0, 10).map((concept) => (
+                    {integratedWeakConcepts.slice(0, 10).map((concept, conceptIndex) => (
                       <span
-                        key={concept}
+                        key={`${concept}-${conceptIndex}`}
                         className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
                           isDarkMode
                             ? "border-[#343434] bg-[#202020] text-gray-200"
                             : "border-[#dedbd5] bg-white text-[#212121]"
                         }`}
                       >
-                        {concept}
+                        {formatReportWeakConceptLabel(concept)}
                       </span>
                     ))}
                   </div>
                 ) : (
-                  <p className={`mt-2 text-sm ${mutedText}`}>저장된 약점 개념이 없습니다.</p>
+                  <p className={`mt-2 text-sm ${mutedText}`}>저장된 취약 유형이 없습니다.</p>
                 )}
               </div>
               <div className={`${softCardClass} px-4 py-3`}>
                 <p className="text-sm font-semibold">해결된 개념</p>
                 {integratedResolvedConcepts.length ? (
                   <div className="mt-2 flex flex-wrap gap-2">
-                    {integratedResolvedConcepts.slice(0, 10).map((concept) => (
+                    {integratedResolvedConcepts.slice(0, 10).map((concept, conceptIndex) => (
                       <span
-                        key={concept}
+                        key={`${concept}-${conceptIndex}`}
                         className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
                           isDarkMode
                             ? "border-[#343434] bg-[#202020] text-gray-200"
                             : "border-[#dedbd5] bg-white text-[#212121]"
                         }`}
                       >
-                        {concept}
+                        {formatReportWeakConceptLabel(concept)}
                       </span>
                     ))}
                   </div>
@@ -3044,8 +3085,12 @@ const MainContent: React.FC<MainContentProps> = ({
             <div className="mt-4 space-y-2">
               {learningEvidence.slice(0, 8).map((item, index) => {
                 const quizTypeLabel = formatReportQuizType(item.quizType);
-                const evidenceSummary = formatReportLearningEvidenceSummary(item);
                 const scoreText = formatReportRatioPercent(item.scoreRatio);
+                const weakConceptLabels = item.weakConcepts
+                  .map(formatReportWeakConceptLabel)
+                  .filter(Boolean);
+                const hasEvidenceMetrics =
+                  scoreText !== "-" || item.passed != null || weakConceptLabels.length > 0;
                 return (
                   <article
                     key={`${item.evidenceId ?? item.occurredAt ?? "evidence"}-${index}`}
@@ -3093,10 +3138,92 @@ const MainContent: React.FC<MainContentProps> = ({
                             .filter(Boolean)
                             .join(" · ") || "페이지 정보 없음"}
                         </p>
-                        {evidenceSummary ? (
-                          <p className={`mt-2 line-clamp-2 text-sm leading-6 ${mutedText}`}>
-                            {evidenceSummary}
-                          </p>
+                        {hasEvidenceMetrics ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {scoreText !== "-" ? (
+                              <div
+                                className={`min-w-[7.5rem] rounded-[var(--app-control-radius)] border px-3 py-2 ${
+                                  isDarkMode
+                                    ? "border-[#343434] bg-[#1b1b1b]"
+                                    : "border-[#dedbd5] bg-white"
+                                }`}
+                              >
+                                <p className={`text-[11px] font-semibold ${mutedText}`}>
+                                  점수
+                                </p>
+                                <p className="mt-1 text-base font-semibold leading-none">
+                                  {scoreText}
+                                </p>
+                              </div>
+                            ) : null}
+                            {item.passed != null ? (
+                              <div
+                                className={`min-w-[8rem] rounded-[var(--app-control-radius)] border px-3 py-2 ${
+                                  item.passed
+                                    ? isDarkMode
+                                      ? "border-emerald-500/30 bg-emerald-500/10"
+                                      : "border-emerald-100 bg-emerald-50"
+                                    : isDarkMode
+                                      ? "border-[#ff824d]/30 bg-[#ff824d]/10"
+                                      : "border-[#ffd9c8] bg-[#fff2eb]"
+                                }`}
+                              >
+                                <p
+                                  className={`text-[11px] font-semibold ${
+                                    item.passed
+                                      ? isDarkMode
+                                        ? "text-emerald-300"
+                                        : "text-emerald-700"
+                                      : isDarkMode
+                                        ? "text-[#ffad9b]"
+                                        : "text-[#c95018]"
+                                  }`}
+                                >
+                                  결과
+                                </p>
+                                <p
+                                  className={`mt-1 text-base font-semibold leading-none ${
+                                    item.passed
+                                      ? isDarkMode
+                                        ? "text-emerald-200"
+                                        : "text-emerald-800"
+                                      : isDarkMode
+                                        ? "text-[#ffd1c4]"
+                                        : "text-[#a63d12]"
+                                  }`}
+                                >
+                                  {item.passed ? "통과" : "미통과"}
+                                </p>
+                              </div>
+                            ) : null}
+                            {weakConceptLabels.length ? (
+                              <div
+                                className={`min-w-[14rem] flex-1 rounded-[var(--app-control-radius)] border px-3 py-2 ${
+                                  isDarkMode
+                                    ? "border-[#343434] bg-[#1b1b1b]"
+                                    : "border-[#dedbd5] bg-white"
+                                }`}
+                              >
+                                <p className={`text-[11px] font-semibold ${mutedText}`}>
+                                  관련 태그
+                                </p>
+                                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                  {weakConceptLabels.slice(0, 4).map((label, labelIndex) => (
+                                    <span
+                                      key={`${label}-${labelIndex}`}
+                                      className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                                        isDarkMode
+                                          ? "border-[#343434] bg-[#202020] text-gray-200"
+                                          : "border-[#dedbd5] bg-[#fbfaf7] text-[#212121]"
+                                      }`}
+                                    >
+                                      {label}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
                         ) : null}
                       </div>
                       <div className="shrink-0 text-left lg:text-right">
@@ -3110,30 +3237,36 @@ const MainContent: React.FC<MainContentProps> = ({
                     </div>
                     {item.weakConcepts.length || item.wrongItems.length ? (
                       <div className="mt-3 flex flex-wrap gap-2">
-                        {item.weakConcepts.slice(0, 5).map((concept) => (
+                        {item.weakConcepts.slice(0, 5).map((concept, conceptIndex) => (
                           <span
-                            key={`weak-${concept}`}
+                            key={`weak-${conceptIndex}-${concept}`}
                             className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
                               isDarkMode
                                 ? "border-[#343434] bg-[#202020] text-gray-200"
                                 : "border-[#dedbd5] bg-white text-[#212121]"
                             }`}
                           >
-                            약점 {concept}
+                            취약 {formatReportWeakConceptLabel(concept)}
                           </span>
                         ))}
-                        {item.wrongItems.slice(0, 3).map((wrongItem) => (
-                          <span
-                            key={`wrong-${wrongItem}`}
-                            className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                              isDarkMode
-                                ? "border-[#343434] bg-[#202020] text-gray-200"
-                                : "border-[#dedbd5] bg-white text-[#212121]"
-                            }`}
-                          >
-                            오답 {wrongItem}
-                          </span>
-                        ))}
+                        {item.wrongItems.slice(0, 3).map((wrongItem, wrongIndex) => {
+                          const wrongLabel = formatReportWrongItemLabel(
+                            wrongItem,
+                            wrongIndex,
+                          );
+                          return (
+                            <span
+                              key={`wrong-${wrongIndex}-${wrongLabel}`}
+                              className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                                isDarkMode
+                                  ? "border-[#343434] bg-[#202020] text-gray-200"
+                                  : "border-[#dedbd5] bg-white text-[#212121]"
+                              }`}
+                            >
+                              {wrongLabel}
+                            </span>
+                          );
+                        })}
                       </div>
                     ) : null}
                   </article>
@@ -7236,16 +7369,6 @@ const MainContent: React.FC<MainContentProps> = ({
         >
           <section className="flex shrink-0 flex-col gap-1">
             {[
-              {
-                key: "notices" as const,
-                label: "공지사항",
-                icon: "M4 7h3l9-3v16l-9-3H4V7Zm3 0v10M18 9.5a4 4 0 0 1 0 5",
-              },
-              {
-                key: "discussions" as const,
-                label: "토론",
-                icon: "M7 8h10M7 12h6m8-1a7 7 0 0 1-7 7H9l-5 3 1.5-4.5A7 7 0 1 1 21 11Z",
-              },
               {
                 key: "materials" as const,
                 label: "자료실",

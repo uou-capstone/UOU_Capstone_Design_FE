@@ -894,7 +894,7 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
               }}
             >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <h3 className="text-2xl font-semibold">게시글 편집</h3>
+                <h3 className="text-2xl font-semibold">토론</h3>
                 {onClose ? (
                   <button
                     type="button"
@@ -906,20 +906,19 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                 ) : null}
               </div>
 
-              <label className="grid gap-2">
-                <span className="text-sm font-semibold">제목</span>
-                <input
-                  className={discussionInputClass}
-                  value={form.title}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, title: event.target.value }))
-                  }
-                  placeholder="예: 2주차 토론 주제 미리 의견 남겨주세요"
-                />
-              </label>
-
-              <div className="grid gap-3 lg:grid-cols-3">
-                <label className="grid gap-2">
+              <div className="grid gap-3 xl:grid-cols-[minmax(0,1.45fr)_12rem_minmax(24rem,1fr)]">
+                <label className="grid min-w-0 gap-2">
+                  <span className="text-sm font-semibold">제목</span>
+                  <input
+                    className={discussionInputClass}
+                    value={form.title}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, title: event.target.value }))
+                    }
+                    placeholder="예: 2주차 토론 주제 미리 의견 남겨주세요"
+                  />
+                </label>
+                <label className="grid min-w-0 gap-2">
                   <span className="text-sm font-semibold">유형</span>
                   <select
                     className={discussionInputClass}
@@ -938,78 +937,47 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                     ))}
                   </select>
                 </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold">공개 범위</span>
-                  <select className={discussionInputClass} value="course" disabled>
-                    <option value="course">강의실 전체</option>
-                  </select>
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold">작성자</span>
-                  <select className={discussionInputClass} value="me" disabled>
-                    <option value="me">{user?.name || "작성자"}</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_11rem]">
-                <label className="grid gap-2">
+                <div className="grid min-w-0 gap-2">
                   <span className="text-sm font-semibold">예약 발송</span>
-                  <input
-                    type="date"
-                    className={discussionInputClass}
-                    value={form.scheduledDate}
-                    disabled={form.immediateSend}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        scheduledDate: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold">시간</span>
-                  <input
-                    type="time"
-                    className={discussionInputClass}
-                    value={form.scheduledTime}
-                    disabled={form.immediateSend}
-                    onChange={(event) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        scheduledTime: event.target.value,
-                      }))
-                    }
-                  />
-                </label>
-                <div className="flex items-end gap-4 pb-2">
-                  <label className="flex items-center gap-2 text-sm font-semibold">
+                  <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_8.5rem_auto]">
                     <input
-                      type="checkbox"
-                      checked={form.immediateSend}
+                      type="date"
+                      className={discussionInputClass}
+                      value={form.scheduledDate}
+                      disabled={form.immediateSend}
                       onChange={(event) =>
                         setForm((prev) => ({
                           ...prev,
-                          immediateSend: event.target.checked,
+                          scheduledDate: event.target.value,
                         }))
                       }
                     />
-                    즉시 발송
-                  </label>
-                  <label className="flex items-center gap-2 text-sm font-semibold">
                     <input
-                      type="checkbox"
-                      checked={form.allowComments}
+                      type="time"
+                      className={discussionInputClass}
+                      value={form.scheduledTime}
+                      disabled={form.immediateSend}
                       onChange={(event) =>
                         setForm((prev) => ({
                           ...prev,
-                          allowComments: event.target.checked,
+                          scheduledTime: event.target.value,
                         }))
                       }
                     />
-                    댓글 허용
-                  </label>
+                    <label className="flex h-10 items-center gap-2 whitespace-nowrap text-sm font-semibold">
+                      <input
+                        type="checkbox"
+                        checked={form.immediateSend}
+                        onChange={(event) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            immediateSend: event.target.checked,
+                          }))
+                        }
+                      />
+                      즉시 발송
+                    </label>
+                  </div>
                 </div>
               </div>
 
@@ -1125,7 +1093,21 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                 </div>
               </div>
 
-              <div className="flex flex-wrap justify-end gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <label className="mr-1 flex h-10 items-center gap-2 text-sm font-semibold">
+                  <input
+                    type="radio"
+                    checked={form.allowComments}
+                    onClick={() =>
+                      setForm((prev) => ({
+                        ...prev,
+                        allowComments: !prev.allowComments,
+                      }))
+                    }
+                    onChange={() => undefined}
+                  />
+                  댓글 허용
+                </label>
                 {editingId != null ? (
                   <button
                     type="button"
