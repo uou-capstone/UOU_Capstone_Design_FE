@@ -388,8 +388,6 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
     setSelectedNotice(null);
     setSelectedDiscussion(null);
     setComments([]);
-    setNoticeAssistantInput("");
-    setPendingNoticeOperation(null);
   }, [courseId, scopedToLecture, selectedLectureId, tab]);
 
   const selectNotice = React.useCallback(
@@ -828,7 +826,7 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
   const surfaceClass = isDarkMode
     ? "border-[#1b4d44] bg-[#0b241f] text-gray-100"
     : "border-[#d9d9dd] bg-white text-gray-900";
-  const mutedClass = isDarkMode ? "text-gray-400" : "text-gray-500";
+  const mutedClass = isDarkMode ? "text-gray-400" : "text-[#111111]";
   const inputClass = `rounded-lg border px-3 py-2 text-sm outline-none focus:ring-1 ${
     isDarkMode
       ? "border-[#1b3443] bg-[#102a35] text-gray-100 placeholder:text-gray-500 focus:border-[#ffad9b] focus:ring-[#ffad9b]/20"

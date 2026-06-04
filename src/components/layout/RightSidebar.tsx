@@ -1636,65 +1636,6 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                   : "mx-auto max-w-[96rem] px-3 py-3"
               }`}
             >
-              <section
-                className={`rounded-lg border px-5 py-5 ${
-                  isDarkMode
-                    ? "border-[#343434] bg-[#202020]"
-                    : "border-[#cfdcf9] bg-[#f6f9ff]"
-                }`}
-              >
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="min-w-0">
-                    <span
-                      className={`mb-3 inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                        isDarkMode
-                          ? "bg-white/10 text-zinc-200"
-                          : "bg-white text-gray-700"
-                      }`}
-                    >
-                      평가 관리
-                    </span>
-                    <h2
-                      className={`text-2xl font-bold tracking-normal md:text-3xl ${
-                        isDarkMode ? "text-white" : "text-gray-950"
-                      }`}
-                    >
-                      시험 설계
-                    </h2>
-                    <p className={`mt-2 text-sm ${examMutedTextClass}`}>
-                      시험 정보를 구성하고 게시하여 학생들이 응시할 수 있도록 설정합니다.
-                    </p>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 sm:min-w-[24rem]">
-                    {[
-                      ["문항 수", `${examProps.examCount}`],
-                      ["제한 시간", `${examTimeLimit || "0"}분`],
-                      ["서술형 AI 채점", examAiGradingEnabled ? "사용" : "미사용"],
-                    ].map(([label, value]) => (
-                      <div
-                        key={label}
-                        className={`rounded-lg border px-3 py-3 ${
-                          isDarkMode
-                            ? "border-[#343434] bg-[#262626]"
-                            : "border-[#e4e1db] bg-white"
-                        }`}
-                      >
-                        <span className={`block text-xs font-semibold ${examMutedTextClass}`}>
-                          {label}
-                        </span>
-                        <strong
-                          className={`mt-1 block text-xl font-bold ${
-                            isDarkMode ? "text-white" : "text-gray-950"
-                          }`}
-                        >
-                          {value}
-                        </strong>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-
               <div
                 className={`grid gap-4 ${
                   examStudioPageMode

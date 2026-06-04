@@ -24,6 +24,7 @@ import {
   type LectureResponseDto,
   type AssessmentSimpleDto,
   type StudentReportDetailResponse,
+  type StudentReportLearningEvidenceItem,
   type StudentReportListItem,
   type StudentReportStatusFilter,
   type ClassroomReportResponse,
@@ -240,6 +241,9 @@ function formatReportEvidenceLabel(value: string | undefined): string {
   const normalized = String(value ?? "").trim();
   if (!normalized) return "학습 기록";
   const labels: Record<string, string> = {
+    QUIZ_GRADED: "퀴즈 채점",
+    RETEST_GRADED: "재시험 채점",
+    MISCONCEPTION_REPAIR_COMPLETED: "오개념 교정 완료",
     QUIZ_SUBMITTED: "퀴즈 제출",
     QUIZ_PASSED: "퀴즈 통과",
     QUIZ_FAILED: "퀴즈 미통과",
@@ -264,26 +268,22 @@ function formatReportQuizType(value: string | undefined): string {
   return labels[normalized] ?? normalized;
 }
 
-function formatReportEvidenceBody(value: unknown): string {
-  if (typeof value === "string") return value.trim();
-  if (value != null && typeof value === "object" && !Array.isArray(value)) {
-    const record = value as Record<string, unknown>;
-    const preferred =
-      record.summary ??
-      record.message ??
-      record.reason ??
-      record.explanation ??
-      record.content;
-    if (typeof preferred === "string" && preferred.trim() !== "") {
-      return preferred.trim();
-    }
-  }
-  if (value == null) return "";
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return String(value);
-  }
+function formatReportLearningEvidenceSummary(
+  item: StudentReportLearningEvidenceItem,
+): string {
+  const quizTypeLabel = formatReportQuizType(item.quizType);
+  const scoreText = formatReportRatioPercent(item.scoreRatio);
+  return [
+    quizTypeLabel ? `유형: ${quizTypeLabel}` : null,
+    scoreText !== "-" ? `점수: ${scoreText}` : null,
+    item.passed != null ? `결과: ${item.passed ? "통과" : "미통과"}` : null,
+    item.weakConcepts.length
+      ? `관련 개념: ${item.weakConcepts.join(", ")}`
+      : null,
+    item.wrongItems.length ? `오답 ${item.wrongItems.length}개` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function formatReportCount(value: number | undefined, suffix = "회"): string {
@@ -3043,8 +3043,9 @@ const MainContent: React.FC<MainContentProps> = ({
             </div>
             <div className="mt-4 space-y-2">
               {learningEvidence.slice(0, 8).map((item, index) => {
-                const evidenceBody = formatReportEvidenceBody(item.evidence);
                 const quizTypeLabel = formatReportQuizType(item.quizType);
+                const evidenceSummary = formatReportLearningEvidenceSummary(item);
+                const scoreText = formatReportRatioPercent(item.scoreRatio);
                 return (
                   <article
                     key={`${item.evidenceId ?? item.occurredAt ?? "evidence"}-${index}`}
@@ -3079,7 +3080,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                     : "bg-[#fff2eb] text-[#c95018]"
                               }`}
                             >
-                              {item.passed ? "통과" : "보완 필요"}
+                              {item.passed ? "통과" : "미통과"}
                             </span>
                           ) : null}
                         </div>
@@ -3092,15 +3093,15 @@ const MainContent: React.FC<MainContentProps> = ({
                             .filter(Boolean)
                             .join(" · ") || "페이지 정보 없음"}
                         </p>
-                        {evidenceBody ? (
+                        {evidenceSummary ? (
                           <p className={`mt-2 line-clamp-2 text-sm leading-6 ${mutedText}`}>
-                            {evidenceBody}
+                            {evidenceSummary}
                           </p>
                         ) : null}
                       </div>
                       <div className="shrink-0 text-left lg:text-right">
                         <p className="text-2xl font-semibold leading-none">
-                          {formatReportRatioPercent(item.scoreRatio)}
+                          {scoreText}
                         </p>
                         <p className={`mt-1 text-xs font-semibold ${mutedText}`}>
                           {formatActivityMonthForKo(item.occurredAt)}
@@ -9558,7 +9559,7 @@ const MainContent: React.FC<MainContentProps> = ({
                 isDarkMode ? "text-gray-200" : "text-[#212121]"
               }`}
             >
-              {teacherMainPanel === "materials" || (isTeacher && teacherMainPanel === "examStudio") ? (
+              {teacherMainPanel === "materials" ? (
                 <CourseMaterialsMetaCard
 	                  title={courseDetail.title ?? "강의실"}
 	                  description={courseDetail.description}
@@ -9665,7 +9666,13 @@ const MainContent: React.FC<MainContentProps> = ({
                     onSaveCourseMeta={handleEditCourseMetaSubmit}
 	                />
 	              ) : null}
-	              <div className="scrollbar-hide flex min-h-0 flex-1 flex-col overflow-y-auto pb-4">
+	              <div
+                  className={`scrollbar-hide flex min-h-0 flex-1 flex-col ${
+                    isTeacher && teacherMainPanel === "examStudio"
+                      ? "overflow-hidden pb-0"
+                      : "overflow-y-auto pb-4"
+                  }`}
+                >
               {isTeacher && teacherMainPanel === "classroomReport" ? (
                 renderClassroomReportPage()
               ) : false ? (

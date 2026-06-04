@@ -495,6 +495,16 @@ function normalizeLooseStringArray(v: unknown): string[] {
     .filter(Boolean);
 }
 
+function toOptionalBoolean(v: unknown): boolean | undefined {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "string") {
+    const normalized = v.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return undefined;
+}
+
 function normalizeIntegratedLearningSummary(
   value: unknown,
 ): StudentReportIntegratedLearningSummary | undefined {
@@ -524,7 +534,18 @@ function normalizeLearningEvidenceItem(
 ): StudentReportLearningEvidenceItem | null {
   const raw = toPlainRecord(value);
   if (!raw) return null;
-  const passedRaw = raw.passed ?? raw.isPassed ?? raw.is_passed;
+  const evidence = raw.evidence;
+  const evidenceRecord = toPlainRecord(evidence);
+  const gradingRecord = toPlainRecord(evidenceRecord?.grading);
+  const quizRecord = toPlainRecord(evidenceRecord?.quiz);
+  const diagnosisRecord = toPlainRecord(evidenceRecord?.diagnosis);
+  const passedRaw =
+    raw.passed ??
+    raw.isPassed ??
+    raw.is_passed ??
+    gradingRecord?.passed ??
+    gradingRecord?.isPassed ??
+    gradingRecord?.is_passed;
   return {
     evidenceId: toFiniteNumber(raw.evidenceId ?? raw.evidence_id ?? raw.id),
     courseId: toFiniteNumber(raw.courseId ?? raw.course_id),
@@ -539,14 +560,44 @@ function normalizeLearningEvidenceItem(
           : raw.sessionId != null || raw.session_id != null
             ? String(raw.sessionId ?? raw.session_id)
             : undefined,
-    pageNumber: toFiniteNumber(raw.pageNumber ?? raw.page_number),
+    pageNumber: toFiniteNumber(
+      raw.pageNumber ?? raw.page_number ?? evidenceRecord?.pageNumber ?? evidenceRecord?.page_number,
+    ),
     eventType: toOptionalString(raw.eventType ?? raw.event_type),
-    quizType: toOptionalString(raw.quizType ?? raw.quiz_type),
-    scoreRatio: toFiniteNumber(raw.scoreRatio ?? raw.score_ratio),
-    passed: typeof passedRaw === "boolean" ? passedRaw : undefined,
-    weakConcepts: normalizeStringArray(raw.weakConcepts ?? raw.weak_concepts),
-    wrongItems: normalizeLooseStringArray(raw.wrongItems ?? raw.wrong_items),
-    evidence: raw.evidence,
+    quizType: toOptionalString(
+      raw.quizType ??
+        raw.quiz_type ??
+        quizRecord?.quizType ??
+        quizRecord?.quiz_type ??
+        evidenceRecord?.quizType ??
+        evidenceRecord?.quiz_type,
+    ),
+    scoreRatio: toFiniteNumber(
+      raw.scoreRatio ??
+        raw.score_ratio ??
+        gradingRecord?.scoreRatio ??
+        gradingRecord?.score_ratio ??
+        evidenceRecord?.scoreRatio ??
+        evidenceRecord?.score_ratio,
+    ),
+    passed: toOptionalBoolean(passedRaw),
+    weakConcepts: normalizeStringArray(
+      raw.weakConcepts ??
+        raw.weak_concepts ??
+        diagnosisRecord?.weakConcepts ??
+        diagnosisRecord?.weak_concepts ??
+        evidenceRecord?.weakConcepts ??
+        evidenceRecord?.weak_concepts,
+    ),
+    wrongItems: normalizeLooseStringArray(
+      raw.wrongItems ??
+        raw.wrong_items ??
+        gradingRecord?.wrongItems ??
+        gradingRecord?.wrong_items ??
+        evidenceRecord?.wrongItems ??
+        evidenceRecord?.wrong_items,
+    ),
+    evidence,
     occurredAt:
       typeof raw.occurredAt === "string" && raw.occurredAt.trim() !== ""
         ? raw.occurredAt
