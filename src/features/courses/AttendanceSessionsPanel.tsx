@@ -677,7 +677,7 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
   }
 
   return (
-    <div className="flex min-h-full flex-col gap-4 pb-6">
+    <div className="flex min-h-0 flex-col gap-3 pb-4">
       <section className={`mb-3 flex shrink-0 flex-col rounded-2xl border px-5 py-5 lg:px-6 ${surfaceClass}`}>
         <div className="flex min-w-0 flex-col gap-4">
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1212,15 +1212,12 @@ function StudentAttendanceSummaryPanel({
   const ratio = Math.round((summary?.presentRatio ?? 0) * 100);
 
   return (
-    <div className="flex min-h-full flex-col gap-4 pb-6">
+    <div className="flex min-h-0 flex-col gap-3 pb-4">
       <section className={`mb-3 flex shrink-0 flex-col rounded-2xl border px-5 py-5 lg:px-6 ${surfaceClass}`}>
         <div className="flex min-w-0 flex-col gap-4">
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0 flex-1">
-              <p className={`text-xs font-semibold uppercase tracking-wide ${mutedClass}`}>
-                My Attendance
-              </p>
-              <h2 className="mt-1 text-2xl font-semibold leading-tight">내 출석 요약</h2>
+              <h2 className="text-2xl font-semibold leading-tight">내 출석 요약</h2>
             </div>
             <button
               type="button"

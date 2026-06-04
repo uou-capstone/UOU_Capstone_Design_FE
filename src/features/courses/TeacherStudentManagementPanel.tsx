@@ -170,7 +170,7 @@ export const TeacherStudentManagementPanel: React.FC<
     : "bg-gray-200 text-gray-800 hover:bg-gray-300";
 
   return (
-    <div className="flex min-h-full flex-col gap-4 pb-6">
+    <div className="flex min-h-0 flex-col gap-3 pb-4">
       <section className={`mb-3 flex shrink-0 flex-col rounded-2xl border px-5 py-5 lg:px-6 ${surfaceClass}`}>
         <div className="flex min-w-0 flex-col gap-4">
           <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">

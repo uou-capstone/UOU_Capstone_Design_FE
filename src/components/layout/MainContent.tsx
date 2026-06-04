@@ -230,6 +230,62 @@ function formatReportPercent(value: number | undefined): string {
   return `${Math.round(value)}%`;
 }
 
+function formatReportRatioPercent(value: number | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "-";
+  const percent = Math.abs(value) <= 1 ? value * 100 : value;
+  return `${Math.round(percent)}%`;
+}
+
+function formatReportEvidenceLabel(value: string | undefined): string {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return "학습 기록";
+  const labels: Record<string, string> = {
+    QUIZ_SUBMITTED: "퀴즈 제출",
+    QUIZ_PASSED: "퀴즈 통과",
+    QUIZ_FAILED: "퀴즈 미통과",
+    REVIEW_COMPLETED: "복습 완료",
+    MISCONCEPTION_RESOLVED: "오개념 교정",
+    PAGE_EXPLAINED: "페이지 설명",
+    USER_MESSAGE: "질문",
+  };
+  return labels[normalized] ?? normalized;
+}
+
+function formatReportQuizType(value: string | undefined): string {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return "";
+  const labels: Record<string, string> = {
+    Five_Choice: "객관식",
+    OX_Problem: "OX",
+    Short_Answer: "단답형",
+    Essay: "서술형",
+    Flash_Card: "플래시카드",
+  };
+  return labels[normalized] ?? normalized;
+}
+
+function formatReportEvidenceBody(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (value != null && typeof value === "object" && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    const preferred =
+      record.summary ??
+      record.message ??
+      record.reason ??
+      record.explanation ??
+      record.content;
+    if (typeof preferred === "string" && preferred.trim() !== "") {
+      return preferred.trim();
+    }
+  }
+  if (value == null) return "";
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function formatReportCount(value: number | undefined, suffix = "회"): string {
   if (value == null || !Number.isFinite(value)) return "-";
   return `${Math.round(value)}${suffix}`;
@@ -2245,6 +2301,12 @@ const MainContent: React.FC<MainContentProps> = ({
           ["짧은 퀴즈 재투입", "오답 유형을 기준으로 미니 퀴즈를 제공합니다."],
           ["질문 로그 유지", "학습 중 막힌 부분을 그대로 남기도록 안내합니다."],
         ];
+    const integratedSummary = studentReportDetail?.integratedLearningSummary;
+    const learningEvidence = studentReportDetail?.learningEvidence ?? [];
+    const integratedWeakConcepts = integratedSummary?.weakConcepts ?? [];
+    const integratedResolvedConcepts = integratedSummary?.resolvedConcepts ?? [];
+    const hasIntegratedLearningData =
+      integratedSummary != null || learningEvidence.length > 0;
     const pageCoverage = studentActivitySummary?.pageCoverage ?? [];
     const categoryCoverage = studentActivitySummary?.categoryCoverage ?? [];
     const cardClass = `rounded-[var(--app-control-radius)] border ${
@@ -2380,7 +2442,7 @@ const MainContent: React.FC<MainContentProps> = ({
     };
 
     return (
-      <div className="flex w-full flex-col gap-3 pb-6">
+      <div className="flex min-h-0 w-full flex-col gap-3 pb-4">
         <section
           className={`${reportHeaderCardClass} relative overflow-hidden px-5 py-5 lg:px-6`}
         >
@@ -2774,6 +2836,82 @@ const MainContent: React.FC<MainContentProps> = ({
           ) : null}
         </section>
 
+        {hasIntegratedLearningData ? (
+          <section className={`${cardClass} px-5 py-4`}>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h3 className="text-base font-semibold">통합학습 요약</h3>
+                <p className={`mt-1 text-sm ${mutedText}`}>
+                  퀴즈 채점, 오개념 교정, 복습 흐름에서 저장된 근거를 리포트에 반영합니다.
+                </p>
+              </div>
+              <p className={`text-xs font-semibold ${mutedText}`}>
+                최근 활동{" "}
+                {formatActivityMonthForKo(
+                  integratedSummary?.latestActivityAt ?? learningEvidence[0]?.occurredAt,
+                )}
+              </p>
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
+              {[
+                ["퀴즈 시도", formatReportCount(integratedSummary?.quizAttemptCount, "회")],
+                ["통과", formatReportCount(integratedSummary?.passCount, "회")],
+                ["미통과", formatReportCount(integratedSummary?.failCount, "회")],
+                ["평균 점수", formatReportRatioPercent(integratedSummary?.averageScoreRatio)],
+              ].map(([label, value]) => (
+                <div key={label} className={`${softCardClass} px-4 py-3`}>
+                  <p className={`text-xs font-semibold ${mutedText}`}>{label}</p>
+                  <p className="mt-1 text-xl font-semibold">{value}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              <div className={`${softCardClass} px-4 py-3`}>
+                <p className="text-sm font-semibold">약점 개념</p>
+                {integratedWeakConcepts.length ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {integratedWeakConcepts.slice(0, 10).map((concept) => (
+                      <span
+                        key={concept}
+                        className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                          isDarkMode
+                            ? "border-[#343434] bg-[#202020] text-gray-200"
+                            : "border-[#dedbd5] bg-white text-[#212121]"
+                        }`}
+                      >
+                        {concept}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className={`mt-2 text-sm ${mutedText}`}>저장된 약점 개념이 없습니다.</p>
+                )}
+              </div>
+              <div className={`${softCardClass} px-4 py-3`}>
+                <p className="text-sm font-semibold">해결된 개념</p>
+                {integratedResolvedConcepts.length ? (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {integratedResolvedConcepts.slice(0, 10).map((concept) => (
+                      <span
+                        key={concept}
+                        className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                          isDarkMode
+                            ? "border-[#343434] bg-[#202020] text-gray-200"
+                            : "border-[#dedbd5] bg-white text-[#212121]"
+                        }`}
+                      >
+                        {concept}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <p className={`mt-2 text-sm ${mutedText}`}>해결 완료로 기록된 개념이 없습니다.</p>
+                )}
+              </div>
+            </div>
+          </section>
+        ) : null}
+
         <div className="grid gap-3 lg:grid-cols-2">
           <section className={`${cardClass} px-5 py-4`}>
             <h3 className="text-base font-semibold">핵심 요약</h3>
@@ -2890,6 +3028,120 @@ const MainContent: React.FC<MainContentProps> = ({
           </div>
         </section>
 
+        {learningEvidence.length ? (
+          <section className={`${cardClass} px-5 py-4`}>
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h3 className="text-base font-semibold">최근 통합학습 근거</h3>
+                <p className={`mt-1 text-sm ${mutedText}`}>
+                  최근 50건 중 최신 기록을 기준으로 퀴즈 결과와 오개념 근거를 확인합니다.
+                </p>
+              </div>
+              <span className={`text-xs font-semibold ${mutedText}`}>
+                총 {learningEvidence.length}건
+              </span>
+            </div>
+            <div className="mt-4 space-y-2">
+              {learningEvidence.slice(0, 8).map((item, index) => {
+                const evidenceBody = formatReportEvidenceBody(item.evidence);
+                const quizTypeLabel = formatReportQuizType(item.quizType);
+                return (
+                  <article
+                    key={`${item.evidenceId ?? item.occurredAt ?? "evidence"}-${index}`}
+                    className={`${softCardClass} px-4 py-3`}
+                  >
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-sm font-semibold">
+                            {formatReportEvidenceLabel(item.eventType)}
+                          </span>
+                          {quizTypeLabel ? (
+                            <span
+                              className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                                isDarkMode
+                                  ? "border-[#343434] bg-[#202020] text-gray-200"
+                                  : "border-[#dedbd5] bg-white text-[#212121]"
+                              }`}
+                            >
+                              {quizTypeLabel}
+                            </span>
+                          ) : null}
+                          {item.passed != null ? (
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                item.passed
+                                  ? isDarkMode
+                                    ? "bg-emerald-500/15 text-emerald-300"
+                                    : "bg-emerald-50 text-emerald-700"
+                                  : isDarkMode
+                                    ? "bg-[#ff824d]/15 text-[#ffad9b]"
+                                    : "bg-[#fff2eb] text-[#c95018]"
+                              }`}
+                            >
+                              {item.passed ? "통과" : "보완 필요"}
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className={`mt-1 text-xs ${mutedText}`}>
+                          {[
+                            item.pageNumber != null ? `p.${item.pageNumber}` : null,
+                            item.materialId != null ? `자료 ${item.materialId}` : null,
+                            item.sessionId ? `세션 ${item.sessionId}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ") || "페이지 정보 없음"}
+                        </p>
+                        {evidenceBody ? (
+                          <p className={`mt-2 line-clamp-2 text-sm leading-6 ${mutedText}`}>
+                            {evidenceBody}
+                          </p>
+                        ) : null}
+                      </div>
+                      <div className="shrink-0 text-left lg:text-right">
+                        <p className="text-2xl font-semibold leading-none">
+                          {formatReportRatioPercent(item.scoreRatio)}
+                        </p>
+                        <p className={`mt-1 text-xs font-semibold ${mutedText}`}>
+                          {formatActivityMonthForKo(item.occurredAt)}
+                        </p>
+                      </div>
+                    </div>
+                    {item.weakConcepts.length || item.wrongItems.length ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {item.weakConcepts.slice(0, 5).map((concept) => (
+                          <span
+                            key={`weak-${concept}`}
+                            className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                              isDarkMode
+                                ? "border-[#343434] bg-[#202020] text-gray-200"
+                                : "border-[#dedbd5] bg-white text-[#212121]"
+                            }`}
+                          >
+                            약점 {concept}
+                          </span>
+                        ))}
+                        {item.wrongItems.slice(0, 3).map((wrongItem) => (
+                          <span
+                            key={`wrong-${wrongItem}`}
+                            className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                              isDarkMode
+                                ? "border-[#343434] bg-[#202020] text-gray-200"
+                                : "border-[#dedbd5] bg-white text-[#212121]"
+                            }`}
+                          >
+                            오답 {wrongItem}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
+
         <div className="grid gap-3 lg:grid-cols-2">
           <section className={`${cardClass} px-5 py-4`}>
             <h3 className="text-base font-semibold">강점</h3>
@@ -2977,72 +3229,86 @@ const MainContent: React.FC<MainContentProps> = ({
                 강의실 학습 흐름을 불러오는 중...
               </div>
             ) : classroomFlowItems.length ? (
-	              classroomFlowItems.map((item, index) => {
-	                const progress = clampReportScore(item.learningProgressPercent);
-	                const avgScore = clampReportScore(item.averageScorePercent);
-	                const participation = clampReportScore(item.participationRatePercent);
-	                const flowScore = Math.max(progress, participation, avgScore);
-	                return (
-	                  <article key={`${item.lectureId ?? "flow"}-${index}`} className={`${softCardClass} px-4 py-4`}>
-	                    <div className="flex items-start justify-between gap-5">
-	                      <div className="min-w-0 flex-1">
-	                        <p className={`text-xs font-semibold ${mutedText}`}>
-	                          {item.week != null ? `${item.week}주차` : "주차 미지정"}
-	                        </p>
-	                        <h4 className="mt-1 text-sm font-semibold">
-	                          {item.title || "제목 없음"}
-	                        </h4>
-	                        <p className={`mt-1 text-xs leading-5 ${mutedText}`}>
-	                          {item.riskReasons.length
-	                            ? item.riskReasons.slice(0, 2).join(" · ")
-	                            : "자료, 질문, 퀴즈, 참여 데이터를 묶어 흐름을 표시합니다."}
-	                        </p>
-	                      </div>
-	                      <div className="shrink-0 text-right">
-	                        <p className="text-3xl font-semibold leading-none">
-	                          {flowScore}
-	                        </p>
-	                        <p className={`mt-1 text-xs font-semibold ${mutedText}`}>
-	                          {item.riskLevel || "유지"}
-	                        </p>
-	                      </div>
-	                    </div>
-	                    <div
-	                      className={`mt-5 h-2.5 rounded-full ${
-	                        isDarkMode ? "bg-[#343434]" : "bg-[#e8e8ea]"
-	                      }`}
-	                    >
-	                      <div
-	                        className="h-full rounded-full bg-[#ff824d]"
-	                        style={{ width: `${flowScore}%` }}
-	                      />
-	                    </div>
-	                    <div className="mt-3 flex flex-wrap gap-2">
-	                      {[
-	                        ["자료", formatReportCount(item.materialCount, "개")],
-	                        ["진도", item.learningProgressPercent == null ? "-" : `${progress}%`],
-	                        ["평균", item.averageScorePercent == null ? "-" : `${avgScore}%`],
-	                        ["질문", formatReportCount(item.questionCount, "건")],
-	                        ["퀴즈", formatReportCount(item.quizCount, "건")],
-	                        ["참여", item.participationRatePercent == null ? "-" : `${participation}%`],
-	                      ].map(([label, value]) => (
-	                        <span
-	                          key={label}
-	                          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
-	                            isDarkMode
-	                              ? "border-[#343434] bg-[#202020] text-gray-200"
-	                              : "border-[#dedbd5] bg-white text-gray-800"
-	                          }`}
-	                        >
-	                          {label} {value}
-	                        </span>
-	                      ))}
-	                    </div>
-	                    {item.riskLevel ? (
-	                      <p className={`mt-2 text-xs font-semibold ${mutedText}`}>
-	                        위험도: {item.riskLevel}
-                      </p>
-                    ) : null}
+              classroomFlowItems.map((item, index) => {
+                const progress = clampReportScore(item.learningProgressPercent);
+                const avgScore = clampReportScore(item.averageScorePercent);
+                const participation = clampReportScore(item.participationRatePercent);
+                const flowScore = Math.max(progress, participation, avgScore);
+                const scoreLabel =
+                  item.learningProgressPercent == null &&
+                  item.averageScorePercent == null &&
+                  item.participationRatePercent == null
+                    ? 0
+                    : flowScore;
+                const statusLabel =
+                  item.riskLevel ||
+                  (flowScore >= 70 ? "안정" : flowScore >= 40 ? "유지" : "보완");
+                const summaryText = item.riskReasons.length
+                  ? item.riskReasons.slice(0, 2).join(" · ")
+                  : "자료, 질문, 퀴즈 성과를 묶어 강의 흐름을 확인합니다.";
+                const chips = [
+                  ["자료", formatReportCount(item.materialCount, "개")],
+                  ["질문", formatReportCount(item.questionCount, "건")],
+                  ["퀴즈", formatReportCount(item.quizCount, "건")],
+                  ["진도", item.learningProgressPercent == null ? "-" : `${progress}%`],
+                  ["평균 점수", item.averageScorePercent == null ? "-" : `${avgScore}%`],
+                  ["참여율", item.participationRatePercent == null ? "-" : `${participation}%`],
+                ];
+
+                return (
+                  <article
+                    key={`${item.lectureId ?? "flow"}-${index}`}
+                    className={`rounded-[var(--app-control-radius)] border px-5 py-4 ${
+                      isDarkMode
+                        ? "border-[#343434] bg-[#202020]"
+                        : "border-[#dfe5ee] bg-white"
+                    }`}
+                  >
+                    <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_4.5rem] sm:items-start">
+                      <div className="min-w-0">
+                        <p className={`text-xs font-semibold ${mutedText}`}>
+                          {item.week != null ? `${item.week}주차` : "주차 미지정"}
+                        </p>
+                        <h4 className="mt-1 text-base font-semibold leading-tight">
+                          {item.title || "제목 없음"}
+                        </h4>
+                        <p className={`mt-2 text-sm leading-6 ${mutedText}`}>
+                          {summaryText}
+                        </p>
+                      </div>
+                      <div className="justify-self-start text-left sm:justify-self-end sm:text-right">
+                        <p className="text-4xl font-semibold leading-none tabular-nums">
+                          {scoreLabel}
+                        </p>
+                        <p className={`mt-1 text-xs font-semibold ${mutedText}`}>
+                          {statusLabel}
+                        </p>
+                      </div>
+                    </div>
+                    <div
+                      className={`mt-5 h-2 rounded-full ${
+                        isDarkMode ? "bg-[#343434]" : "bg-[#e8edf3]"
+                      }`}
+                    >
+                      <div
+                        className="h-full rounded-full bg-[#ff824d]"
+                        style={{ width: `${Math.max(0, Math.min(100, scoreLabel))}%` }}
+                      />
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {chips.map(([label, value]) => (
+                        <span
+                          key={label}
+                          className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
+                            isDarkMode
+                              ? "border-[#343434] bg-[#242424] text-gray-200"
+                              : "border-[#dfe5ee] bg-white text-[#172033]"
+                          }`}
+                        >
+                          {label} {value}
+                        </span>
+                      ))}
+                    </div>
                   </article>
                 );
               })
@@ -6874,14 +7140,14 @@ const MainContent: React.FC<MainContentProps> = ({
 
     // 업로드한 자료 미리보기 (좌: 미리보기 | 우: 채팅) — fileUrl 또는 materialId로 표시
     const courseSidebarNavButtonClass = (active: boolean) =>
-      `flex w-full min-w-0 items-center gap-3 rounded-[var(--app-control-radius)] border px-3 py-2.5 text-left transition-colors ${
+      `flex h-9 w-full min-w-0 items-center gap-2 rounded-xl border px-3 text-left text-sm font-semibold transition-colors ${
         active
           ? isDarkMode
             ? "border-[#ff9b6a] bg-[#ff9b6a] text-[#181818]"
-            : "border-[#cdd8ff] bg-[#eef2ff] text-[#101828]"
+            : "border-[#ff824d] bg-[#ff824d] text-white"
           : isDarkMode
-            ? "border-transparent bg-transparent text-gray-200 hover:bg-white/[0.06]"
-            : "border-transparent bg-transparent text-[#101828] hover:bg-[#f4f1eb]"
+            ? "border-[#343434] bg-[#202020] text-gray-200 hover:bg-[#252525]"
+            : "border-[#dedbd5] bg-white text-[#212121] hover:bg-[#f7f5f1]"
       }`;
     const courseSidebarIconClass = (active: boolean) =>
       `h-3.5 w-3.5 shrink-0 ${
@@ -6960,61 +7226,24 @@ const MainContent: React.FC<MainContentProps> = ({
 
       return (
         <aside
-          className={`${asideVisibility} shrink-0 flex-col gap-5 border-r px-3 pb-3 pt-5 min-h-0 ${
+          className={`${asideVisibility} shrink-0 flex-col gap-3 border-r px-3 pb-3 pt-5 min-h-0 ${
             isDarkMode
               ? "border-[#2b2b2b] bg-[#181818] text-gray-200"
               : "border-[#dedbd5] bg-[#fbfaf7] text-[#212121]"
           }`}
           aria-label={ariaLabel}
         >
-          <section className="flex shrink-0 flex-col gap-2">
-            <div className={`px-2 text-xs font-semibold ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-              내 수업 공간
-            </div>
-            <div className={`ml-2 space-y-1 border-l pl-3 ${isDarkMode ? "border-[#343434]" : "border-[#dedbd5]"}`}>
-              {isTeacher ? (
-                <button
-                  type="button"
-                  onClick={() => openSidebarPanel("studentManagement", source)}
-                  className={`flex w-full items-center gap-2 rounded-[var(--app-control-radius)] px-2 py-1.5 text-left text-xs font-semibold transition-colors ${
-                    teacherMainPanel === "studentManagement"
-                      ? isDarkMode
-                        ? "text-[#ffad9b]"
-                        : "text-[#ff824d]"
-                      : isDarkMode
-                        ? "text-gray-300 hover:bg-white/[0.06]"
-                        : "text-gray-700 hover:bg-[#f4f1eb]"
-                  }`}
-                >
-                  <span className={`h-2 w-2 rounded-full ${isDarkMode ? "bg-gray-500" : "bg-gray-300"}`} />
-                  <span>학생·출석 관리</span>
-                </button>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => openSidebarPanel("materials", source)}
-                className={`flex w-full items-center gap-2 rounded-[var(--app-control-radius)] px-2 py-1.5 text-left text-xs font-semibold transition-colors ${
-                  teacherMainPanel === "materials" && weekBoardTab == null
-                    ? isDarkMode
-                      ? "text-[#ffad9b]"
-                      : "text-[#ff824d]"
-                    : isDarkMode
-                      ? "text-gray-300 hover:bg-white/[0.06]"
-                      : "text-gray-700 hover:bg-[#f4f1eb]"
-                }`}
-              >
-                <span className={`h-2 w-2 rounded-full ${isDarkMode ? "bg-gray-500" : "bg-gray-300"}`} />
-                <span>주차 관리·수업 공간</span>
-              </button>
-            </div>
-          </section>
-
           <section className="flex shrink-0 flex-col gap-1">
             {[
               {
                 key: "notices" as const,
                 label: "공지사항",
                 icon: "M4 7h3l9-3v16l-9-3H4V7Zm3 0v10M18 9.5a4 4 0 0 1 0 5",
+              },
+              {
+                key: "discussions" as const,
+                label: "토론",
+                icon: "M7 8h10M7 12h6m8-1a7 7 0 0 1-7 7H9l-5 3 1.5-4.5A7 7 0 1 1 21 11Z",
               },
               {
                 key: "materials" as const,
@@ -7026,26 +7255,27 @@ const MainContent: React.FC<MainContentProps> = ({
                 label: "과제/시험",
                 icon: "M9 5h11M9 12h11M9 19h11M4 5h.01M4 12h.01M4 19h.01",
               },
-              {
-                key: "discussions" as const,
-                label: "토론",
-                icon: "M7 8h10M7 12h6m8-1a7 7 0 0 1-7 7H9l-5 3 1.5-4.5A7 7 0 1 1 21 11Z",
-              },
+              ...(isTeacher
+                ? [
+                    {
+                      key: "studentManagement" as const,
+                      label: "학생/출석 관리",
+                      icon: "M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2M10 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm8-4v6m3-3h-6",
+                    },
+                  ]
+                : [
+                    {
+                      key: "attendance" as const,
+                      label: "출석",
+                      icon: "M8 7V4m8 3V4M5 11h14M6 5h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm5 11 2 2 4-5",
+                    },
+                  ]),
               ...(isTeacher
                 ? [
                     {
                       key: "classroomReport" as const,
                       label: "성적",
                       icon: "M4 19V5m5 14V9m5 10V4m5 15v-7M3 19h18",
-                    },
-                  ]
-                : []),
-              ...(!isTeacher
-                ? [
-                    {
-                      key: "attendance" as const,
-                      label: "출석",
-                      icon: "M8 7V4m8 3V4M5 11h14M6 5h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Zm5 11 2 2 4-5",
                     },
                   ]
                 : []),
@@ -9328,13 +9558,13 @@ const MainContent: React.FC<MainContentProps> = ({
                 isDarkMode ? "text-gray-200" : "text-[#212121]"
               }`}
             >
-              {teacherMainPanel === "materials" ? (
+              {teacherMainPanel === "materials" || (isTeacher && teacherMainPanel === "examStudio") ? (
                 <CourseMaterialsMetaCard
 	                  title={courseDetail.title ?? "강의실"}
 	                  description={courseDetail.description}
 	                  invitationCode={courseDetail.invitationCode}
 		                  resourceActions={
-	                    isTeacher ? (
+	                    isTeacher && teacherMainPanel === "materials" ? (
 	                      <>
 	                        <button
 	                          type="button"
@@ -10322,7 +10552,7 @@ const MainContent: React.FC<MainContentProps> = ({
 		                />
 	              ) : isTeacher && teacherMainPanel === "examStudio" ? (
 	                <section
-	                  className={`flex min-h-[36rem] flex-1 overflow-hidden rounded-2xl border ${
+	                  className={`flex min-h-0 flex-1 overflow-hidden rounded-2xl border ${
 	                    isDarkMode
 	                      ? "border-[#2b2b2b] bg-[#181818]"
 	                      : "border-[#dedbd5] bg-white"

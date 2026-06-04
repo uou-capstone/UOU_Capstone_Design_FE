@@ -333,12 +333,12 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
   }`;
 
   return (
-    <div className="flex min-h-full flex-col gap-4 pb-6">
-      <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
+    <div className="flex min-h-0 flex-col gap-3 pb-4">
+      <section className={`rounded-2xl border px-5 py-5 lg:px-6 ${surfaceClass}`}>
         <div className="mb-4 flex min-h-10 flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-xl font-semibold">리포트 평가 기준</h2>
-            <p className={`mt-2 text-sm ${mutedClass}`}>
+            <h2 className="text-2xl font-semibold leading-tight">리포트 평가 기준</h2>
+            <p className={`mt-1 text-sm ${mutedClass}`}>
               학생 리포트 분석에 사용할 기준과 가중치를 관리합니다.
             </p>
           </div>

@@ -106,6 +106,34 @@ export interface StudentReportCompetency {
   feedback?: string;
 }
 
+export interface StudentReportIntegratedLearningSummary {
+  quizAttemptCount?: number;
+  passCount?: number;
+  failCount?: number;
+  averageScoreRatio?: number;
+  weakConcepts: string[];
+  resolvedConcepts: string[];
+  latestActivityAt?: string;
+}
+
+export interface StudentReportLearningEvidenceItem {
+  evidenceId?: number;
+  courseId?: number;
+  lectureId?: number;
+  materialId?: number;
+  studentId?: number;
+  sessionId?: string;
+  pageNumber?: number;
+  eventType?: string;
+  quizType?: string;
+  scoreRatio?: number;
+  passed?: boolean;
+  weakConcepts: string[];
+  wrongItems: string[];
+  evidence?: unknown;
+  occurredAt?: string;
+}
+
 export interface StudentReportDetailResponse {
   studentId: number;
   userId: number;
@@ -126,6 +154,8 @@ export interface StudentReportDetailResponse {
   generatedAt?: string;
   updatedAt?: string;
   reportWarnings?: string[];
+  integratedLearningSummary?: StudentReportIntegratedLearningSummary;
+  learningEvidence: StudentReportLearningEvidenceItem[];
 }
 
 /** GET /api/courses/{courseId}/reports/classroom */
@@ -255,6 +285,12 @@ function normalizeStringArray(v: unknown): string[] {
   return v
     .map((item) => (typeof item === "string" ? item.trim() : ""))
     .filter(Boolean);
+}
+
+function toPlainRecord(v: unknown): Record<string, unknown> | null {
+  return v != null && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : null;
 }
 
 function normalizeNotificationItem(raw: Record<string, unknown>): NotificationItem {
@@ -440,6 +476,91 @@ function normalizeStudentReportListItem(
           ? raw.top_improvement_label
           : undefined,
   };
+}
+
+function normalizeLooseStringArray(v: unknown): string[] {
+  if (typeof v === "string" && v.trim() !== "") return [v.trim()];
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (item == null) return "";
+      if (typeof item === "number" || typeof item === "boolean") return String(item);
+      try {
+        return JSON.stringify(item);
+      } catch {
+        return String(item);
+      }
+    })
+    .filter(Boolean);
+}
+
+function normalizeIntegratedLearningSummary(
+  value: unknown,
+): StudentReportIntegratedLearningSummary | undefined {
+  const raw = toPlainRecord(value);
+  if (!raw) return undefined;
+  return {
+    quizAttemptCount: toFiniteNumber(raw.quizAttemptCount ?? raw.quiz_attempt_count),
+    passCount: toFiniteNumber(raw.passCount ?? raw.pass_count),
+    failCount: toFiniteNumber(raw.failCount ?? raw.fail_count),
+    averageScoreRatio: toFiniteNumber(raw.averageScoreRatio ?? raw.average_score_ratio),
+    weakConcepts: normalizeStringArray(raw.weakConcepts ?? raw.weak_concepts),
+    resolvedConcepts: normalizeStringArray(
+      raw.resolvedConcepts ?? raw.resolved_concepts,
+    ),
+    latestActivityAt:
+      typeof raw.latestActivityAt === "string" && raw.latestActivityAt.trim() !== ""
+        ? raw.latestActivityAt
+        : typeof raw.latest_activity_at === "string" &&
+            raw.latest_activity_at.trim() !== ""
+          ? raw.latest_activity_at
+          : undefined,
+  };
+}
+
+function normalizeLearningEvidenceItem(
+  value: unknown,
+): StudentReportLearningEvidenceItem | null {
+  const raw = toPlainRecord(value);
+  if (!raw) return null;
+  const passedRaw = raw.passed ?? raw.isPassed ?? raw.is_passed;
+  return {
+    evidenceId: toFiniteNumber(raw.evidenceId ?? raw.evidence_id ?? raw.id),
+    courseId: toFiniteNumber(raw.courseId ?? raw.course_id),
+    lectureId: toFiniteNumber(raw.lectureId ?? raw.lecture_id),
+    materialId: toFiniteNumber(raw.materialId ?? raw.material_id),
+    studentId: toFiniteNumber(raw.studentId ?? raw.student_id),
+    sessionId:
+      typeof raw.sessionId === "string"
+        ? raw.sessionId
+        : typeof raw.session_id === "string"
+          ? raw.session_id
+          : raw.sessionId != null || raw.session_id != null
+            ? String(raw.sessionId ?? raw.session_id)
+            : undefined,
+    pageNumber: toFiniteNumber(raw.pageNumber ?? raw.page_number),
+    eventType: toOptionalString(raw.eventType ?? raw.event_type),
+    quizType: toOptionalString(raw.quizType ?? raw.quiz_type),
+    scoreRatio: toFiniteNumber(raw.scoreRatio ?? raw.score_ratio),
+    passed: typeof passedRaw === "boolean" ? passedRaw : undefined,
+    weakConcepts: normalizeStringArray(raw.weakConcepts ?? raw.weak_concepts),
+    wrongItems: normalizeLooseStringArray(raw.wrongItems ?? raw.wrong_items),
+    evidence: raw.evidence,
+    occurredAt:
+      typeof raw.occurredAt === "string" && raw.occurredAt.trim() !== ""
+        ? raw.occurredAt
+        : typeof raw.occurred_at === "string" && raw.occurred_at.trim() !== ""
+          ? raw.occurred_at
+          : undefined,
+  };
+}
+
+function normalizeLearningEvidence(value: unknown): StudentReportLearningEvidenceItem[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => normalizeLearningEvidenceItem(item))
+    .filter((item): item is StudentReportLearningEvidenceItem => item != null);
 }
 
 function normalizeStudentReportDetail(
@@ -667,6 +788,12 @@ function normalizeStudentReportDetail(
           ? raw.updated_at
           : undefined,
     reportWarnings: normalizeStringArray(raw.reportWarnings ?? raw.report_warnings),
+    integratedLearningSummary: normalizeIntegratedLearningSummary(
+      raw.integratedLearningSummary ?? raw.integrated_learning_summary,
+    ),
+    learningEvidence: normalizeLearningEvidence(
+      raw.learningEvidence ?? raw.learning_evidence,
+    ),
   };
 }
 

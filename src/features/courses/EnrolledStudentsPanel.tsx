@@ -151,7 +151,7 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
   const busy = loading || acting != null;
 
   return (
-    <div className="flex min-h-full flex-col">
+    <div className="flex min-h-0 flex-col">
       <div className="mb-3 flex flex-wrap items-center justify-start gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <button

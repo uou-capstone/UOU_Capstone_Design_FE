@@ -279,7 +279,12 @@ const TopNav: React.FC<TopNavProps> = ({
           className="flex min-w-0 items-center"
           aria-label="EduPilot 홈"
         >
-          <span className="flex h-10 w-40 shrink-0 items-center justify-center overflow-hidden sm:h-11 sm:w-44" aria-hidden="true">
+          <span
+            className={`flex h-10 w-40 shrink-0 items-center justify-center overflow-hidden sm:h-11 sm:w-44 ${
+              isDarkMode ? "bg-[#181818]" : "bg-white"
+            }`}
+            aria-hidden="true"
+          >
             <img
               src="/edupilot-logo.svg"
               alt=""
@@ -326,7 +331,7 @@ const TopNav: React.FC<TopNavProps> = ({
               >
                 <BellIcon className="w-5 h-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-[#ff824d] text-black text-[11px] leading-5 text-center">
+                  <span className="absolute -top-0.5 -right-0.5 h-[18px] min-w-[18px] rounded-full bg-[#ff824d] px-1 text-center text-[10px] font-semibold leading-[18px] text-black">
                     {unreadCount > 99 ? "99+" : String(unreadCount)}
                   </span>
                 )}
