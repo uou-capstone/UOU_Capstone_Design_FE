@@ -46,6 +46,12 @@ import { AttendanceSessionsPanel } from "@/features/courses/AttendanceSessionsPa
 import { CourseBoardsPanel } from "@/features/courses/CourseBoardsPanel";
 import { CourseMaterialsMetaCard } from "@/features/courses/CourseMaterialsMetaCard";
 import { ReportCriteriaPanel } from "@/features/courses/ReportCriteriaPanel";
+import {
+  buildAutoAttendancePayload,
+  createAutoAttendanceForm,
+  dispatchAttendanceSessionsUpdated,
+  validateAutoAttendanceForm,
+} from "@/utils/attendanceAutoCreate";
 import { formatKoreanDateTime } from "@/utils/dateFormat";
 import RightSidebar, { type RightSidebarExamProps } from "./RightSidebar";
 
@@ -1320,11 +1326,17 @@ const MainContent: React.FC<MainContentProps> = ({
   const [courseModalTitle, setCourseModalTitle] = React.useState("");
   const [courseModalDescription, setCourseModalDescription] =
     React.useState("");
+  const [courseModalAttendance, setCourseModalAttendance] = React.useState(() =>
+    createAutoAttendanceForm(false),
+  );
   const [isJoinModalOpen, setIsJoinModalOpen] = React.useState(false);
   const [joinCode, setJoinCode] = React.useState("");
   const [addLectureModalOpen, setAddLectureModalOpen] = React.useState(false);
   const [addLectureWeekNumber, setAddLectureWeekNumber] = React.useState("");
   const [addLectureTitle, setAddLectureTitle] = React.useState("");
+  const [addLectureAttendance, setAddLectureAttendance] = React.useState(() =>
+    createAutoAttendanceForm(true),
+  );
   const [addLectureSubmitting, setAddLectureSubmitting] = React.useState(false);
   const [editCourseMetaModalOpen, setEditCourseMetaModalOpen] =
     React.useState(false);
@@ -6456,12 +6468,19 @@ const MainContent: React.FC<MainContentProps> = ({
       window.alert("강의실 제목을 입력해주세요.");
       return;
     }
+    const attendanceValidation = validateAutoAttendanceForm(courseModalAttendance);
+    if (attendanceValidation) {
+      window.alert(attendanceValidation);
+      return;
+    }
 
     try {
       const course = await courseApi.createCourse({
         title: rawTitle,
         description: rawDescription.length > 0 ? rawDescription : "설명 없음",
       });
+
+      let attendanceCreationFailed = false;
 
       // 자동으로 OT 강의 생성
       try {
@@ -6470,6 +6489,18 @@ const MainContent: React.FC<MainContentProps> = ({
           weekNumber: 0,
           description: "오리엔테이션",
         });
+
+        if (courseModalAttendance.enabled) {
+          try {
+            await courseApi.createAttendanceSession(
+              course.courseId,
+              buildAutoAttendancePayload("OT", otLecture.lectureId, courseModalAttendance),
+            );
+            dispatchAttendanceSessionsUpdated(course.courseId);
+          } catch {
+            attendanceCreationFailed = true;
+          }
+        }
 
         onCourseCreated?.({
           ...course,
@@ -6481,8 +6512,13 @@ const MainContent: React.FC<MainContentProps> = ({
 
       setCourseModalTitle("");
       setCourseModalDescription("");
+      setCourseModalAttendance(createAutoAttendanceForm(false));
       setIsCourseModalOpen(false);
-      window.alert("강의실이 생성되었습니다!");
+      window.alert(
+        attendanceCreationFailed
+          ? "강의실과 OT 강의는 생성됐지만 출석 회차 생성에 실패했습니다. 출석관리에서 다시 생성할 수 있습니다."
+          : "강의실이 생성되었습니다!",
+      );
       onSelectCourse(course.courseId);
     } catch (error) {
       const errorMsg =
@@ -6591,6 +6627,11 @@ const MainContent: React.FC<MainContentProps> = ({
       window.alert(`${weekNum}주차는 이미 존재합니다.`);
       return;
     }
+    const attendanceValidation = validateAutoAttendanceForm(addLectureAttendance);
+    if (attendanceValidation) {
+      window.alert(attendanceValidation);
+      return;
+    }
     setAddLectureSubmitting(true);
     try {
       const lecture = await lectureApi.createLecture(courseDetail.courseId, {
@@ -6598,6 +6639,18 @@ const MainContent: React.FC<MainContentProps> = ({
         weekNumber: weekNum,
         description: "",
       });
+      let attendanceCreationFailed = false;
+      if (addLectureAttendance.enabled) {
+        try {
+          await courseApi.createAttendanceSession(
+            courseDetail.courseId,
+            buildAutoAttendancePayload(title, lecture.lectureId, addLectureAttendance),
+          );
+          dispatchAttendanceSessionsUpdated(courseDetail.courseId);
+        } catch {
+          attendanceCreationFailed = true;
+        }
+      }
       await onLectureCreated(lecture);
       // 새로 만든 주차를 즉시 선택해 상세 화면으로 이동
       onSelectLecture?.(lecture.lectureId);
@@ -6605,6 +6658,12 @@ const MainContent: React.FC<MainContentProps> = ({
       setAddLectureModalOpen(false);
       setAddLectureWeekNumber("");
       setAddLectureTitle("");
+      setAddLectureAttendance(createAutoAttendanceForm(true));
+      if (attendanceCreationFailed) {
+        window.alert(
+          "강의는 생성됐지만 출석 회차 생성에 실패했습니다. 출석관리에서 다시 생성할 수 있습니다.",
+        );
+      }
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : "강의 추가에 실패했습니다.";
@@ -7596,7 +7655,10 @@ const MainContent: React.FC<MainContentProps> = ({
             {isTeacher && !isPreview ? (
               <button
                 type="button"
-                onClick={() => setAddLectureModalOpen(true)}
+                onClick={() => {
+                  setAddLectureAttendance(createAutoAttendanceForm(true));
+                  setAddLectureModalOpen(true);
+                }}
                 className={`mt-2 flex h-9 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-dashed bg-transparent px-3 text-sm font-semibold transition-colors ${
                   isDarkMode
                     ? "border-white/20 text-gray-400 hover:border-white/35 hover:bg-white/[0.03] hover:text-gray-200"
@@ -11141,6 +11203,7 @@ const MainContent: React.FC<MainContentProps> = ({
     const handleOpenCourse = () => {
       if (!isTeacher) return;
       if (viewMode !== "course-list") return;
+      setCourseModalAttendance(createAutoAttendanceForm(false));
       setIsCourseModalOpen(true);
     };
     window.addEventListener(
@@ -11237,10 +11300,15 @@ const MainContent: React.FC<MainContentProps> = ({
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
           role="dialog"
           aria-modal="true"
-          onClick={() => setIsCourseModalOpen(false)}
+          onClick={() => {
+            setIsCourseModalOpen(false);
+            setCourseModalTitle("");
+            setCourseModalDescription("");
+            setCourseModalAttendance(createAutoAttendanceForm(false));
+          }}
         >
           <div
-            className={`w-full max-w-2xl rounded-lg shadow-lg border ${
+            className={`w-full max-w-2xl max-h-[calc(100vh-3rem)] overflow-y-auto rounded-lg shadow-lg border ${
               isDarkMode
                 ? "bg-zinc-900 border-zinc-700 text-gray-100"
                 : "bg-white border-gray-200 text-gray-900"
@@ -11263,6 +11331,7 @@ const MainContent: React.FC<MainContentProps> = ({
                   setIsCourseModalOpen(false);
                   setCourseModalTitle("");
                   setCourseModalDescription("");
+                  setCourseModalAttendance(createAutoAttendanceForm(false));
                 }}
                 className={`p-1.5 rounded cursor-pointer ${
                   isDarkMode
@@ -11317,6 +11386,119 @@ const MainContent: React.FC<MainContentProps> = ({
                   } focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60 focus:border-[#ff824d]`}
                 />
               </div>
+              <div
+                className={`rounded-lg border p-3 space-y-3 ${
+                  isDarkMode
+                    ? "border-zinc-700 bg-zinc-800/60"
+                    : "border-gray-200 bg-gray-50"
+                }`}
+              >
+                <label className="flex items-center justify-between gap-3">
+                  <span>
+                    <span
+                      className={`block text-sm font-semibold ${
+                        isDarkMode ? "text-gray-100" : "text-gray-900"
+                      }`}
+                    >
+                      OT 출석 자동 생성
+                    </span>
+                    <span
+                      className={`block text-xs mt-0.5 ${
+                        isDarkMode ? "text-gray-400" : "text-gray-700"
+                      }`}
+                    >
+                      강의실 생성 시 OT 강의에 연결된 출석 회차를 함께 만듭니다.
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={courseModalAttendance.enabled}
+                    onChange={(e) =>
+                      setCourseModalAttendance((prev) => ({
+                        ...prev,
+                        enabled: e.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 accent-[#ff824d]"
+                  />
+                </label>
+                {courseModalAttendance.enabled && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label
+                        className={`block text-xs font-medium mb-1 ${
+                          isDarkMode ? "text-gray-300" : "text-gray-700"
+                        }`}
+                      >
+                        출석 날짜
+                      </label>
+                      <input
+                        type="date"
+                        value={courseModalAttendance.sessionDate}
+                        onChange={(e) =>
+                          setCourseModalAttendance((prev) => ({
+                            ...prev,
+                            sessionDate: e.target.value,
+                          }))
+                        }
+                        className={`w-full px-3 py-2 text-sm rounded-lg border ${
+                          isDarkMode
+                            ? "bg-zinc-900 border-zinc-700 text-white"
+                            : "bg-white border-gray-300 text-gray-900"
+                        } focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60`}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        className={`block text-xs font-medium mb-1 ${
+                          isDarkMode ? "text-gray-300" : "text-gray-700"
+                        }`}
+                      >
+                        시작 시간
+                      </label>
+                      <input
+                        type="time"
+                        value={courseModalAttendance.startTime}
+                        onChange={(e) =>
+                          setCourseModalAttendance((prev) => ({
+                            ...prev,
+                            startTime: e.target.value,
+                          }))
+                        }
+                        className={`w-full px-3 py-2 text-sm rounded-lg border ${
+                          isDarkMode
+                            ? "bg-zinc-900 border-zinc-700 text-white"
+                            : "bg-white border-gray-300 text-gray-900"
+                        } focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60`}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        className={`block text-xs font-medium mb-1 ${
+                          isDarkMode ? "text-gray-300" : "text-gray-700"
+                        }`}
+                      >
+                        종료 시간
+                      </label>
+                      <input
+                        type="time"
+                        value={courseModalAttendance.endTime}
+                        onChange={(e) =>
+                          setCourseModalAttendance((prev) => ({
+                            ...prev,
+                            endTime: e.target.value,
+                          }))
+                        }
+                        className={`w-full px-3 py-2 text-sm rounded-lg border ${
+                          isDarkMode
+                            ? "bg-zinc-900 border-zinc-700 text-white"
+                            : "bg-white border-gray-300 text-gray-900"
+                        } focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60`}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div
@@ -11330,6 +11512,7 @@ const MainContent: React.FC<MainContentProps> = ({
                   setIsCourseModalOpen(false);
                   setCourseModalTitle("");
                   setCourseModalDescription("");
+                  setCourseModalAttendance(createAutoAttendanceForm(false));
                 }}
                 className={`px-4 py-2 text-sm rounded cursor-pointer ${
                   isDarkMode
@@ -11366,10 +11549,15 @@ const MainContent: React.FC<MainContentProps> = ({
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
           role="dialog"
           aria-modal="true"
-          onClick={() => !addLectureSubmitting && setAddLectureModalOpen(false)}
+          onClick={() => {
+            if (!addLectureSubmitting) {
+              setAddLectureModalOpen(false);
+              setAddLectureAttendance(createAutoAttendanceForm(true));
+            }
+          }}
         >
           <div
-            className={`w-full max-w-md max-h-[calc(100vh-3rem)] overflow-y-auto p-6 sm:p-8 rounded-lg shadow-lg ${
+            className={`w-full max-w-lg max-h-[calc(100vh-3rem)] overflow-y-auto p-6 sm:p-8 rounded-lg shadow-lg ${
               isDarkMode ? "bg-zinc-800 text-gray-100" : "bg-white text-gray-900"
             }`}
             onClick={(e) => e.stopPropagation()}
@@ -11382,9 +11570,12 @@ const MainContent: React.FC<MainContentProps> = ({
               </h2>
               <button
                 type="button"
-                onClick={() =>
-                  !addLectureSubmitting && setAddLectureModalOpen(false)
-                }
+                onClick={() => {
+                  if (!addLectureSubmitting) {
+                    setAddLectureModalOpen(false);
+                    setAddLectureAttendance(createAutoAttendanceForm(true));
+                  }
+                }}
                 className={`p-1.5 rounded cursor-pointer transition-colors ${
                   isDarkMode
                     ? "hover:bg-zinc-700 text-gray-300"
@@ -11440,13 +11631,129 @@ const MainContent: React.FC<MainContentProps> = ({
                 </div>
               </div>
               <div
+                className={`rounded-lg border p-3 space-y-3 ${
+                  isDarkMode
+                    ? "border-zinc-700 bg-zinc-900/35"
+                    : "border-gray-200 bg-gray-50"
+                }`}
+              >
+                <label className="flex items-center justify-between gap-3">
+                  <span>
+                    <span
+                      className={`block text-sm font-semibold ${
+                        isDarkMode ? "text-gray-100" : "text-gray-900"
+                      }`}
+                    >
+                      출석 자동 생성
+                    </span>
+                    <span
+                      className={`block text-xs mt-0.5 ${
+                        isDarkMode ? "text-gray-400" : "text-gray-700"
+                      }`}
+                    >
+                      이 강의에 연결된 출석 회차를 함께 만듭니다.
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={addLectureAttendance.enabled}
+                    onChange={(e) =>
+                      setAddLectureAttendance((prev) => ({
+                        ...prev,
+                        enabled: e.target.checked,
+                      }))
+                    }
+                    className="h-4 w-4 accent-[#ff824d]"
+                  />
+                </label>
+                {addLectureAttendance.enabled && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                      <label
+                        className={`block text-xs font-medium mb-1 ${
+                          isDarkMode ? "text-gray-300" : "text-gray-700"
+                        }`}
+                      >
+                        출석 날짜
+                      </label>
+                      <input
+                        type="date"
+                        value={addLectureAttendance.sessionDate}
+                        onChange={(e) =>
+                          setAddLectureAttendance((prev) => ({
+                            ...prev,
+                            sessionDate: e.target.value,
+                          }))
+                        }
+                        className={`w-full px-3 py-2 text-sm rounded-lg border ${
+                          isDarkMode
+                            ? "bg-zinc-800 border-zinc-700 text-white"
+                            : "bg-white border-gray-300 text-gray-900"
+                        } focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60`}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        className={`block text-xs font-medium mb-1 ${
+                          isDarkMode ? "text-gray-300" : "text-gray-700"
+                        }`}
+                      >
+                        시작 시간
+                      </label>
+                      <input
+                        type="time"
+                        value={addLectureAttendance.startTime}
+                        onChange={(e) =>
+                          setAddLectureAttendance((prev) => ({
+                            ...prev,
+                            startTime: e.target.value,
+                          }))
+                        }
+                        className={`w-full px-3 py-2 text-sm rounded-lg border ${
+                          isDarkMode
+                            ? "bg-zinc-800 border-zinc-700 text-white"
+                            : "bg-white border-gray-300 text-gray-900"
+                        } focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60`}
+                      />
+                    </div>
+                    <div>
+                      <label
+                        className={`block text-xs font-medium mb-1 ${
+                          isDarkMode ? "text-gray-300" : "text-gray-700"
+                        }`}
+                      >
+                        종료 시간
+                      </label>
+                      <input
+                        type="time"
+                        value={addLectureAttendance.endTime}
+                        onChange={(e) =>
+                          setAddLectureAttendance((prev) => ({
+                            ...prev,
+                            endTime: e.target.value,
+                          }))
+                        }
+                        className={`w-full px-3 py-2 text-sm rounded-lg border ${
+                          isDarkMode
+                            ? "bg-zinc-800 border-zinc-700 text-white"
+                            : "bg-white border-gray-300 text-gray-900"
+                        } focus:outline-none focus:ring-2 focus:ring-[#ff824d]/60`}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div
                 className="flex justify-end gap-2 pt-2"
               >
                 <button
                   type="button"
-                  onClick={() =>
-                    !addLectureSubmitting && setAddLectureModalOpen(false)
-                  }
+                  onClick={() => {
+                    if (!addLectureSubmitting) {
+                      setAddLectureModalOpen(false);
+                      setAddLectureAttendance(createAutoAttendanceForm(true));
+                    }
+                  }}
                   className={`px-4 py-2 text-sm rounded-lg ${
                     isDarkMode
                       ? "bg-zinc-800 hover:bg-zinc-700 text-gray-200"

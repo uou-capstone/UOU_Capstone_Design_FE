@@ -182,208 +182,211 @@ export const TeacherStudentManagementPanel: React.FC<
       </section>
 
       <div className="grid min-h-0 gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
-      <section className={`order-2 rounded-xl border px-4 py-4 lg:order-2 lg:row-span-2 ${surfaceClass}`}>
-        <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h3 className="text-base font-semibold">수강 학생</h3>
-          </div>
-        </div>
-        <EnrolledStudentsPanel courseId={courseId} isDarkMode={isDarkMode} />
-      </section>
-
-      <section className={`order-1 rounded-xl border px-4 py-4 lg:order-1 ${surfaceClass}`}>
-        <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h3 className="text-base font-semibold">가입 요청</h3>
-          </div>
-          <div className="flex flex-wrap items-center justify-start gap-2">
-            <button
-              type="button"
-              onClick={() => toggleAll(!allChecked)}
-              disabled={busy || rows.length === 0}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${secondaryButtonClass}`}
-            >
-              {allChecked ? "전체 해제" : "전체 선택"}
-            </button>
-            <button
-              type="button"
-              disabled={selectedIds.length === 0 || actingId != null}
-              onClick={() => void handleBulkJoinAction("approve")}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                isDarkMode ? "bg-white text-[#141414]" : "bg-[#141414] text-white hover:bg-black"
-              }`}
-            >
-              선택 승인
-            </button>
-            <button
-              type="button"
-              disabled={selectedIds.length === 0 || actingId != null}
-              onClick={() => void handleBulkJoinAction("reject")}
-              className="rounded-lg bg-zinc-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              선택 거절
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void loadList()}
-              aria-label="가입 요청 새로고침"
-              title="새로고침"
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                isDarkMode
-                  ? "border-[#343434] text-zinc-200 hover:bg-white/10"
-                  : "border-[#dedbd5] text-gray-700 hover:bg-[#f7f5f1]"
-              }`}
-            >
-              <RefreshIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            </button>
-          </div>
-        </div>
-
-        {loading ? (
-          <div className="py-12 text-center text-sm opacity-70">
-            불러오는 중…
-          </div>
-        ) : error ? (
-          <div className={`py-6 text-sm ${isDarkMode ? "text-red-400" : "text-red-600"}`}>{error}</div>
-        ) : rows.length === 0 ? (
-          <div className="py-12 text-center text-sm opacity-60">
-            대기 중인 가입 요청이 없습니다.
-          </div>
-        ) : (
-          <div
-            className={`overflow-x-auto rounded-xl border ${
-              isDarkMode ? "border-[#2b2b2b]" : "border-[#dedbd5]"
-            }`}
-          >
-            <div
-              className={`grid min-w-[58rem] grid-cols-[2.5rem_minmax(10rem,1.1fr)_minmax(5rem,0.45fr)_minmax(14rem,1.3fr)_minmax(12rem,1fr)_minmax(11rem,0.85fr)] items-center gap-3 border-b px-4 py-2 text-xs font-semibold ${headerRowClass}`}
-            >
-              <span />
-              <span>학생 이름</span>
-              <span>ID</span>
-              <span>이메일</span>
-              <span>요청 시각</span>
-              <span>작업</span>
+        <div className="order-1 flex min-w-0 flex-col gap-4 lg:order-1">
+          <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
+            <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-base font-semibold">가입 요청</h3>
+              </div>
+              <div className="flex flex-wrap items-center justify-start gap-2">
+                <button
+                  type="button"
+                  onClick={() => toggleAll(!allChecked)}
+                  disabled={busy || rows.length === 0}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${secondaryButtonClass}`}
+                >
+                  {allChecked ? "전체 해제" : "전체 선택"}
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedIds.length === 0 || actingId != null}
+                  onClick={() => void handleBulkJoinAction("approve")}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    isDarkMode ? "bg-white text-[#141414]" : "bg-[#141414] text-white hover:bg-black"
+                  }`}
+                >
+                  선택 승인
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedIds.length === 0 || actingId != null}
+                  onClick={() => void handleBulkJoinAction("reject")}
+                  className="rounded-lg bg-zinc-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  선택 거절
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void loadList()}
+                  aria-label="가입 요청 새로고침"
+                  title="새로고침"
+                  className={`inline-flex h-8 w-8 items-center justify-center rounded-full border text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    isDarkMode
+                      ? "border-[#343434] text-zinc-200 hover:bg-white/10"
+                      : "border-[#dedbd5] text-gray-700 hover:bg-[#f7f5f1]"
+                  }`}
+                >
+                  <RefreshIcon className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                </button>
+              </div>
             </div>
-            <ul className={`min-w-[58rem] divide-y ${bodyDivideClass}`}>
-              {rows.map((row) => {
-                const checked = !!selectedRequestIds[row.requestId];
-                return (
-                  <li
-                    key={row.requestId}
-                    className={`grid grid-cols-[2.5rem_minmax(10rem,1.1fr)_minmax(5rem,0.45fr)_minmax(14rem,1.3fr)_minmax(12rem,1fr)_minmax(11rem,0.85fr)] items-center gap-3 px-4 py-3 text-sm ${bodyRowClass}`}
-                  >
-                    <span>
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(e) =>
-                          setSelectedRequestIds((prev) => ({
-                            ...prev,
-                            [row.requestId]: e.target.checked,
-                          }))
-                        }
-                        disabled={busy}
-                        aria-label={`${row.studentName} 요청 선택`}
-                      />
-                    </span>
-                    <span className="min-w-0 truncate font-semibold">
-                      {row.studentName || "이름 없음"}
-                    </span>
-                    <span className="min-w-0 truncate font-mono text-xs tabular-nums opacity-80">
-                      {row.studentId}
-                    </span>
-                    <span className={`min-w-0 truncate ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
-                      {row.studentEmail || "이메일 없음"}
-                    </span>
-                    <span className="min-w-0 truncate text-xs opacity-75">
-                      {formatJoinRequestInstant(row.requestedAt)}
-                    </span>
-                    <span className="flex flex-wrap items-center gap-1.5">
-                      <button
-                        type="button"
-                        disabled={actingId === row.requestId}
-                        onClick={() => void handleJoinRequestAction("approve", row)}
-                        className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                          isDarkMode ? "bg-white text-[#141414]" : "bg-[#141414] text-white hover:bg-black"
-                        }`}
-                      >
-                        승인
-                      </button>
-                      <button
-                        type="button"
-                        disabled={actingId === row.requestId}
-                        onClick={() => void handleJoinRequestAction("reject", row)}
-                        className="rounded-lg bg-zinc-500 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        거절
-                      </button>
-                      <button
-                        type="button"
-                        disabled={actingId === row.requestId}
-                        onClick={() => void handleJoinRequestAction("block", row)}
-                        className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        차단
-                      </button>
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
 
-        {totalPages > 1 ? (
-          <div
-            className={`mt-6 flex flex-wrap items-center justify-between gap-2 border-t pt-4 ${
-              isDarkMode ? "border-[#2b2b2b]" : "border-[#dedbd5]"
-            }`}
-          >
-            <button
-              type="button"
-              disabled={listPage <= 0 || loading}
-              onClick={() => setListPage((p) => Math.max(0, p - 1))}
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                listPage <= 0 || loading
-                  ? "cursor-not-allowed opacity-40"
-                  : secondaryButtonClass
-              }`}
-            >
-              이전
-            </button>
-            <span className="text-xs opacity-70">
-              {listPage + 1} / {totalPages}
-            </span>
-            <button
-              type="button"
-              disabled={listPage + 1 >= totalPages || loading}
-              onClick={() =>
-                setListPage((p) =>
-                  Math.min(totalPages - 1, p + 1),
-                )
-              }
-              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                listPage + 1 >= totalPages || loading
-                  ? "cursor-not-allowed opacity-40"
-                  : secondaryButtonClass
-              }`}
-            >
-              다음
-            </button>
-          </div>
-        ) : null}
-      </section>
-      <div className="order-3 lg:order-3">
-        <AttendanceSessionsPanel
-          courseId={courseId}
-          lectures={lectures}
-          isDarkMode={isDarkMode}
-          isTeacher
-          embedded
-        />
-      </div>
+            {loading ? (
+              <div className="py-12 text-center text-sm opacity-70">
+                불러오는 중…
+              </div>
+            ) : error ? (
+              <div className={`py-6 text-sm ${isDarkMode ? "text-red-400" : "text-red-600"}`}>{error}</div>
+            ) : rows.length === 0 ? (
+              <div className="py-12 text-center text-sm opacity-60">
+                대기 중인 가입 요청이 없습니다.
+              </div>
+            ) : (
+              <div
+                className={`overflow-x-auto rounded-xl border ${
+                  isDarkMode ? "border-[#2b2b2b]" : "border-[#dedbd5]"
+                }`}
+              >
+                <div
+                  className={`grid min-w-[58rem] grid-cols-[2.5rem_minmax(10rem,1.1fr)_minmax(5rem,0.45fr)_minmax(14rem,1.3fr)_minmax(12rem,1fr)_minmax(11rem,0.85fr)] items-center gap-3 border-b px-4 py-2 text-xs font-semibold ${headerRowClass}`}
+                >
+                  <span />
+                  <span>학생 이름</span>
+                  <span>ID</span>
+                  <span>이메일</span>
+                  <span>요청 시각</span>
+                  <span>작업</span>
+                </div>
+                <ul className={`min-w-[58rem] divide-y ${bodyDivideClass}`}>
+                  {rows.map((row) => {
+                    const checked = !!selectedRequestIds[row.requestId];
+                    return (
+                      <li
+                        key={row.requestId}
+                        className={`grid grid-cols-[2.5rem_minmax(10rem,1.1fr)_minmax(5rem,0.45fr)_minmax(14rem,1.3fr)_minmax(12rem,1fr)_minmax(11rem,0.85fr)] items-center gap-3 px-4 py-3 text-sm ${bodyRowClass}`}
+                      >
+                        <span>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) =>
+                              setSelectedRequestIds((prev) => ({
+                                ...prev,
+                                [row.requestId]: e.target.checked,
+                              }))
+                            }
+                            disabled={busy}
+                            aria-label={`${row.studentName} 요청 선택`}
+                          />
+                        </span>
+                        <span className="min-w-0 truncate font-semibold">
+                          {row.studentName || "이름 없음"}
+                        </span>
+                        <span className="min-w-0 truncate font-mono text-xs tabular-nums opacity-80">
+                          {row.studentId}
+                        </span>
+                        <span className={`min-w-0 truncate ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}>
+                          {row.studentEmail || "이메일 없음"}
+                        </span>
+                        <span className="min-w-0 truncate text-xs opacity-75">
+                          {formatJoinRequestInstant(row.requestedAt)}
+                        </span>
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={actingId === row.requestId}
+                            onClick={() => void handleJoinRequestAction("approve", row)}
+                            className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                              isDarkMode ? "bg-white text-[#141414]" : "bg-[#141414] text-white hover:bg-black"
+                            }`}
+                          >
+                            승인
+                          </button>
+                          <button
+                            type="button"
+                            disabled={actingId === row.requestId}
+                            onClick={() => void handleJoinRequestAction("reject", row)}
+                            className="rounded-lg bg-zinc-500 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-zinc-600 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            거절
+                          </button>
+                          <button
+                            type="button"
+                            disabled={actingId === row.requestId}
+                            onClick={() => void handleJoinRequestAction("block", row)}
+                            className="rounded-lg bg-red-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            차단
+                          </button>
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+
+            {totalPages > 1 ? (
+              <div
+                className={`mt-6 flex flex-wrap items-center justify-between gap-2 border-t pt-4 ${
+                  isDarkMode ? "border-[#2b2b2b]" : "border-[#dedbd5]"
+                }`}
+              >
+                <button
+                  type="button"
+                  disabled={listPage <= 0 || loading}
+                  onClick={() => setListPage((p) => Math.max(0, p - 1))}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    listPage <= 0 || loading
+                      ? "cursor-not-allowed opacity-40"
+                      : secondaryButtonClass
+                  }`}
+                >
+                  이전
+                </button>
+                <span className="text-xs opacity-70">
+                  {listPage + 1} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  disabled={listPage + 1 >= totalPages || loading}
+                  onClick={() =>
+                    setListPage((p) =>
+                      Math.min(totalPages - 1, p + 1),
+                    )
+                  }
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    listPage + 1 >= totalPages || loading
+                      ? "cursor-not-allowed opacity-40"
+                      : secondaryButtonClass
+                  }`}
+                >
+                  다음
+                </button>
+              </div>
+            ) : null}
+          </section>
+
+          <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
+            <div className="mb-3 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h3 className="text-base font-semibold">수강 학생</h3>
+              </div>
+            </div>
+            <EnrolledStudentsPanel courseId={courseId} isDarkMode={isDarkMode} />
+          </section>
+        </div>
+
+        <div className="order-2 min-w-0 lg:order-2">
+          <AttendanceSessionsPanel
+            courseId={courseId}
+            lectures={lectures}
+            isDarkMode={isDarkMode}
+            isTeacher
+            embedded
+          />
+        </div>
       </div>
     </div>
   );

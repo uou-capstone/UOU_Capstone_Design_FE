@@ -213,24 +213,24 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
         <div className="text-sm opacity-60 py-12 text-center">등록된 수강 학생이 없습니다.</div>
       ) : (
         <div
-          className={`overflow-x-auto rounded-xl border ${
+          className={`overflow-hidden rounded-xl border ${
             isDarkMode ? "border-[#2b2b2b]" : "border-[#dedbd5]"
           }`}
         >
           <div
-            className={`grid min-w-[48rem] grid-cols-[minmax(12rem,1.15fr)_minmax(14rem,1.35fr)_minmax(12rem,1fr)_minmax(6rem,0.5fr)] items-center gap-3 border-b px-4 py-2 text-xs font-semibold ${
+            className={`grid grid-cols-[minmax(0,1.1fr)_minmax(0,1.25fr)_minmax(0,0.95fr)_3rem] items-center gap-2 border-b px-3 py-2 text-xs font-semibold ${
               isDarkMode
                 ? "border-[#2b2b2b] bg-[#181818] text-gray-400"
                 : "border-[#dedbd5] bg-[#f7f5f1] text-gray-500"
             }`}
           >
-            <span>학생 이름</span>
-            <span>이메일</span>
-            <span>등록시간</span>
-            <span>출석률</span>
+            <span className="text-center">학생 이름</span>
+            <span className="text-center">이메일</span>
+            <span className="text-center">등록시간</span>
+            <span className="text-center">출석률</span>
           </div>
           <ul
-            className={`min-w-[48rem] divide-y ${
+            className={`divide-y ${
               isDarkMode ? "divide-[#2b2b2b]" : "divide-[#dedbd5]"
             }`}
           >
@@ -239,7 +239,7 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
               return (
                 <li
                   key={row.enrollmentId || row.studentId}
-                  className={`grid grid-cols-[minmax(12rem,1.15fr)_minmax(14rem,1.35fr)_minmax(12rem,1fr)_minmax(6rem,0.5fr)] items-center gap-3 px-4 py-3 text-sm ${
+                  className={`grid grid-cols-[minmax(0,1.1fr)_minmax(0,1.25fr)_minmax(0,0.95fr)_3rem] items-center gap-2 px-3 py-3 text-sm ${
                     isDarkMode ? "bg-[#202020] text-gray-100" : "bg-white text-[#212121]"
                   }`}
                 >
@@ -270,7 +270,7 @@ export const EnrolledStudentsPanel: React.FC<EnrolledStudentsPanelProps> = ({
                   <span className="min-w-0 truncate text-xs opacity-75">
                     {formatInstant(row.enrolledAt)}
                   </span>
-                  <span className="min-w-0 truncate text-sm font-semibold tabular-nums">
+                  <span className="min-w-0 truncate text-center text-sm font-semibold tabular-nums">
                     {formatAttendanceRate(attendanceRates[row.studentId])}
                   </span>
                 </li>

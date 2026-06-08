@@ -1,5 +1,9 @@
 import React from "react";
 import { RefreshIcon } from "@/components/common/Icons";
+import {
+  ATTENDANCE_SESSIONS_UPDATED_EVENT,
+  type AttendanceSessionsUpdatedDetail,
+} from "@/utils/attendanceAutoCreate";
 import { formatKoreanDateTime } from "@/utils/dateFormat";
 import {
   courseApi,
@@ -241,6 +245,27 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
   React.useEffect(() => {
     void loadMatrix();
   }, [loadMatrix]);
+
+  React.useEffect(() => {
+    const handleAttendanceSessionsUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<AttendanceSessionsUpdatedDetail>)
+        .detail;
+      if (detail?.courseId !== courseId) return;
+      setPage(0);
+      void loadSessions(0);
+      void loadMatrix();
+    };
+    window.addEventListener(
+      ATTENDANCE_SESSIONS_UPDATED_EVENT,
+      handleAttendanceSessionsUpdated,
+    );
+    return () => {
+      window.removeEventListener(
+        ATTENDANCE_SESSIONS_UPDATED_EVENT,
+        handleAttendanceSessionsUpdated,
+      );
+    };
+  }, [courseId, loadMatrix, loadSessions]);
 
   React.useEffect(() => {
     setPage(0);
@@ -607,13 +632,26 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
                           </span>
                         ) : null}
                       </div>
-                      <div className={`mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs ${mutedTextClass}`}>
-                        <span>{formatDate(session.sessionDate)}</span>
-                        <span>{formatTimeRange(session)}</span>
+                      <div className={`mt-2 flex flex-wrap items-center gap-2 text-xs ${mutedTextClass}`}>
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 font-semibold ${
+                            isDarkMode
+                              ? "border-[#343434] bg-[#181818] text-gray-200"
+                              : "border-[#dedbd5] bg-[#fbfaf7] text-[#212121]"
+                          }`}
+                        >
+                          출석 기간 {formatDate(session.sessionDate)}
+                        </span>
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 font-semibold ${
+                            isDarkMode
+                              ? "border-[#343434] bg-[#181818] text-gray-200"
+                              : "border-[#dedbd5] bg-[#fbfaf7] text-[#212121]"
+                          }`}
+                        >
+                          시간 {formatTimeRange(session)}
+                        </span>
                         <span>{lectureLabel(lectures, session.lectureId)}</span>
-                      </div>
-                      <div className={`mt-1 text-[11px] ${mutedTextClass}`}>
-                        생성: {formatInstant(session.createdAt)}
                       </div>
                     </button>
 
@@ -877,13 +915,26 @@ const TeacherAttendanceSessionsPanel: React.FC<AttendanceSessionsPanelProps> = (
                           </span>
                         ) : null}
                       </div>
-                      <div className={`mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs ${mutedTextClass}`}>
-                        <span>{formatDate(session.sessionDate)}</span>
-                        <span>{formatTimeRange(session)}</span>
+                      <div className={`mt-2 flex flex-wrap items-center gap-2 text-xs ${mutedTextClass}`}>
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 font-semibold ${
+                            isDarkMode
+                              ? "border-[#343434] bg-[#181818] text-gray-200"
+                              : "border-[#dedbd5] bg-[#fbfaf7] text-[#212121]"
+                          }`}
+                        >
+                          출석 기간 {formatDate(session.sessionDate)}
+                        </span>
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2.5 py-1 font-semibold ${
+                            isDarkMode
+                              ? "border-[#343434] bg-[#181818] text-gray-200"
+                              : "border-[#dedbd5] bg-[#fbfaf7] text-[#212121]"
+                          }`}
+                        >
+                          시간 {formatTimeRange(session)}
+                        </span>
                         <span>{lectureLabel(lectures, session.lectureId)}</span>
-                      </div>
-                      <div className={`mt-1 text-[11px] ${mutedTextClass}`}>
-                        생성: {formatInstant(session.createdAt)}
                       </div>
                     </button>
 
