@@ -23,6 +23,8 @@ import {
   type CourseJoinRequestStatus,
   type LectureResponseDto,
   type AssessmentSimpleDto,
+  type StudentReportAnalysisResult,
+  type StudentReportCompetency,
   type StudentReportDetailResponse,
   type StudentReportLearningEvidenceItem,
   type StudentReportListItem,
@@ -346,6 +348,207 @@ function compactReportLines(value: string | undefined, fallback: string): string
     .map((line) => line.replace(/^[\s>*#\-•]+/, "").trim())
     .filter(Boolean);
   return lines.length > 0 ? lines.slice(0, 4) : [fallback];
+}
+
+function reportAnalysisRecord(value: unknown): Record<string, unknown> | null {
+  return value != null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function unwrapStudentReportAnalysis(
+  analysis: StudentReportAnalysisResult | null,
+): Record<string, unknown> | null {
+  const root = reportAnalysisRecord(analysis);
+  if (!root) return null;
+  for (const key of ["analysis", "result", "data", "rawAnalysis", "raw_analysis"]) {
+    const nested = reportAnalysisRecord(root[key]);
+    if (nested) return nested;
+  }
+  return root;
+}
+
+function readReportAnalysisString(
+  analysis: StudentReportAnalysisResult | null,
+  keys: string[],
+): string | undefined {
+  const record = unwrapStudentReportAnalysis(analysis);
+  if (!record) return undefined;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim() !== "") return value.trim();
+  }
+  return undefined;
+}
+
+function readReportAnalysisStringArray(
+  analysis: StudentReportAnalysisResult | null,
+  keys: string[],
+): string[] {
+  const record = unwrapStudentReportAnalysis(analysis);
+  if (!record) return [];
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      const items = value
+        .map((item) => {
+          if (typeof item === "string") return item.trim();
+          const itemRecord = reportAnalysisRecord(item);
+          if (!itemRecord) return "";
+          for (const field of ["text", "title", "label", "summary", "description"]) {
+            const fieldValue = itemRecord[field];
+            if (typeof fieldValue === "string" && fieldValue.trim()) {
+              return fieldValue.trim();
+            }
+          }
+          return "";
+        })
+        .filter(Boolean);
+      if (items.length > 0) return items;
+    }
+    if (typeof value === "string" && value.trim()) {
+      return compactReportLines(value, "").filter(Boolean);
+    }
+  }
+  return [];
+}
+
+function readReportAnalysisNumber(
+  analysis: StudentReportAnalysisResult | null,
+  keys: string[],
+): number | undefined {
+  const record = unwrapStudentReportAnalysis(analysis);
+  if (!record) return undefined;
+  for (const key of keys) {
+    const value = record[key];
+    const parsed =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" && value.trim() !== ""
+          ? Number(value)
+          : Number.NaN;
+    if (Number.isFinite(parsed)) {
+      return Math.abs(parsed) <= 1 ? parsed * 100 : parsed;
+    }
+  }
+  return undefined;
+}
+
+function readNestedAnalysisString(
+  record: Record<string, unknown>,
+  keys: string[],
+): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim() !== "") return value.trim();
+  }
+  return undefined;
+}
+
+function readNestedAnalysisNumber(
+  record: Record<string, unknown>,
+  keys: string[],
+): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    const parsed =
+      typeof value === "number"
+        ? value
+        : typeof value === "string" && value.trim() !== ""
+          ? Number(value)
+          : Number.NaN;
+    if (Number.isFinite(parsed)) {
+      return Math.abs(parsed) <= 1 ? parsed * 100 : parsed;
+    }
+  }
+  return undefined;
+}
+
+function readNestedAnalysisBoolean(
+  record: Record<string, unknown>,
+  keys: string[],
+): boolean | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "boolean") return value;
+  }
+  return undefined;
+}
+
+function normalizeStudentReportAnalysisCompetencies(
+  analysis: StudentReportAnalysisResult | null,
+): StudentReportCompetency[] {
+  const record = unwrapStudentReportAnalysis(analysis);
+  if (!record) return [];
+  const rawItems =
+    record.competencyAnalysis ??
+    record.competency_analysis ??
+    record.competencies ??
+    record.criteriaAnalysis ??
+    record.criteria_analysis;
+  if (!Array.isArray(rawItems)) return [];
+
+  return rawItems
+    .map((item, index): StudentReportCompetency | null => {
+      const itemRecord = reportAnalysisRecord(item);
+      if (!itemRecord) return null;
+      const label =
+        readNestedAnalysisString(itemRecord, [
+          "label",
+          "competencyName",
+          "competency_name",
+          "criterionName",
+          "criterion_name",
+          "name",
+          "title",
+        ]) || `평가 기준 ${index + 1}`;
+      const key = readNestedAnalysisString(itemRecord, ["key", "criteriaKey", "criteria_key"]);
+      const criteriaId =
+        readNestedAnalysisString(itemRecord, ["criteriaId", "criteria_id", "id"]) ??
+        (key || label);
+      const scorePercent = readNestedAnalysisNumber(itemRecord, [
+        "score",
+        "scorePercent",
+        "score_percent",
+        "percent",
+        "value",
+      ]);
+      const level = readNestedAnalysisString(itemRecord, ["level", "status"]);
+      const insufficientEvidence =
+        readNestedAnalysisBoolean(itemRecord, [
+          "insufficientEvidence",
+          "insufficient_evidence",
+        ]) ||
+        String(level ?? "").toUpperCase() === "INSUFFICIENT_DATA";
+      const evidence = Array.isArray(itemRecord.evidence) ? itemRecord.evidence : undefined;
+
+      return {
+        competencyName: label,
+        label,
+        key,
+        criteriaId,
+        scorePercent,
+        level,
+        confidence: readNestedAnalysisString(itemRecord, ["confidence"]),
+        feedback: readNestedAnalysisString(itemRecord, [
+          "feedback",
+          "analysis",
+          "summary",
+          "reason",
+          "description",
+        ]),
+        analysis: readNestedAnalysisString(itemRecord, [
+          "analysis",
+          "feedback",
+          "summary",
+          "reason",
+        ]),
+        builtIn: readNestedAnalysisBoolean(itemRecord, ["builtIn", "built_in"]),
+        evidence,
+        insufficientEvidence,
+      };
+    })
+    .filter((item): item is StudentReportCompetency => item != null);
 }
 
 function reportChatHistoryToUiMessages(
@@ -1728,6 +1931,16 @@ const MainContent: React.FC<MainContentProps> = ({
     React.useState(false);
   const [studentReportDetailError, setStudentReportDetailError] =
     React.useState<string | null>(null);
+  const [studentReportAnalysis, setStudentReportAnalysis] =
+    React.useState<StudentReportAnalysisResult | null>(null);
+  const [studentReportAnalysisLoading, setStudentReportAnalysisLoading] =
+    React.useState(false);
+  const [studentReportAnalysisError, setStudentReportAnalysisError] =
+    React.useState<string | null>(null);
+  const [studentReportAnalysisStreaming, setStudentReportAnalysisStreaming] =
+    React.useState(false);
+  const [studentReportAnalysisProgress, setStudentReportAnalysisProgress] =
+    React.useState("");
   const [studentReportModalTab, setStudentReportModalTab] = React.useState<
     "students" | "classroom"
   >("students");
@@ -2012,6 +2225,50 @@ const MainContent: React.FC<MainContentProps> = ({
   ]);
 
   React.useEffect(() => {
+    if (
+      !studentReportListVisible ||
+      courseDetail?.courseId == null ||
+      selectedStudentReportId == null
+    ) {
+      setStudentReportAnalysis(null);
+      setStudentReportAnalysisError(null);
+      setStudentReportAnalysisLoading(false);
+      setStudentReportAnalysisProgress("");
+      return;
+    }
+    let cancelled = false;
+    setStudentReportAnalysis(null);
+    setStudentReportAnalysisLoading(true);
+    setStudentReportAnalysisError(null);
+    setStudentReportAnalysisProgress("");
+    void studentReportApi
+      .getStudentAnalysis(courseDetail.courseId, selectedStudentReportId)
+      .then((analysis) => {
+        if (!cancelled) setStudentReportAnalysis(analysis);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setStudentReportAnalysis(null);
+          setStudentReportAnalysisError(
+            error instanceof Error
+              ? error.message
+              : "저장된 AI 분석 결과를 불러오지 못했습니다.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setStudentReportAnalysisLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    studentReportListVisible,
+    courseDetail?.courseId,
+    selectedStudentReportId,
+  ]);
+
+  React.useEffect(() => {
     if (!classroomReportVisible || courseDetail?.courseId == null) {
       return;
     }
@@ -2179,6 +2436,11 @@ const MainContent: React.FC<MainContentProps> = ({
     setStudentAiContextError(null);
     setStudentActivitySummary(null);
     setStudentActivitySummaryLoading(false);
+    setStudentReportAnalysis(null);
+    setStudentReportAnalysisError(null);
+    setStudentReportAnalysisLoading(false);
+    setStudentReportAnalysisProgress("");
+    setStudentReportAnalysisStreaming(false);
     setClassroomFlowItems([]);
     setClassroomFlowLoading(false);
     setReportChatMessages([]);
@@ -2276,6 +2538,61 @@ const MainContent: React.FC<MainContentProps> = ({
     reportChatSending,
   ]);
 
+  const handleAnalyzeSelectedStudentReport = React.useCallback(async () => {
+    if (
+      courseDetail?.courseId == null ||
+      selectedStudentReportId == null ||
+      studentReportAnalysisStreaming
+    ) {
+      return;
+    }
+
+    setStudentReportAnalysisStreaming(true);
+    setStudentReportAnalysisLoading(false);
+    setStudentReportAnalysisError(null);
+    setStudentReportAnalysisProgress("학생 리포트를 다시 분석하는 중입니다.");
+
+    try {
+      const streamedAnalysis = await studentReportApi.streamStudentReportAnalyze(
+        courseDetail.courseId,
+        selectedStudentReportId,
+        { model: "gemini-2.5-flash" },
+        {
+          onDelta: (chunk) => {
+            setStudentReportAnalysisProgress((prev) =>
+              `${prev}${prev ? "\n" : ""}${chunk}`.slice(-1200),
+            );
+          },
+        },
+      );
+      if (streamedAnalysis) {
+        setStudentReportAnalysis(streamedAnalysis);
+      } else {
+        const savedAnalysis = await studentReportApi.getStudentAnalysis(
+          courseDetail.courseId,
+          selectedStudentReportId,
+        );
+        setStudentReportAnalysis(savedAnalysis);
+      }
+      const nextDetail = await studentReportApi.getStudentReportDetail(
+        courseDetail.courseId,
+        selectedStudentReportId,
+      );
+      setStudentReportDetail(nextDetail);
+      setStudentReportAnalysisProgress("분석이 완료되었습니다.");
+    } catch (error) {
+      setStudentReportAnalysisError(
+        error instanceof Error ? error.message : "학생 AI 분석을 실행하지 못했습니다.",
+      );
+    } finally {
+      setStudentReportAnalysisStreaming(false);
+    }
+  }, [
+    courseDetail?.courseId,
+    selectedStudentReportId,
+    studentReportAnalysisStreaming,
+  ]);
+
   const renderClassroomReportPage = () => {
     if (!courseDetail) return null;
     const selectedStudent =
@@ -2289,9 +2606,23 @@ const MainContent: React.FC<MainContentProps> = ({
       selectedStudentReportSummary?.latestActivityAt ??
       studentReportDetail?.updatedAt ??
       studentReportDetail?.generatedAt;
-    const competencies = studentReportDetail?.competencies ?? [];
+    const analysisCompetencies =
+      normalizeStudentReportAnalysisCompetencies(studentReportAnalysis);
+    const competencies = analysisCompetencies.length
+      ? analysisCompetencies
+      : studentReportDetail?.competencies ?? [];
+    const analysisScore = readReportAnalysisNumber(studentReportAnalysis, [
+      "overallScorePercent",
+      "overall_score_percent",
+      "overallScore",
+      "overall_score",
+      "scorePercent",
+      "score_percent",
+      "score",
+    ]);
     const score = clampReportScore(
-      studentReportDetail?.overallScorePercent ??
+      analysisScore ??
+        studentReportDetail?.overallScorePercent ??
         studentReportDetail?.averageScorePercent ??
         selectedStudentReportSummary?.averageScorePercent,
     );
@@ -2303,14 +2634,32 @@ const MainContent: React.FC<MainContentProps> = ({
       studentActivitySummary?.missingSubmissionCount ??
       studentAiContext?.activitySummary?.missingCount;
     const scoreTrend = studentAiContext?.scoreSummary?.trend;
+    const analysisSummaryLines = readReportAnalysisStringArray(studentReportAnalysis, [
+      "summaryBullets",
+      "summary_bullets",
+      "keySummary",
+      "key_summary",
+      "insights",
+      "summary",
+      "narrativeReport",
+      "narrative_report",
+    ]);
     const summaryLines =
-      studentReportDetail?.summaryBullets?.length
+      analysisSummaryLines.length
+        ? analysisSummaryLines.slice(0, 4)
+        : studentReportDetail?.summaryBullets?.length
         ? studentReportDetail.summaryBullets.slice(0, 4)
         : compactReportLines(
             studentReportDetail?.narrativeReport,
             "선택한 학생의 리포트 본문이 아직 없습니다.",
           );
     const headline =
+      readReportAnalysisString(studentReportAnalysis, [
+        "headline",
+        "title",
+        "mainMessage",
+        "main_message",
+      ]) ||
       studentReportDetail?.headline ||
       (score < 50
         ? "기초 체력을 올리면서 취약 유형을 좁혀가야 하는 구간입니다."
@@ -2323,25 +2672,71 @@ const MainContent: React.FC<MainContentProps> = ({
     const weakCompetencies = competencies
       .filter((item) => clampReportScore(item.scorePercent) < 50)
       .slice(0, 3);
+    const detailReportCriteria = studentReportDetail?.reportCriteria ?? [];
     const baseCriteriaCount =
-      reportCriteriaSummary?.baseItemCount ??
+      detailReportCriteria.filter((criterion) => criterion.builtIn).length ||
+      reportCriteriaSummary?.baseItemCount ||
       (competencies.length > 0 ? competencies.length : 0);
-    const additionalCriteriaCount = reportCriteriaSummary?.additionalItemCount ?? 0;
+    const additionalCriteriaCount =
+      detailReportCriteria.filter((criterion) => !criterion.builtIn).length ||
+      reportCriteriaSummary?.additionalItemCount ||
+      0;
     const activeCriteriaCount =
+      reportCriteriaSummary?.reportCriteriaCount ??
+      (detailReportCriteria.length > 0 ? detailReportCriteria.length : undefined) ??
       reportCriteriaSummary?.activeCriteriaCount ??
       baseCriteriaCount + additionalCriteriaCount;
-    const reportStrengthTexts = studentReportDetail?.strengths?.length
+    const criteriaStatusText =
+      reportCriteriaSummary?.reportCriteriaStatus ||
+      reportCriteriaSummary?.criteriaStatus ||
+      (classroomAnalyzeStreaming ? "반영 중" : "적용 중");
+    const analysisStrengthTexts = readReportAnalysisStringArray(studentReportAnalysis, [
+      "strengths",
+      "strongPoints",
+      "strong_points",
+    ]);
+    const analysisImprovementTexts = readReportAnalysisStringArray(studentReportAnalysis, [
+      "improvementPoints",
+      "improvement_points",
+      "weaknesses",
+      "weakPoints",
+      "weak_points",
+    ]);
+    const analysisCoachingInsights = readReportAnalysisStringArray(studentReportAnalysis, [
+      "coachingInsights",
+      "coaching_insights",
+      "insights",
+    ]);
+    const analysisRecommendedActions = readReportAnalysisStringArray(studentReportAnalysis, [
+      "recommendedActions",
+      "recommended_actions",
+      "actions",
+      "nextActions",
+      "next_actions",
+    ]);
+    const reportStrengthTexts = analysisStrengthTexts.length
+      ? analysisStrengthTexts
+      : studentReportDetail?.strengths?.length
       ? studentReportDetail.strengths
       : strongCompetencies.map((item) => item.competencyName);
-    const reportImprovementTexts = studentReportDetail?.improvementPoints?.length
+    const reportImprovementTexts = analysisImprovementTexts.length
+      ? analysisImprovementTexts
+      : studentReportDetail?.improvementPoints?.length
       ? studentReportDetail.improvementPoints
       : weakCompetencies.map((item) => item.competencyName);
-    const reportCoachingInsights = studentReportDetail?.coachingInsights?.length
+    const reportCoachingInsights = analysisCoachingInsights.length
+      ? analysisCoachingInsights
+      : studentReportDetail?.coachingInsights?.length
       ? studentReportDetail.coachingInsights
       : classroomReport?.coachingPriorities?.length
         ? classroomReport.coachingPriorities.map(reportInsightPrimaryText)
         : summaryLines;
-    const reportRecommendedActions = studentReportDetail?.recommendedActions?.length
+    const reportRecommendedActions = analysisRecommendedActions.length
+      ? analysisRecommendedActions.map((item, index) => [
+          index === 0 ? "우선 실행" : index === 1 ? "보완 학습" : "추가 코칭",
+          item,
+        ])
+      : studentReportDetail?.recommendedActions?.length
       ? studentReportDetail.recommendedActions.map((item, index) => [
           index === 0 ? "우선 실행" : index === 1 ? "보완 학습" : "추가 코칭",
           item,
@@ -2507,11 +2902,7 @@ const MainContent: React.FC<MainContentProps> = ({
                 {[
                   ["기본 항목", `${baseCriteriaCount}개`],
                   ["추가 항목", `${additionalCriteriaCount}개`],
-                  [
-                    "분석 기준",
-                    reportCriteriaSummary?.criteriaStatus ||
-                      (classroomAnalyzeStreaming ? "반영 중" : "적용 중"),
-                  ],
+                  ["분석 기준", criteriaStatusText],
                 ].map(([label, value]) => (
                   <div
                     key={label}
@@ -2745,6 +3136,18 @@ const MainContent: React.FC<MainContentProps> = ({
 	            <div className="flex flex-wrap gap-2">
 	              <button
 	                type="button"
+	                onClick={handleAnalyzeSelectedStudentReport}
+	                disabled={
+	                  selectedStudentReportId == null ||
+	                  studentReportAnalysisStreaming ||
+	                  studentReportDetailLoading
+	                }
+	                className={primaryButtonClass}
+	              >
+	                {studentReportAnalysisStreaming ? "분석 중..." : "선택 학생 다시 분석"}
+	              </button>
+	              <button
+	                type="button"
 	                onClick={() => setClassroomReportTab("students")}
 	                className={buttonClass}
 	              >
@@ -2753,6 +3156,27 @@ const MainContent: React.FC<MainContentProps> = ({
 		            </div>
 	          </div>
 	        </section>
+
+	        {studentReportAnalysisLoading ||
+	        studentReportAnalysisStreaming ||
+	        studentReportAnalysisError ? (
+	          <section className={`${softCardClass} px-4 py-3 text-sm`}>
+	            {studentReportAnalysisError ? (
+	              <p className={isDarkMode ? "text-red-300" : "text-red-600"}>
+	                {studentReportAnalysisError}
+	              </p>
+	            ) : studentReportAnalysisStreaming ? (
+	              <div>
+	                <p className="font-semibold">AI 분석 진행 중</p>
+	                <p className={`mt-1 whitespace-pre-wrap text-xs leading-5 ${mutedText}`}>
+	                  {studentReportAnalysisProgress || "분석 결과를 수신하고 있습니다."}
+	                </p>
+	              </div>
+	            ) : (
+	              <p className={mutedText}>저장된 AI 분석 결과를 불러오는 중...</p>
+	            )}
+	          </section>
+	        ) : null}
 
 	        <section className={`${cardClass} px-5 py-5`}>
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_10rem] lg:items-center">
@@ -2766,6 +3190,13 @@ const MainContent: React.FC<MainContentProps> = ({
                 }`}>
                   리포트 점검
                 </span>
+                {studentReportAnalysis ? (
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                    isDarkMode ? "bg-white/10 text-gray-200" : "bg-[#f4f1eb] text-gray-700"
+                  }`}>
+                    AI 분석 반영
+                  </span>
+                ) : null}
                 {scoreTrend ? (
                   <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
                     isDarkMode ? "bg-white/10 text-gray-200" : "bg-[#f4f1eb] text-gray-700"
@@ -3021,22 +3452,55 @@ const MainContent: React.FC<MainContentProps> = ({
           <div className="mt-4 space-y-3">
             {competencies.length ? (
 	              competencies.map((competency) => {
+	                const insufficient =
+	                  competency.insufficientEvidence ||
+	                  competency.level === "INSUFFICIENT_DATA" ||
+	                  competency.scorePercent == null;
 	                const percent = clampReportScore(competency.scorePercent);
+	                const displayName =
+	                  competency.label ||
+	                  competency.competencyName ||
+	                  competency.key ||
+	                  "평가 기준";
 	                return (
-	                  <article key={competency.competencyName} className={`${softCardClass} px-4 py-4`}>
+	                  <article key={`${competency.criteriaId ?? competency.key ?? competency.competencyName}`} className={`${softCardClass} px-4 py-4`}>
 	                    <div className="flex items-start justify-between gap-5">
 	                      <div className="min-w-0 flex-1">
-	                        <h4 className="text-sm font-semibold">{competency.competencyName}</h4>
+	                        <div className="flex flex-wrap items-center gap-2">
+	                          <h4 className="text-sm font-semibold">{displayName}</h4>
+	                          {competency.builtIn != null ? (
+	                            <span
+	                              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+	                                competency.builtIn
+	                                  ? isDarkMode
+	                                    ? "bg-white/10 text-gray-200"
+	                                    : "bg-gray-100 text-gray-700"
+	                                  : "bg-[#ff824d]/15 text-[#ff824d]"
+	                              }`}
+	                            >
+	                              {competency.builtIn ? "기본" : "추가"}
+	                            </span>
+	                          ) : null}
+	                          {insufficient ? (
+	                            <span className="rounded-full bg-zinc-500/15 px-2 py-0.5 text-[11px] font-semibold text-zinc-500">
+	                              근거 부족
+	                            </span>
+	                          ) : null}
+	                        </div>
 	                        <p className={`mt-1 text-xs leading-5 ${mutedText}`}>
-	                          {competency.feedback || "아직 충분한 피드백 데이터가 없습니다."}
+	                          {competency.feedback ||
+	                            competency.analysis ||
+	                            (insufficient
+	                              ? "이 기준을 판단하기 위한 학습 데이터가 아직 부족합니다."
+	                              : "아직 충분한 피드백 데이터가 없습니다.")}
 	                        </p>
 	                      </div>
 	                      <div className="shrink-0 text-right">
 	                        <p className="text-3xl font-semibold leading-none">
-	                          {competency.scorePercent != null ? percent : "-"}
+	                          {insufficient ? "-" : percent}
 	                        </p>
 	                        <p className={`mt-1 text-xs font-semibold ${mutedText}`}>
-	                          {competency.level || "유지"}
+	                          {insufficient ? "데이터 부족" : competency.level || "유지"}
 	                        </p>
 	                      </div>
 	                    </div>
@@ -3046,8 +3510,10 @@ const MainContent: React.FC<MainContentProps> = ({
 	                      }`}
 	                    >
 	                      <div
-	                        className="h-full rounded-full bg-[#ff824d]"
-	                        style={{ width: `${percent}%` }}
+	                        className={`h-full rounded-full ${
+	                          insufficient ? "bg-zinc-400/40" : "bg-[#ff824d]"
+	                        }`}
+	                        style={{ width: `${insufficient ? 0 : percent}%` }}
 	                      />
 	                    </div>
 	                    <div className="mt-3 flex flex-wrap gap-2">
@@ -3058,7 +3524,7 @@ const MainContent: React.FC<MainContentProps> = ({
 	                            : "border-[#dedbd5] bg-white text-gray-800"
 	                        }`}
 	                      >
-	                        현재 점수 {competency.scorePercent != null ? `${percent}점` : "-"}
+	                        {insufficient ? "현재 점수 근거 부족" : `현재 점수 ${percent}점`}
 	                      </span>
 	                      <span
 	                        className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
@@ -3067,8 +3533,19 @@ const MainContent: React.FC<MainContentProps> = ({
 	                            : "border-[#dedbd5] bg-white text-gray-800"
 	                        }`}
 	                      >
-	                        상태 {competency.level || "유지"}
+	                        상태 {insufficient ? "데이터 부족" : competency.level || "유지"}
 	                      </span>
+	                      {competency.confidence ? (
+	                        <span
+	                          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+	                            isDarkMode
+	                              ? "border-[#343434] bg-[#202020] text-gray-200"
+	                              : "border-[#dedbd5] bg-white text-gray-800"
+	                          }`}
+	                        >
+	                          신뢰도 {competency.confidence}
+	                        </span>
+	                      ) : null}
 	                    </div>
 	                  </article>
 	                );

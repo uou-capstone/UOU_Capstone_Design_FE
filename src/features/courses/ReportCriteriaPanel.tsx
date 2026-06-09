@@ -97,7 +97,7 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
     setLoading(true);
     setError(null);
     try {
-      setCriteria(await reportCriteriaApi.listCriteria(courseId));
+      setCriteria(await reportCriteriaApi.listAllCriteria(courseId));
     } catch (err) {
       setError(err instanceof Error ? err.message : "평가 기준을 불러오지 못했습니다.");
       setCriteria([]);
@@ -145,12 +145,16 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
 
   const remove = React.useCallback(
     async (criterion: ReportCriterion) => {
+      if (!criterion.deletable || criterion.criterionId == null) {
+        window.alert("기본 평가 기준은 삭제할 수 없습니다.");
+        return;
+      }
       const ok = window.confirm(`"${criterion.label}" 기준을 삭제할까요?`);
       if (!ok) return;
       setSaving(true);
       setError(null);
       try {
-        await reportCriteriaApi.deleteCriterion(courseId, criterion.id);
+        await reportCriteriaApi.deleteCriterion(courseId, criterion.criterionId);
         await load();
       } catch (err) {
         setError(err instanceof Error ? err.message : "평가 기준 삭제에 실패했습니다.");
@@ -261,6 +265,14 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
     const method = pendingOperation.method;
     const payload = criterionPayloadFromOperation(pendingOperation);
     const targetId = criterionIdFromOperation(pendingOperation) ?? editingId;
+    const targetCriterion =
+      targetId == null
+        ? null
+        : criteria.find(
+            (criterion) =>
+              criterion.criterionId === targetId || criterion.id === targetId,
+          ) ?? null;
+    const crudTargetId = targetCriterion?.criterionId ?? targetId;
 
     if (method === "draftCriterion" || method === "reviseCriterion") {
       setForm({
@@ -268,13 +280,17 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
         description: payload.description ?? "",
         weight: String(payload.weight ?? 10),
       });
-      if (targetId != null) setEditingId(targetId);
+      if (targetCriterion?.editable && targetCriterion.criterionId != null) {
+        setEditingId(targetCriterion.criterionId);
+      } else if (targetId != null && !targetCriterion?.builtIn) {
+        setEditingId(targetId);
+      }
       setPendingOperation(null);
       return;
     }
 
     if (method === "deleteCriterion") {
-      if (targetId == null) {
+      if (crudTargetId == null || targetCriterion?.deletable === false) {
         setError("삭제할 평가항목을 특정할 수 없습니다.");
         return;
       }
@@ -283,7 +299,7 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
       setSaving(true);
       setError(null);
       try {
-        await reportCriteriaApi.deleteCriterion(courseId, targetId);
+        await reportCriteriaApi.deleteCriterion(courseId, crudTargetId);
         setPendingOperation(null);
         reset();
         await load();
@@ -304,11 +320,11 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
     setError(null);
     try {
       if (method === "updateCriterion") {
-        if (targetId == null) {
+        if (crudTargetId == null || targetCriterion?.editable === false) {
           setError("수정할 평가항목을 특정할 수 없습니다.");
           return;
         }
-        await reportCriteriaApi.updateCriterion(courseId, targetId, payload);
+        await reportCriteriaApi.updateCriterion(courseId, crudTargetId, payload);
       } else {
         await reportCriteriaApi.createCriterion(courseId, payload);
       }
@@ -320,7 +336,7 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
     } finally {
       setSaving(false);
     }
-  }, [courseId, editingId, load, pendingOperation]);
+  }, [courseId, criteria, editingId, load, pendingOperation]);
 
   const surfaceClass = isDarkMode
     ? "border-[#1b4d44] bg-[#0b241f] text-gray-100"
@@ -331,6 +347,122 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
       ? "border-[#1b3443] bg-[#102a35] text-gray-100 placeholder:text-gray-500 focus:border-[#ffad9b] focus:ring-[#ffad9b]/20"
       : "border-[#d9d9dd] bg-white text-gray-900 placeholder:text-gray-400 focus:border-[#1863dc] focus:ring-[#1863dc]/20"
   }`;
+  const builtInCriteria = criteria.filter((criterion) => criterion.builtIn);
+  const customCriteria = criteria.filter((criterion) => !criterion.builtIn);
+  const renderCriterionList = (
+    rows: ReportCriterion[],
+    emptyText: string,
+  ) =>
+    rows.length === 0 ? (
+      <div className={`px-5 py-10 text-center text-sm ${mutedClass}`}>
+        {emptyText}
+      </div>
+    ) : (
+      <ul className="divide-y divide-inherit">
+        {rows.map((criterion, index) => {
+          const editable = !!criterion.editable && criterion.criterionId != null;
+          const deletable = !!criterion.deletable && criterion.criterionId != null;
+          return (
+            <li
+              key={`${criterion.builtIn ? "base" : "custom"}-${criterion.key ?? criterion.criterionId ?? criterion.id}-${index}`}
+              className="px-5 py-4"
+            >
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold">{criterion.label}</h4>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                        criterion.builtIn
+                          ? isDarkMode
+                            ? "bg-white/10 text-gray-200"
+                            : "bg-gray-100 text-gray-700"
+                          : "bg-[#ff824d]/15 text-[#ff824d]"
+                      }`}
+                    >
+                      {criterion.builtIn ? "기본" : "추가"}
+                    </span>
+                    {!editable ? (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                          isDarkMode ? "bg-white/5 text-gray-400" : "bg-gray-50 text-gray-500"
+                        }`}
+                      >
+                        읽기 전용
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className={`mt-1 text-sm ${mutedClass}`}>
+                    {criterion.description || "설명 없음"}
+                  </p>
+                  {(criterion.dataSourceHint || criterion.fallbackPolicy) && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {criterion.dataSourceHint ? (
+                        <span
+                          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                            isDarkMode
+                              ? "border-[#343434] text-gray-300"
+                              : "border-[#dedbd5] text-gray-700"
+                          }`}
+                        >
+                          데이터: {criterion.dataSourceHint}
+                        </span>
+                      ) : null}
+                      {criterion.fallbackPolicy ? (
+                        <span
+                          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                            isDarkMode
+                              ? "border-[#343434] text-gray-300"
+                              : "border-[#dedbd5] text-gray-700"
+                          }`}
+                        >
+                          부족 시: {criterion.fallbackPolicy}
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <span
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      isDarkMode ? "bg-white/10 text-gray-100" : "bg-gray-100 text-gray-900"
+                    }`}
+                  >
+                    weight {criterion.weight ?? 0}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!editable}
+                    onClick={() => {
+                      if (!editable || criterion.criterionId == null) return;
+                      setEditingId(criterion.criterionId);
+                      setForm({
+                        label: criterion.label,
+                        description: criterion.description ?? "",
+                        weight: String(criterion.weight ?? 0),
+                      });
+                    }}
+                    className={`rounded-lg border px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40 ${
+                      isDarkMode ? "border-zinc-600" : "border-gray-300"
+                    }`}
+                  >
+                    수정
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!deletable}
+                    onClick={() => void remove(criterion)}
+                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    삭제
+                  </button>
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    );
 
   return (
     <div className="flex min-h-0 flex-col gap-3 pb-4">
@@ -542,7 +674,12 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
 
       <section className={`rounded-xl border ${surfaceClass}`}>
         <div className="flex items-center justify-between border-b border-inherit px-4 py-3">
-          <h3 className="text-base font-semibold">기준 목록</h3>
+          <div>
+            <h3 className="text-base font-semibold">분석 기준 목록</h3>
+            <p className={`mt-1 text-xs ${mutedClass}`}>
+              기본 {builtInCriteria.length}개 · 추가 {customCriteria.length}개
+            </p>
+          </div>
           <button
             type="button"
             onClick={() => void load()}
@@ -565,52 +702,26 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
             등록된 평가 기준이 없습니다.
           </div>
         ) : (
-          <ul className="divide-y divide-inherit">
-            {criteria.map((criterion) => (
-              <li key={criterion.id} className="px-5 py-4">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div>
-                    <h4 className="text-sm font-semibold">{criterion.label}</h4>
-                    <p className={`mt-1 text-sm ${mutedClass}`}>
-                      {criterion.description || "설명 없음"}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                        isDarkMode ? "bg-white/10 text-gray-100" : "bg-gray-100 text-gray-900"
-                      }`}
-                    >
-                      weight {criterion.weight ?? 0}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingId(criterion.id);
-                        setForm({
-                          label: criterion.label,
-                          description: criterion.description ?? "",
-                          weight: String(criterion.weight ?? 0),
-                        });
-                      }}
-                      className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
-                        isDarkMode ? "border-zinc-600" : "border-gray-300"
-                      }`}
-                    >
-                      수정
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void remove(criterion)}
-                      className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600"
-                    >
-                      삭제
-                    </button>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
+          <div className="divide-y divide-inherit">
+            <div>
+              <div className="px-5 py-3">
+                <h4 className="text-sm font-semibold">기본 기준</h4>
+                <p className={`mt-1 text-xs ${mutedClass}`}>
+                  시스템 기본 10개 항목이며 수정하거나 삭제할 수 없습니다.
+                </p>
+              </div>
+              {renderCriterionList(builtInCriteria, "기본 기준이 없습니다.")}
+            </div>
+            <div>
+              <div className="px-5 py-3">
+                <h4 className="text-sm font-semibold">추가 기준</h4>
+                <p className={`mt-1 text-xs ${mutedClass}`}>
+                  교사가 수업 목적에 맞게 추가한 커스텀 기준입니다.
+                </p>
+              </div>
+              {renderCriterionList(customCriteria, "추가된 커스텀 기준이 없습니다.")}
+            </div>
+          </div>
         )}
       </section>
     </div>

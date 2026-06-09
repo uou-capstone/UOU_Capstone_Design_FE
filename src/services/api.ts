@@ -104,6 +104,14 @@ export interface StudentReportCompetency {
   scorePercent?: number;
   level?: string;
   feedback?: string;
+  criteriaId?: string;
+  key?: string;
+  label?: string;
+  builtIn?: boolean;
+  confidence?: string;
+  analysis?: string;
+  evidence?: unknown[];
+  insufficientEvidence?: boolean;
 }
 
 export interface StudentReportIntegratedLearningSummary {
@@ -156,7 +164,10 @@ export interface StudentReportDetailResponse {
   reportWarnings?: string[];
   integratedLearningSummary?: StudentReportIntegratedLearningSummary;
   learningEvidence: StudentReportLearningEvidenceItem[];
+  reportCriteria: ReportCriterion[];
 }
+
+export type StudentReportAnalysisResult = Record<string, unknown>;
 
 /** GET /api/courses/{courseId}/reports/classroom */
 export interface ClassroomReportResponse {
@@ -206,6 +217,7 @@ export interface StudentReportAiContextResponse {
   student?: StudentReportAiContextStudentInfo;
   activitySummary?: StudentReportAiContextActivity;
   scoreSummary?: StudentReportAiContextScore;
+  reportCriteria: ReportCriterion[];
 }
 
 /** GET /api/courses/{courseId}/reports/criteria/summary */
@@ -213,7 +225,9 @@ export interface ReportCriteriaSummary {
   baseItemCount: number;
   additionalItemCount: number;
   activeCriteriaCount: number;
+  reportCriteriaCount?: number;
   criteriaStatus?: string;
+  reportCriteriaStatus?: string;
   criteriaReflectedAt?: string;
 }
 
@@ -750,17 +764,39 @@ function normalizeStudentReportDetail(
                 obj.average_score_percent ??
                 obj.score,
             ),
+            criteriaId: toOptionalString(
+              obj.criteriaId ?? obj.criteria_id ?? obj.criterionId ?? obj.criterion_id,
+            ),
+            key: toOptionalString(obj.key),
+            label: toOptionalString(obj.label),
+            builtIn:
+              typeof obj.builtIn === "boolean"
+                ? obj.builtIn
+                : typeof obj.built_in === "boolean"
+                  ? obj.built_in
+                  : undefined,
             level:
               typeof obj.level === "string" && obj.level.trim() !== ""
                 ? obj.level
                 : typeof obj.status === "string" && obj.status.trim() !== ""
                   ? obj.status
                 : undefined,
+            confidence: toOptionalString(obj.confidence),
+            analysis: toOptionalString(obj.analysis),
+            evidence: Array.isArray(obj.evidence) ? obj.evidence : undefined,
+            insufficientEvidence:
+              typeof obj.insufficientEvidence === "boolean"
+                ? obj.insufficientEvidence
+                : typeof obj.insufficient_evidence === "boolean"
+                  ? obj.insufficient_evidence
+                  : undefined,
             feedback:
               typeof obj.feedback === "string" && obj.feedback.trim() !== ""
                 ? obj.feedback
                 : typeof obj.latestFeedback === "string" && obj.latestFeedback.trim() !== ""
                   ? obj.latestFeedback
+                  : typeof obj.analysis === "string" && obj.analysis.trim() !== ""
+                    ? obj.analysis
                   : typeof obj.latest_feedback === "string" && obj.latest_feedback.trim() !== ""
                     ? obj.latest_feedback
                 : undefined,
@@ -844,6 +880,9 @@ function normalizeStudentReportDetail(
     ),
     learningEvidence: normalizeLearningEvidence(
       raw.learningEvidence ?? raw.learning_evidence,
+    ),
+    reportCriteria: normalizeReportCriteriaList(
+      raw.reportCriteria ?? raw.report_criteria,
     ),
   };
 }
@@ -960,7 +999,15 @@ function normalizeStudentReportAiContext(raw: Record<string, unknown>): StudentR
     };
   }
 
-  return { course, student, activitySummary, scoreSummary };
+  return {
+    course,
+    student,
+    activitySummary,
+    scoreSummary,
+    reportCriteria: normalizeReportCriteriaList(
+      raw.reportCriteria ?? raw.report_criteria,
+    ),
+  };
 }
 
 function normalizeReportCriteriaSummary(raw: Record<string, unknown>): ReportCriteriaSummary {
@@ -970,7 +1017,13 @@ function normalizeReportCriteriaSummary(raw: Record<string, unknown>): ReportCri
       toFiniteNumber(raw.additionalItemCount ?? raw.additional_item_count) ?? 0,
     activeCriteriaCount:
       toFiniteNumber(raw.activeCriteriaCount ?? raw.active_criteria_count) ?? 0,
+    reportCriteriaCount: toFiniteNumber(
+      raw.reportCriteriaCount ?? raw.report_criteria_count,
+    ),
     criteriaStatus: toOptionalString(raw.criteriaStatus ?? raw.criteria_status),
+    reportCriteriaStatus: toOptionalString(
+      raw.reportCriteriaStatus ?? raw.report_criteria_status,
+    ),
     criteriaReflectedAt: toOptionalString(
       raw.criteriaReflectedAt ?? raw.criteria_reflected_at,
     ),
@@ -1284,9 +1337,16 @@ export interface DiscussionComment {
 
 export interface ReportCriterion {
   id: number;
+  key?: string;
+  criterionId?: number | null;
   label: string;
   description?: string;
   weight?: number;
+  builtIn?: boolean;
+  editable?: boolean;
+  deletable?: boolean;
+  dataSourceHint?: string;
+  fallbackPolicy?: string;
 }
 
 export interface ReportCriterionPayload {
@@ -1857,15 +1917,66 @@ function normalizeDiscussionComment(raw: Record<string, unknown>): DiscussionCom
 }
 
 function normalizeReportCriterion(raw: Record<string, unknown>): ReportCriterion {
+  const criterionIdRaw = raw.criterionId ?? raw.criterion_id;
+  const criterionId = toFiniteNumber(criterionIdRaw);
+  const id =
+    toFiniteNumber(raw.id) ??
+    criterionId ??
+    toFiniteNumber(raw.key) ??
+    0;
+  const hasCriterionIdField =
+    Object.prototype.hasOwnProperty.call(raw, "criterionId") ||
+    Object.prototype.hasOwnProperty.call(raw, "criterion_id");
+  const builtIn =
+    typeof raw.builtIn === "boolean"
+      ? raw.builtIn
+      : typeof raw.built_in === "boolean"
+        ? raw.built_in
+        : hasCriterionIdField && criterionId == null;
+  const editable =
+    typeof raw.editable === "boolean"
+      ? raw.editable
+      : typeof raw.canEdit === "boolean"
+        ? raw.canEdit
+        : typeof raw.can_edit === "boolean"
+          ? raw.can_edit
+          : !builtIn;
+  const deletable =
+    typeof raw.deletable === "boolean"
+      ? raw.deletable
+      : typeof raw.canDelete === "boolean"
+        ? raw.canDelete
+        : typeof raw.can_delete === "boolean"
+          ? raw.can_delete
+          : !builtIn;
   return {
-    id: Number(raw.id ?? raw.criterionId ?? raw.criterion_id ?? 0),
+    id,
+    key: toOptionalString(raw.key),
+    criterionId: criterionId ?? null,
     label: String(raw.label ?? ""),
     description:
       typeof raw.description === "string" && raw.description.trim() !== ""
         ? raw.description
         : undefined,
-    weight: raw.weight == null ? undefined : Number(raw.weight),
+    weight: raw.weight == null ? undefined : toFiniteNumber(raw.weight),
+    builtIn,
+    editable,
+    deletable,
+    dataSourceHint: toOptionalString(raw.dataSourceHint ?? raw.data_source_hint),
+    fallbackPolicy: toOptionalString(raw.fallbackPolicy ?? raw.fallback_policy),
   };
+}
+
+function normalizeReportCriteriaList(raw: unknown): ReportCriterion[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (item == null || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+      return normalizeReportCriterion(item as Record<string, unknown>);
+    })
+    .filter((item): item is ReportCriterion => item != null);
 }
 
 export interface Lecture {
@@ -3736,7 +3847,14 @@ export const reportCriteriaApi = {
     const raw = await apiRequest<Record<string, unknown>[]>(
       `/api/courses/${encodeURIComponent(courseId)}/reports/criteria`,
     );
-    return Array.isArray(raw) ? raw.map((item) => normalizeReportCriterion(item)) : [];
+    return normalizeReportCriteriaList(raw);
+  },
+
+  listAllCriteria: async (courseId: number): Promise<ReportCriterion[]> => {
+    const raw = await apiRequest<Record<string, unknown>[]>(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/criteria/all`,
+    );
+    return normalizeReportCriteriaList(raw);
   },
 
   getSummary: async (courseId: number): Promise<ReportCriteriaSummary> => {
@@ -3865,6 +3983,62 @@ export const studentReportApi = {
       `/api/courses/${encodeURIComponent(courseId)}/reports/students/${encodeURIComponent(studentId)}`,
     );
     return normalizeStudentReportDetail(raw);
+  },
+
+  /** 저장된 최신 학생 AI 분석 결과. 미생성 시 204 → `null` */
+  getStudentAnalysis: async (
+    courseId: number,
+    studentId: number,
+  ): Promise<StudentReportAnalysisResult | null> => {
+    const url = resolveApiEndpointUrl(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/students/${encodeURIComponent(studentId)}/analysis`,
+    );
+    const token = getAuthToken();
+    const headers: Record<string, string> = {
+      Accept: "application/json",
+    };
+    if (token) headers.Authorization = `Bearer ${token}`;
+    const res = await fetch(url, { method: "GET", headers, mode: "cors", credentials: "omit" });
+    if (res.status === 204) return null;
+    if (!res.ok) {
+      const t = await res.text().catch(() => "");
+      throw new Error(t.trim() || `학생 AI 분석 결과 조회 실패 (${res.status})`);
+    }
+    const json = (await res.json()) as unknown;
+    return asRecord(json) ?? {};
+  },
+
+  analyzeStudentReport: async (
+    courseId: number,
+    studentId: number,
+    payload?: { model?: string },
+  ): Promise<StudentReportAnalysisResult> => {
+    const raw = await apiRequest<Record<string, unknown>>(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/students/${encodeURIComponent(studentId)}/analyze`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload ?? {}),
+      },
+    );
+    return raw;
+  },
+
+  streamStudentReportAnalyze: async (
+    courseId: number,
+    studentId: number,
+    payload?: { model?: string },
+    options?: {
+      signal?: AbortSignal;
+      onDelta?: (chunk: string) => void;
+      onEvent?: (payload: Record<string, unknown>) => void;
+    },
+  ): Promise<StudentReportAnalysisResult | null> => {
+    const result = await postJsonAgentBridgeStream(
+      `/api/courses/${encodeURIComponent(courseId)}/reports/students/${encodeURIComponent(studentId)}/analyze/stream`,
+      payload ?? {},
+      options,
+    );
+    return result.doneData ?? null;
   },
 
   getStudentActivitySummary: async (
