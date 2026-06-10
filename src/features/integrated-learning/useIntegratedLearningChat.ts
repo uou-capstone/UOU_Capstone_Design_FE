@@ -167,10 +167,23 @@ interface PersistedIntegratedLearningHistory {
 
 function getIntegratedLearningMaterialScopeKey(
   materialId: number | null | undefined,
+  scope?: {
+    courseId?: number | null;
+    userId?: number | null;
+  },
 ): string {
-  return materialId != null && materialId > 0
-    ? `material:${materialId}`
-    : "material:none";
+  const parts = [
+    scope?.userId != null && scope.userId > 0
+      ? `user:${scope.userId}`
+      : "user:anonymous",
+    scope?.courseId != null && scope.courseId > 0
+      ? `course:${scope.courseId}`
+      : "course:none",
+    materialId != null && materialId > 0
+      ? `material:${materialId}`
+      : "material:none",
+  ];
+  return parts.join(":");
 }
 
 function getIntegratedLearningLocalHistoryKey(
@@ -287,12 +300,17 @@ function learningHistoryToChatMessages(
 export function useIntegratedLearningChat(options: {
   enabled: boolean;
   lectureId: number | null;
+  courseId?: number | null;
+  userId?: number | null;
   materialId?: number | null;
   currentPage?: number | null;
   goToPage?: (page: number) => void;
 }) {
-  const { enabled, lectureId, materialId, currentPage, goToPage } = options;
-  const materialScopeKey = getIntegratedLearningMaterialScopeKey(materialId);
+  const { enabled, lectureId, courseId, userId, materialId, currentPage, goToPage } = options;
+  const materialScopeKey = getIntegratedLearningMaterialScopeKey(materialId, {
+    courseId,
+    userId,
+  });
   const [messages, setMessages] = useState<IntegratedChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [quizOverlayModel, setQuizOverlayModel] =

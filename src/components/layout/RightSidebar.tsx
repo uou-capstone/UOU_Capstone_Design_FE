@@ -223,7 +223,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   examStudioPage = false,
 }) => {
   const { isDarkMode } = useTheme();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { courseId: routeCourseIdParam } = useParams<{ courseId?: string }>();
   const parsedRouteCourseId = routeCourseIdParam ? Number(routeCourseIdParam) : null;
   const routeCourseId =
@@ -302,15 +302,24 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
   const ensureExamStudioContext = useCallback(async (): Promise<string> => {
     if (!canUseExamStudio || resolvedExamStudioCourseId == null || assistantMaterialId == null) {
-      throw new Error("현재 PDF 자료를 먼저 선택해 주세요.");
+      throw new Error("자료 선택 필요: 시험 설계에 사용할 PDF 강의자료를 먼저 선택해 주세요.");
     }
     if (examStudioContextId) return examStudioContextId;
-    const response = await examStudioApi.issuePdfContext(resolvedExamStudioCourseId, {
-      materialId: assistantMaterialId,
-    });
+    let response: unknown;
+    try {
+      response = await examStudioApi.issuePdfContext(resolvedExamStudioCourseId, {
+        materialId: assistantMaterialId,
+      });
+    } catch (error) {
+      throw new Error(
+        `PDF 문맥 생성 실패: ${
+          error instanceof Error ? error.message : "선택한 자료를 분석하지 못했습니다."
+        }`,
+      );
+    }
     const contextId = readExamStudioContextId(response as Record<string, unknown>);
     if (!contextId) {
-      throw new Error("PDF 문맥 식별자를 받지 못했습니다.");
+      throw new Error("PDF 문맥 생성 실패: 서버 응답에 문맥 식별자가 없습니다.");
     }
     setExamStudioContextId(contextId);
     return contextId;
@@ -331,21 +340,30 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     try {
       const contextId = await ensureExamStudioContext();
       let accumulated = "";
-      const result = await examStudioApi.streamChat(
-        resolvedExamStudioCourseId,
-        {
-          contextId,
-          message: prompt,
-          currentKstIso: new Date().toISOString(),
-          timeZone: "Asia/Seoul",
-        },
-        {
-          onDelta: (chunk) => {
-            accumulated += chunk;
-            setExamStudioOutput(accumulated);
+      let result = "";
+      try {
+        result = await examStudioApi.streamChat(
+          resolvedExamStudioCourseId,
+          {
+            contextId,
+            message: prompt,
+            currentKstIso: new Date().toISOString(),
+            timeZone: "Asia/Seoul",
           },
-        },
-      );
+          {
+            onDelta: (chunk) => {
+              accumulated += chunk;
+              setExamStudioOutput(accumulated);
+            },
+          },
+        );
+      } catch (error) {
+        throw new Error(
+          `AI 호출 실패: ${
+            error instanceof Error ? error.message : "시험 작성 도우미 응답을 받지 못했습니다."
+          }`,
+        );
+      }
       if (!accumulated && result) setExamStudioOutput(result);
     } catch (error) {
       setExamStudioError(
@@ -355,6 +373,12 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       setExamStudioLoading(false);
     }
   }, [ensureExamStudioContext, examStudioPrompt, resolvedExamStudioCourseId]);
+
+  const examStudioStatusMessage = canUseExamStudio
+    ? examStudioContextId
+      ? "PDF 문맥 준비 완료. 현재 선택한 자료를 기준으로 답변합니다."
+      : "자료 선택 완료. 첫 요청 시 PDF 문맥을 생성합니다."
+    : "자료 선택 필요: 기본 정보의 강의자료에서 시험을 만들 PDF를 선택해 주세요.";
 
   const handleExamStudioPromptKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -590,6 +614,8 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       viewMode === "course-detail" &&
       resolvedLectureId != null,
     lectureId: resolvedLectureId,
+    courseId: resolvedCourseId,
+    userId: user?.userId ?? null,
     materialId: assistantMaterialId ?? null,
     currentPage: previewCurrentPdfPage ?? null,
     goToPage: goToPdfPage ?? undefined,
@@ -2130,7 +2156,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
                         </button>
                       </div>
                       <span className={`text-xs ${examMutedTextClass}`}>
-                        {canUseExamStudio ? "현재 선택한 자료 문맥을 사용합니다." : "자료 목록에서 시험을 만들 자료를 먼저 선택해 주세요."}
+                        {examStudioStatusMessage}
                       </span>
                     </div>
                   </aside>

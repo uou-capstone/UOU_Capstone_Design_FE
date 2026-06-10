@@ -111,7 +111,30 @@ export interface StudentReportCompetency {
   confidence?: string;
   analysis?: string;
   evidence?: unknown[];
+  evidenceRefs?: unknown[];
   insufficientEvidence?: boolean;
+}
+
+export interface StudentReportQuantitativeMetric {
+  key: string;
+  label?: string;
+  value?: number | null;
+  score?: number | null;
+  scorePercent?: number | null;
+  confidence?: string;
+  description?: string;
+  unit?: string;
+  evidenceRefs?: unknown[];
+}
+
+export interface StudentReportDataCoverage {
+  value?: number | null;
+  score?: number | null;
+  scorePercent?: number | null;
+  confidence?: string;
+  description?: string;
+  evidenceRefs?: unknown[];
+  [key: string]: unknown;
 }
 
 export interface StudentReportIntegratedLearningSummary {
@@ -158,6 +181,10 @@ export interface StudentReportDetailResponse {
   recommendedActions?: string[];
   narrativeReport?: string;
   competencies: StudentReportCompetency[];
+  dataCoverage?: StudentReportDataCoverage;
+  quantitativeMetrics?: StudentReportQuantitativeMetric[];
+  initialSignalScore?: number | null;
+  competencyAnalysis?: StudentReportCompetency[];
   latestActivityAt?: string;
   generatedAt?: string;
   updatedAt?: string;
@@ -784,6 +811,11 @@ function normalizeStudentReportDetail(
             confidence: toOptionalString(obj.confidence),
             analysis: toOptionalString(obj.analysis),
             evidence: Array.isArray(obj.evidence) ? obj.evidence : undefined,
+            evidenceRefs: Array.isArray(obj.evidenceRefs)
+              ? obj.evidenceRefs
+              : Array.isArray(obj.evidence_refs)
+                ? obj.evidence_refs
+                : undefined,
             insufficientEvidence:
               typeof obj.insufficientEvidence === "boolean"
                 ? obj.insufficientEvidence
@@ -836,6 +868,59 @@ function normalizeStudentReportDetail(
     narrativeReport = lines.length > 0 ? lines.join("\n\n") : undefined;
   }
 
+  const rawDataCoverage = raw.dataCoverage ?? raw.data_coverage;
+  const dataCoverage =
+    rawDataCoverage != null &&
+    typeof rawDataCoverage === "object" &&
+    !Array.isArray(rawDataCoverage)
+      ? (rawDataCoverage as StudentReportDataCoverage)
+      : rawDataCoverage == null
+        ? undefined
+        : { value: n(rawDataCoverage) ?? null };
+
+  const rawQuantitativeMetrics =
+    raw.quantitativeMetrics ?? raw.quantitative_metrics;
+  const quantitativeMetrics = Array.isArray(rawQuantitativeMetrics)
+    ? rawQuantitativeMetrics
+        .map((item): StudentReportQuantitativeMetric | null => {
+          if (item == null || typeof item !== "object" || Array.isArray(item)) {
+            return null;
+          }
+          const obj = item as Record<string, unknown>;
+          const key = toOptionalString(
+            obj.key ?? obj.metricKey ?? obj.metric_key ?? obj.name ?? obj.type,
+          );
+          if (!key) return null;
+          return {
+            key,
+            label: toOptionalString(obj.label ?? obj.title ?? obj.metricName ?? obj.metric_name),
+            value: n(obj.value) ?? null,
+            score: n(obj.score) ?? null,
+            scorePercent: n(obj.scorePercent ?? obj.score_percent ?? obj.percent) ?? null,
+            confidence: toOptionalString(obj.confidence),
+            description: toOptionalString(obj.description ?? obj.summary ?? obj.note),
+            unit: toOptionalString(obj.unit),
+            evidenceRefs: Array.isArray(obj.evidenceRefs)
+              ? obj.evidenceRefs
+              : Array.isArray(obj.evidence_refs)
+                ? obj.evidence_refs
+                : undefined,
+          };
+        })
+        .filter((item): item is StudentReportQuantitativeMetric => item != null)
+    : undefined;
+
+  const initialSignalScoreRaw =
+    Object.prototype.hasOwnProperty.call(raw, "initialSignalScore")
+      ? raw.initialSignalScore
+      : raw.initial_signal_score;
+  const initialSignalScore =
+    initialSignalScoreRaw === undefined
+      ? undefined
+      : initialSignalScoreRaw === null
+        ? null
+        : n(initialSignalScoreRaw) ?? null;
+
   return {
     studentId,
     userId,
@@ -858,6 +943,10 @@ function normalizeStudentReportDetail(
     ),
     narrativeReport,
     competencies,
+    dataCoverage,
+    quantitativeMetrics,
+    initialSignalScore,
+    competencyAnalysis: competencies,
     latestActivityAt:
       typeof latestActivityAt === "string" && latestActivityAt.trim() !== ""
         ? latestActivityAt

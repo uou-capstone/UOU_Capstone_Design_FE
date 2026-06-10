@@ -122,72 +122,86 @@ function extractBoardWeekScope(value: string | undefined): BoardWeekScope | null
   }
 }
 
-function stripBoardWeekScopeMarker(value: string): string {
-  return value.replace(BOARD_WEEK_SCOPE_PATTERN, "");
+function toBoardString(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (value == null) return "";
+  return String(value);
 }
 
-function withBoardWeekScopeMarker(value: string, scope: BoardWeekScope | null): string {
+function stripBoardWeekScopeMarker(value: unknown): string {
+  return toBoardString(value).replace(BOARD_WEEK_SCOPE_PATTERN, "");
+}
+
+function withBoardWeekScopeMarker(value: unknown, scope: BoardWeekScope | null): string {
   const content = stripBoardWeekScopeMarker(value).trim();
   return scope ? `${buildBoardWeekScopeMarker(scope)}${content}` : content;
 }
 
-function hasMeaningfulRichContent(value: string | undefined): boolean {
-  return typeof value === "string" && !isRichContentEmpty(value);
+function hasMeaningfulRichContent(value: unknown): boolean {
+  return !isRichContentEmpty(value);
 }
 
 function hydrateNoticeAfterSave(
-  saved: NoticeDetail,
+  saved: NoticeDetail | Partial<NoticeDetail> | null | undefined,
   snapshot: BoardForm,
   contentMarkdown: string,
   courseId: number,
   fallbackNoticeId: number | null,
 ): NoticeDetail {
+  const safeSaved = saved ?? {};
+  const savedNoticeId = Number(safeSaved.noticeId ?? 0);
+  const savedCourseId = Number(safeSaved.courseId ?? 0);
+  const savedTitle = toBoardString(safeSaved.title);
   const noticeId =
-    saved.noticeId > 0
-      ? saved.noticeId
+    savedNoticeId > 0
+      ? savedNoticeId
       : fallbackNoticeId != null && fallbackNoticeId > 0
         ? fallbackNoticeId
         : 0;
   return {
-    ...saved,
+    ...(safeSaved as NoticeDetail),
     noticeId,
-    courseId: saved.courseId || courseId,
-    title: saved.title.trim() ? saved.title : snapshot.title.trim(),
-    category: saved.category ?? snapshot.noticeCategory,
-    priority: saved.priority ?? snapshot.priority,
-    pinned: saved.pinned ?? snapshot.pinned,
+    courseId: savedCourseId || courseId,
+    title: savedTitle.trim() ? savedTitle : snapshot.title.trim(),
+    category: safeSaved.category ?? snapshot.noticeCategory,
+    priority: safeSaved.priority ?? snapshot.priority,
+    pinned: safeSaved.pinned ?? snapshot.pinned,
     contentMarkdown: stripBoardWeekScopeMarker(
-      hasMeaningfulRichContent(saved.contentMarkdown)
-        ? saved.contentMarkdown
+      hasMeaningfulRichContent(safeSaved.contentMarkdown)
+        ? safeSaved.contentMarkdown
         : contentMarkdown,
     ),
   };
 }
 
 function hydrateDiscussionAfterSave(
-  saved: DiscussionDetail,
+  saved: DiscussionDetail | Partial<DiscussionDetail> | null | undefined,
   snapshot: BoardForm,
   contentMarkdown: string,
   courseId: number,
   fallbackDiscussionId: number | null,
 ): DiscussionDetail {
+  const safeSaved = saved ?? {};
+  const savedDiscussionId = Number(safeSaved.discussionId ?? 0);
+  const savedCourseId = Number(safeSaved.courseId ?? 0);
+  const savedTitle = toBoardString(safeSaved.title);
   const discussionId =
-    saved.discussionId > 0
-      ? saved.discussionId
+    savedDiscussionId > 0
+      ? savedDiscussionId
       : fallbackDiscussionId != null && fallbackDiscussionId > 0
         ? fallbackDiscussionId
         : 0;
   return {
-    ...saved,
+    ...(safeSaved as DiscussionDetail),
     discussionId,
-    courseId: saved.courseId || courseId,
-    title: saved.title.trim() ? saved.title : snapshot.title.trim(),
-    category: saved.category ?? snapshot.discussionCategory,
-    pinned: saved.pinned ?? snapshot.pinned,
-    allowComments: saved.allowComments ?? snapshot.allowComments,
+    courseId: savedCourseId || courseId,
+    title: savedTitle.trim() ? savedTitle : snapshot.title.trim(),
+    category: safeSaved.category ?? snapshot.discussionCategory,
+    pinned: safeSaved.pinned ?? snapshot.pinned,
+    allowComments: safeSaved.allowComments ?? snapshot.allowComments,
     contentMarkdown: stripBoardWeekScopeMarker(
-      hasMeaningfulRichContent(saved.contentMarkdown)
-        ? saved.contentMarkdown
+      hasMeaningfulRichContent(safeSaved.contentMarkdown)
+        ? safeSaved.contentMarkdown
         : contentMarkdown,
     ),
   };
@@ -197,8 +211,8 @@ function formatInstant(value: string | undefined): string {
   return formatKoreanDateTime(value);
 }
 
-function escapeHtml(value: string): string {
-  return value
+function escapeHtml(value: unknown): string {
+  return toBoardString(value)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -206,20 +220,21 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
-function looksLikeHtml(value: string): boolean {
-  return /<\/?[a-z][\s\S]*>/i.test(value);
+function looksLikeHtml(value: unknown): boolean {
+  return /<\/?[a-z][\s\S]*>/i.test(toBoardString(value));
 }
 
-function plainTextToEditorHtml(value: string): string {
+function plainTextToEditorHtml(value: unknown): string {
   return escapeHtml(value).replace(/\n/g, "<br>");
 }
 
-function editorHtmlFromStored(value: string): string {
-  return looksLikeHtml(value) ? value : plainTextToEditorHtml(value);
+function editorHtmlFromStored(value: unknown): string {
+  const raw = toBoardString(value);
+  return looksLikeHtml(raw) ? raw : plainTextToEditorHtml(raw);
 }
 
-function sanitizeRichContent(value: string): string {
-  return value
+function sanitizeRichContent(value: unknown): string {
+  return toBoardString(value)
     .replace(/<script[\s\S]*?>[\s\S]*?<\/script>/gi, "")
     .replace(/<style[\s\S]*?>[\s\S]*?<\/style>/gi, "")
     .replace(/<\/?(iframe|object|embed|link|meta)[^>]*>/gi, "")
@@ -227,8 +242,8 @@ function sanitizeRichContent(value: string): string {
     .replace(/\s(href|src)=(["'])\s*javascript:[\s\S]*?\2/gi, "");
 }
 
-function isRichContentEmpty(value: string): boolean {
-  const text = value
+function isRichContentEmpty(value: unknown): boolean {
+  const text = toBoardString(value)
     .replace(/<br\s*\/?>/gi, "")
     .replace(/<\/?(p|div|h[1-6]|ul|ol|li|strong|b|em|i|u|span)[^>]*>/gi, "")
     .replace(/&nbsp;/gi, "")

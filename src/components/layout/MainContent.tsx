@@ -55,6 +55,13 @@ import {
   validateAutoAttendanceForm,
 } from "@/utils/attendanceAutoCreate";
 import { formatKoreanDateTime } from "@/utils/dateFormat";
+import {
+  formatBackendCodeLabel,
+  formatConfidenceLabel,
+  formatCompetencyLevelLabel,
+  formatCriteriaStatusLabel,
+  formatRiskLevelLabel,
+} from "@/utils/displayLabels";
 import RightSidebar, { type RightSidebarExamProps } from "./RightSidebar";
 
 function reportInsightPrimaryText(row: Record<string, unknown>): string {
@@ -71,6 +78,27 @@ type DebateChatMessage = {
   text: string;
   phase?: string;
   score?: number;
+};
+
+type StudentReportQuantitativeMetricView = {
+  key: string;
+  label: string;
+  valuePercent?: number;
+  confidence?: string;
+  description?: string;
+  present: boolean;
+};
+
+const STUDENT_REPORT_QUANTITATIVE_METRIC_LABELS: Record<string, string> = {
+  DATA_COVERAGE: "근거 준비도",
+  OBSERVED_DIAGNOSTIC_SCORE: "초기 이해 관찰 점수",
+  CONSERVATIVE_DIAGNOSTIC_SCORE: "보수 보정 이해 점수",
+  NORMALIZED_LEARNING_GAIN: "학습 향상도",
+  MASTERY_PROBABILITY_ESTIMATE: "개념 숙달 확률 추정",
+  DIFFICULTY_ADJUSTED_SCORE: "난이도 보정 이해 점수",
+  CONCEPT_COVERAGE_SCORE: "개념 커버리지",
+  MISCONCEPTION_RECOVERY_SCORE: "오개념 회복",
+  INITIAL_SIGNAL_SCORE: "초기 학습 신호",
 };
 
 /** PDF 미리보기 분할 뷰: 학생은 시험 UI 없이 강의 학습·통합학습 탭만 쓸 때 사용하는 고정 스텁 */
@@ -363,7 +391,12 @@ function unwrapStudentReportAnalysis(
   if (!root) return null;
   for (const key of ["analysis", "result", "data", "rawAnalysis", "raw_analysis"]) {
     const nested = reportAnalysisRecord(root[key]);
-    if (nested) return nested;
+    if (nested) {
+      return {
+        ...nested,
+        ...root,
+      };
+    }
   }
   return root;
 }
@@ -432,6 +465,151 @@ function readReportAnalysisNumber(
     }
   }
   return undefined;
+}
+
+function hasReportAnalysisField(
+  analysis: StudentReportAnalysisResult | null,
+  keys: string[],
+): boolean {
+  const record = unwrapStudentReportAnalysis(analysis);
+  if (!record) return false;
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(record, key));
+}
+
+function readMetricPercentFromUnknown(value: unknown): number | undefined {
+  if (value == null) return undefined;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? (Math.abs(value) <= 1 ? value * 100 : value) : undefined;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim().replace(/%$/, "");
+    if (!trimmed) return undefined;
+    const parsed = Number(trimmed);
+    return Number.isFinite(parsed)
+      ? Math.abs(parsed) <= 1
+        ? parsed * 100
+        : parsed
+      : undefined;
+  }
+  const record = reportAnalysisRecord(value);
+  if (!record) return undefined;
+  for (const key of [
+    "value",
+    "score",
+    "scorePercent",
+    "score_percent",
+    "percent",
+    "percentage",
+    "ratio",
+    "scoreRatio",
+    "score_ratio",
+    "coverage",
+    "coverageRatio",
+    "coverage_ratio",
+  ]) {
+    const parsed = readMetricPercentFromUnknown(record[key]);
+    if (parsed != null) return parsed;
+  }
+  return undefined;
+}
+
+function readMetricStringFromUnknown(
+  value: unknown,
+  keys: string[],
+): string | undefined {
+  const record = reportAnalysisRecord(value);
+  if (!record) return undefined;
+  return readNestedAnalysisString(record, keys);
+}
+
+function readReportAnalysisMetricPercent(
+  analysis: StudentReportAnalysisResult | null,
+  keys: string[],
+): number | undefined {
+  const record = unwrapStudentReportAnalysis(analysis);
+  if (!record) return undefined;
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) continue;
+    const parsed = readMetricPercentFromUnknown(record[key]);
+    if (parsed != null) return parsed;
+  }
+  return undefined;
+}
+
+function normalizeStudentReportQuantitativeMetrics(
+  analysis: StudentReportAnalysisResult | null,
+): StudentReportQuantitativeMetricView[] {
+  const record = unwrapStudentReportAnalysis(analysis);
+  if (!record) return [];
+  const rawMetrics = record.quantitativeMetrics ?? record.quantitative_metrics;
+  const metrics: StudentReportQuantitativeMetricView[] = [];
+
+  if (Array.isArray(rawMetrics)) {
+    rawMetrics.forEach((item, index) => {
+      const itemRecord = reportAnalysisRecord(item);
+      if (!itemRecord) return;
+      const rawKey = readNestedAnalysisString(itemRecord, [
+        "key",
+        "metricKey",
+        "metric_key",
+        "name",
+        "type",
+      ]);
+      const key = String(rawKey || `METRIC_${index + 1}`).trim().toUpperCase();
+      const explicitLabel = readNestedAnalysisString(itemRecord, [
+        "label",
+        "title",
+        "metricName",
+        "metric_name",
+      ]);
+      metrics.push({
+        key,
+        label:
+          explicitLabel ||
+          formatBackendCodeLabel(key, STUDENT_REPORT_QUANTITATIVE_METRIC_LABELS),
+        valuePercent: readMetricPercentFromUnknown(itemRecord),
+        confidence: readNestedAnalysisString(itemRecord, ["confidence", "confidenceLevel"]),
+        description: readNestedAnalysisString(itemRecord, [
+          "description",
+          "summary",
+          "reason",
+          "note",
+        ]),
+        present: true,
+      });
+    });
+  }
+
+  if (
+    !metrics.some((metric) => metric.key === "DATA_COVERAGE") &&
+    Object.prototype.hasOwnProperty.call(record, "dataCoverage")
+  ) {
+    const dataCoverage = record.dataCoverage;
+    metrics.push({
+      key: "DATA_COVERAGE",
+      label: STUDENT_REPORT_QUANTITATIVE_METRIC_LABELS.DATA_COVERAGE,
+      valuePercent: readMetricPercentFromUnknown(dataCoverage),
+      confidence: readMetricStringFromUnknown(dataCoverage, [
+        "confidence",
+        "confidenceLevel",
+      ]),
+      description:
+        readMetricStringFromUnknown(dataCoverage, ["description", "summary", "note"]) ||
+        "리포트 산출에 사용할 수 있는 근거량입니다.",
+      present: true,
+    });
+  }
+
+  return metrics;
+}
+
+function formatStudentReportMetricValue(
+  metric: StudentReportQuantitativeMetricView,
+): string {
+  if (metric.valuePercent == null || !Number.isFinite(metric.valuePercent)) {
+    return metric.key === "DATA_COVERAGE" ? "근거 부족" : "측정 전";
+  }
+  return `${Math.round(Math.max(0, Math.min(100, metric.valuePercent)))}%`;
 }
 
 function readNestedAnalysisString(
@@ -521,6 +699,8 @@ function normalizeStudentReportAnalysisCompetencies(
         ]) ||
         String(level ?? "").toUpperCase() === "INSUFFICIENT_DATA";
       const evidence = Array.isArray(itemRecord.evidence) ? itemRecord.evidence : undefined;
+      const rawEvidenceRefs = itemRecord.evidenceRefs ?? itemRecord.evidence_refs;
+      const evidenceRefs = Array.isArray(rawEvidenceRefs) ? rawEvidenceRefs : undefined;
 
       return {
         competencyName: label,
@@ -545,6 +725,7 @@ function normalizeStudentReportAnalysisCompetencies(
         ]),
         builtIn: readNestedAnalysisBoolean(itemRecord, ["builtIn", "built_in"]),
         evidence,
+        evidenceRefs,
         insufficientEvidence,
       };
     })
@@ -644,7 +825,7 @@ const STUDENT_REPORT_STATUS_OPTIONS: {
 
 const studentReportStatusLabel = (status: string): string => {
   const matched = STUDENT_REPORT_STATUS_OPTIONS.find((option) => option.value === status);
-  return matched?.label ?? status;
+  return matched?.label ?? formatCompetencyLevelLabel(status);
 };
 
 function ReportDashboardStatIcon({ name }: { name: string }) {
@@ -2620,12 +2801,131 @@ const MainContent: React.FC<MainContentProps> = ({
       "score_percent",
       "score",
     ]);
-    const score = clampReportScore(
+    const rawReportScore =
       analysisScore ??
         studentReportDetail?.overallScorePercent ??
         studentReportDetail?.averageScorePercent ??
-        selectedStudentReportSummary?.averageScorePercent,
+        selectedStudentReportSummary?.averageScorePercent;
+    const hasReportScore =
+      rawReportScore != null && Number.isFinite(Number(rawReportScore));
+    const score = hasReportScore ? clampReportScore(rawReportScore) : undefined;
+    const scoreForTone = score ?? 0;
+    const analysisInitialSignalScore =
+      readReportAnalysisMetricPercent(studentReportAnalysis, [
+        "initialSignalScore",
+        "initial_signal_score",
+      ]) ?? readMetricPercentFromUnknown(studentReportDetail?.initialSignalScore);
+    const hasInitialSignalScore = hasReportAnalysisField(studentReportAnalysis, [
+      "initialSignalScore",
+      "initial_signal_score",
+    ]) || studentReportDetail?.initialSignalScore !== undefined;
+    const quantitativeMetrics = normalizeStudentReportQuantitativeMetrics(
+      studentReportAnalysis,
     );
+    const detailQuantitativeMetrics = (studentReportDetail?.quantitativeMetrics ?? [])
+      .map((metric): StudentReportQuantitativeMetricView | null => {
+        const key = String(metric.key ?? "").trim().toUpperCase();
+        if (!key || quantitativeMetrics.some((item) => item.key === key)) {
+          return null;
+        }
+        return {
+          key,
+          label:
+            metric.label ||
+            formatBackendCodeLabel(key, STUDENT_REPORT_QUANTITATIVE_METRIC_LABELS),
+          valuePercent: readMetricPercentFromUnknown(metric),
+          confidence: metric.confidence,
+          description: metric.description,
+          present: true,
+        };
+      })
+      .filter((metric): metric is StudentReportQuantitativeMetricView => metric != null);
+    if (detailQuantitativeMetrics.length) {
+      quantitativeMetrics.push(...detailQuantitativeMetrics);
+    }
+    if (
+      studentReportDetail?.dataCoverage !== undefined &&
+      !quantitativeMetrics.some((metric) => metric.key === "DATA_COVERAGE")
+    ) {
+      quantitativeMetrics.push({
+        key: "DATA_COVERAGE",
+        label: STUDENT_REPORT_QUANTITATIVE_METRIC_LABELS.DATA_COVERAGE,
+        valuePercent: readMetricPercentFromUnknown(studentReportDetail.dataCoverage),
+        confidence:
+          typeof studentReportDetail.dataCoverage?.confidence === "string"
+            ? studentReportDetail.dataCoverage.confidence
+            : undefined,
+        description:
+          typeof studentReportDetail.dataCoverage?.description === "string"
+            ? studentReportDetail.dataCoverage.description
+            : "리포트 산출에 사용할 수 있는 근거량입니다.",
+        present: true,
+      });
+    }
+    const quantitativeMetricMap = new Map(
+      quantitativeMetrics.map((metric) => [metric.key, metric]),
+    );
+    const metricOrNull = (key: string) => quantitativeMetricMap.get(key) ?? null;
+    const initialSignalMetric: StudentReportQuantitativeMetricView | null =
+      hasInitialSignalScore
+        ? {
+            key: "INITIAL_SIGNAL_SCORE",
+            label: STUDENT_REPORT_QUANTITATIVE_METRIC_LABELS.INITIAL_SIGNAL_SCORE,
+            valuePercent: analysisInitialSignalScore,
+            confidence: readReportAnalysisString(studentReportAnalysis, [
+              "initialSignalConfidence",
+              "initial_signal_confidence",
+              "confidence",
+            ]),
+            description: "초기 상호작용에서 관찰된 학습 신호입니다.",
+            present: true,
+          }
+        : null;
+    const quantitativeMetricGroups = [
+      {
+        title: "초기 학습 신호",
+        description: "초기 관찰 기반 지표입니다. 값이 없으면 아직 측정 전입니다.",
+        metrics: [initialSignalMetric].filter(
+          (metric): metric is StudentReportQuantitativeMetricView => metric != null,
+        ),
+      },
+      {
+        title: "근거 준비도",
+        description: "학생 실력 점수가 아니라 리포트 산출에 사용 가능한 근거량입니다.",
+        metrics: [metricOrNull("DATA_COVERAGE")].filter(
+          (metric): metric is StudentReportQuantitativeMetricView => metric != null,
+        ),
+      },
+      {
+        title: "이해 점검",
+        description: "초기 이해도와 보수 보정, 난이도 보정 결과를 함께 봅니다.",
+        metrics: [
+          metricOrNull("OBSERVED_DIAGNOSTIC_SCORE"),
+          metricOrNull("CONSERVATIVE_DIAGNOSTIC_SCORE"),
+          metricOrNull("DIFFICULTY_ADJUSTED_SCORE"),
+        ].filter(
+          (metric): metric is StudentReportQuantitativeMetricView => metric != null,
+        ),
+      },
+      {
+        title: "학습 향상",
+        description: "학습 후 향상도와 오개념 교정 회복 흐름을 확인합니다.",
+        metrics: [
+          metricOrNull("NORMALIZED_LEARNING_GAIN"),
+          metricOrNull("MISCONCEPTION_RECOVERY_SCORE"),
+          metricOrNull("MASTERY_PROBABILITY_ESTIMATE"),
+        ].filter(
+          (metric): metric is StudentReportQuantitativeMetricView => metric != null,
+        ),
+      },
+      {
+        title: "개념 커버리지",
+        description: "확인된 개념 범위를 기반으로 커버리지를 표시합니다.",
+        metrics: [metricOrNull("CONCEPT_COVERAGE_SCORE")].filter(
+          (metric): metric is StudentReportQuantitativeMetricView => metric != null,
+        ),
+      },
+    ].filter((group) => group.metrics.length > 0);
     const submittedCount =
       studentActivitySummary?.submissionCount ??
       studentAiContext?.activitySummary?.submittedCount;
@@ -2661,16 +2961,16 @@ const MainContent: React.FC<MainContentProps> = ({
         "main_message",
       ]) ||
       studentReportDetail?.headline ||
-      (score < 50
+      (scoreForTone < 50
         ? "기초 체력을 올리면서 취약 유형을 좁혀가야 하는 구간입니다."
-        : score < 75
+        : scoreForTone < 75
           ? "핵심 개념은 잡혀 있으나 보완 학습이 필요한 구간입니다."
           : "학습 흐름이 안정적이며 심화 적용을 시도할 수 있습니다.");
     const strongCompetencies = competencies
-      .filter((item) => clampReportScore(item.scorePercent) >= 70)
+      .filter((item) => item.scorePercent != null && clampReportScore(item.scorePercent) >= 70)
       .slice(0, 3);
     const weakCompetencies = competencies
-      .filter((item) => clampReportScore(item.scorePercent) < 50)
+      .filter((item) => item.scorePercent != null && clampReportScore(item.scorePercent) < 50)
       .slice(0, 3);
     const detailReportCriteria = studentReportDetail?.reportCriteria ?? [];
     const baseCriteriaCount =
@@ -2686,10 +2986,12 @@ const MainContent: React.FC<MainContentProps> = ({
       (detailReportCriteria.length > 0 ? detailReportCriteria.length : undefined) ??
       reportCriteriaSummary?.activeCriteriaCount ??
       baseCriteriaCount + additionalCriteriaCount;
-    const criteriaStatusText =
-      reportCriteriaSummary?.reportCriteriaStatus ||
-      reportCriteriaSummary?.criteriaStatus ||
-      (classroomAnalyzeStreaming ? "반영 중" : "적용 중");
+    const criteriaStatusText = classroomAnalyzeStreaming
+      ? "반영 중"
+      : formatCriteriaStatusLabel(
+          reportCriteriaSummary?.reportCriteriaStatus ||
+            reportCriteriaSummary?.criteriaStatus,
+        );
     const analysisStrengthTexts = readReportAnalysisStringArray(studentReportAnalysis, [
       "strengths",
       "strongPoints",
@@ -3023,17 +3325,17 @@ const MainContent: React.FC<MainContentProps> = ({
             }`}
           >
             <div
-              className={`grid grid-cols-[minmax(7rem,1.1fr)_minmax(8rem,1.4fr)_8rem_7rem_8rem] gap-3 px-4 py-2 text-xs font-semibold ${
+              className={`grid grid-cols-[minmax(8rem,1fr)_minmax(10rem,1.05fr)_minmax(5.5rem,0.55fr)_minmax(5.5rem,0.5fr)_minmax(15.5rem,1.35fr)] items-center gap-3 px-4 py-2 text-xs font-semibold ${
                 isDarkMode
                   ? "bg-[#181818] text-gray-400"
                   : "bg-[#f7f5f1] text-gray-500"
               }`}
             >
-              <span>학생</span>
-              <span>이메일</span>
-              <span>상태</span>
-              <span>평균 점수</span>
-              <span>최근 활동</span>
+              <span className="min-w-0">학생</span>
+              <span className="min-w-0">이메일</span>
+              <span className="min-w-0 text-center">상태</span>
+              <span className="min-w-0 text-center">평균 점수</span>
+              <span className="min-w-0 whitespace-nowrap text-right">최근 활동</span>
             </div>
             {studentReportListLoading ? (
               <div className={`px-4 py-8 text-center text-sm ${mutedText}`}>
@@ -3048,7 +3350,7 @@ const MainContent: React.FC<MainContentProps> = ({
                       key={student.studentId}
                       type="button"
                       onClick={() => setSelectedStudentReportId(student.studentId)}
-                      className={`grid w-full grid-cols-[minmax(7rem,1.1fr)_minmax(8rem,1.4fr)_8rem_7rem_8rem] gap-3 px-4 py-3 text-left text-sm transition-colors ${
+                      className={`grid w-full grid-cols-[minmax(8rem,1fr)_minmax(10rem,1.05fr)_minmax(5.5rem,0.55fr)_minmax(5.5rem,0.5fr)_minmax(15.5rem,1.35fr)] items-center gap-3 px-4 py-3 text-left text-sm transition-colors ${
                         active
                           ? isDarkMode
                             ? "bg-[#ff9b6a]/12 text-[#ffad9b]"
@@ -3064,15 +3366,17 @@ const MainContent: React.FC<MainContentProps> = ({
                       <span className={`min-w-0 truncate ${active ? "" : mutedText}`}>
                         {student.email || "-"}
                       </span>
-                      <span className="min-w-0 truncate">
+                      <span className="min-w-0 truncate text-center">
                         {studentReportStatusLabel(String(student.reportStatus))}
                       </span>
-                      <span className="tabular-nums">
+                      <span className="text-center tabular-nums">
                         {student.averageScorePercent != null
                           ? `${clampReportScore(student.averageScorePercent)}%`
                           : "-"}
                       </span>
-                      <span className={`min-w-0 truncate ${active ? "" : mutedText}`}>
+                      <span
+                        className={`min-w-0 whitespace-nowrap text-right ${active ? "" : mutedText}`}
+                      >
                         {formatActivityMonthForKo(student.latestActivityAt)}
                       </span>
                     </button>
@@ -3216,7 +3520,7 @@ const MainContent: React.FC<MainContentProps> = ({
               <div
                 className="flex h-28 w-28 items-center justify-center rounded-full"
                 style={{
-                  background: `conic-gradient(#ff824d ${score * 3.6}deg, ${
+                  background: `conic-gradient(#ff824d ${(score ?? 0) * 3.6}deg, ${
                     isDarkMode ? "#343434" : "#e8e1d8"
                   } 0deg)`,
                 }}
@@ -3226,7 +3530,7 @@ const MainContent: React.FC<MainContentProps> = ({
                     isDarkMode ? "bg-[#202020]" : "bg-white"
                   }`}
                 >
-                  <span className="text-2xl font-semibold">{score}</span>
+                  <span className="text-2xl font-semibold">{score ?? "-"}</span>
                   <span className={`text-[11px] font-semibold ${mutedText}`}>종합 점수</span>
                 </div>
               </div>
@@ -3272,6 +3576,90 @@ const MainContent: React.FC<MainContentProps> = ({
               </div>
             ))}
           </div>
+          {quantitativeMetricGroups.length ? (
+            <div className="mt-5">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold">AI 정량 지표</h4>
+                  <p className={`mt-1 text-xs ${mutedText}`}>
+                    값이 없을 때는 0점이 아니라 측정 전 또는 근거 부족으로 구분합니다.
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-2 lg:grid-cols-2 xl:grid-cols-3">
+                {quantitativeMetricGroups.map((group) => (
+                  <article key={group.title} className={`${softCardClass} px-4 py-3`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h5 className="text-sm font-semibold">{group.title}</h5>
+                        <p className={`mt-1 text-xs leading-5 ${mutedText}`}>
+                          {group.description}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {group.metrics.map((metric) => {
+                        const lowConfidence =
+                          String(metric.confidence ?? "").toUpperCase() === "LOW";
+                        return (
+                          <div
+                            key={`${group.title}-${metric.key}`}
+                            className={`rounded-[var(--app-control-radius)] border px-3 py-2 ${
+                              isDarkMode
+                                ? "border-[#343434] bg-[#202020]"
+                                : "border-[#dedbd5] bg-white"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <span className={`text-xs font-semibold ${mutedText}`}>
+                                {metric.label}
+                              </span>
+                              <span className="text-lg font-semibold">
+                                {formatStudentReportMetricValue(metric)}
+                              </span>
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {lowConfidence ? (
+                                <span className="rounded-full bg-[#ff824d]/15 px-2 py-0.5 text-[11px] font-semibold text-[#ff824d]">
+                                  초기 데이터 기준
+                                </span>
+                              ) : metric.confidence ? (
+                                <span
+                                  className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                    isDarkMode
+                                      ? "bg-white/10 text-gray-200"
+                                      : "bg-[#f4f1eb] text-gray-700"
+                                  }`}
+                                >
+                                  신뢰도 {formatConfidenceLabel(metric.confidence)}
+                                </span>
+                              ) : null}
+                              {metric.key === "DATA_COVERAGE" ? (
+                                <span
+                                  className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                                    isDarkMode
+                                      ? "bg-white/10 text-gray-200"
+                                      : "bg-[#f4f1eb] text-gray-700"
+                                  }`}
+                                >
+                                  실력 점수 아님
+                                </span>
+                              ) : null}
+                            </div>
+                            {metric.description ? (
+                              <p className={`mt-2 text-xs leading-5 ${mutedText}`}>
+                                {metric.description}
+                              </p>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {studentActivitySummaryLoading || pageCoverage.length || categoryCoverage.length ? (
             <div className="mt-4 grid gap-2 lg:grid-cols-2">
               <div className={`${softCardClass} px-4 py-3`}>
@@ -3428,7 +3816,7 @@ const MainContent: React.FC<MainContentProps> = ({
                   <span className="text-xl font-semibold">
                     {competency.scorePercent != null
                       ? clampReportScore(competency.scorePercent)
-                      : competency.level || "-"}
+                      : formatCompetencyLevelLabel(competency.level)}
                   </span>
                 </div>
               ))}
@@ -3452,11 +3840,15 @@ const MainContent: React.FC<MainContentProps> = ({
           <div className="mt-4 space-y-3">
             {competencies.length ? (
 	              competencies.map((competency) => {
+	                const levelCode = String(competency.level ?? "").toUpperCase();
 	                const insufficient =
 	                  competency.insufficientEvidence ||
-	                  competency.level === "INSUFFICIENT_DATA" ||
+	                  levelCode === "INSUFFICIENT_DATA" ||
+	                  levelCode === "INSUFFICIENT_EVIDENCE" ||
 	                  competency.scorePercent == null;
 	                const percent = clampReportScore(competency.scorePercent);
+	                const evidenceRefCount =
+	                  competency.evidenceRefs?.length ?? competency.evidence?.length ?? 0;
 	                const displayName =
 	                  competency.label ||
 	                  competency.competencyName ||
@@ -3500,7 +3892,11 @@ const MainContent: React.FC<MainContentProps> = ({
 	                          {insufficient ? "-" : percent}
 	                        </p>
 	                        <p className={`mt-1 text-xs font-semibold ${mutedText}`}>
-	                          {insufficient ? "데이터 부족" : competency.level || "유지"}
+	                          {insufficient
+	                            ? "데이터 부족"
+	                            : competency.level
+	                              ? formatCompetencyLevelLabel(competency.level)
+	                              : "유지"}
 	                        </p>
 	                      </div>
 	                    </div>
@@ -3533,7 +3929,12 @@ const MainContent: React.FC<MainContentProps> = ({
 	                            : "border-[#dedbd5] bg-white text-gray-800"
 	                        }`}
 	                      >
-	                        상태 {insufficient ? "데이터 부족" : competency.level || "유지"}
+	                        상태{" "}
+	                        {insufficient
+	                          ? "데이터 부족"
+	                          : competency.level
+	                            ? formatCompetencyLevelLabel(competency.level)
+	                            : "유지"}
 	                      </span>
 	                      {competency.confidence ? (
 	                        <span
@@ -3543,7 +3944,18 @@ const MainContent: React.FC<MainContentProps> = ({
 	                              : "border-[#dedbd5] bg-white text-gray-800"
 	                          }`}
 	                        >
-	                          신뢰도 {competency.confidence}
+	                          신뢰도 {formatConfidenceLabel(competency.confidence)}
+	                        </span>
+	                      ) : null}
+	                      {evidenceRefCount > 0 ? (
+	                        <span
+	                          className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+	                            isDarkMode
+	                              ? "border-[#343434] bg-[#202020] text-gray-200"
+	                              : "border-[#dedbd5] bg-white text-gray-800"
+	                          }`}
+	                        >
+	                          근거 {evidenceRefCount}건
 	                        </span>
 	                      ) : null}
 	                    </div>
@@ -3864,8 +4276,13 @@ const MainContent: React.FC<MainContentProps> = ({
                     ? 0
                     : flowScore;
                 const statusLabel =
-                  item.riskLevel ||
-                  (flowScore >= 70 ? "안정" : flowScore >= 40 ? "유지" : "보완");
+                  item.riskLevel
+                    ? formatRiskLevelLabel(item.riskLevel)
+                    : flowScore >= 70
+                      ? "안정"
+                      : flowScore >= 40
+                        ? "유지"
+                        : "보완";
                 const summaryText = item.riskReasons.length
                   ? item.riskReasons.slice(0, 2).join(" · ")
                   : "자료, 질문, 퀴즈 성과를 묶어 강의 흐름을 확인합니다.";
@@ -4517,108 +4934,6 @@ const MainContent: React.FC<MainContentProps> = ({
           }
         }
 
-        // BE가 contents에 생성 완료 자료를 안 넣어줄 수 있음 → 강의별 최근 세션에 문서 있으면 목록에 추가
-        const sessionResults = await Promise.allSettled(
-          lectures.map((lec) =>
-            materialGenerationApi.getLatestSessionForLecture(lec.lectureId),
-          ),
-        );
-        // getDocument가 필요한 세션 ID 수집 후 병렬 호출 (순차 호출 대비 속도 개선)
-        const sessionIdsToFetch: { sessionId: number; idx: number }[] = [];
-        const sessionInfos: Array<{
-          lec: (typeof lectures)[number];
-          sessionId: number;
-          finalDoc: string | undefined;
-          docUrl: string | null;
-        }> = [];
-        for (let i = 0; i < lectures.length; i++) {
-          const lec = lectures[i];
-          const settled = sessionResults[i];
-          if (settled?.status !== "fulfilled" || !settled.value) continue;
-          const raw = settled.value as Record<string, unknown>;
-          const sessionId =
-            typeof raw.sessionId === "number" ? raw.sessionId : null;
-          if (sessionId == null) continue;
-          const finalDoc =
-            typeof raw.finalDocument === "string" && raw.finalDocument
-              ? raw.finalDocument
-              : undefined;
-          let docUrl: string | null =
-            typeof raw.documentUrl === "string" && raw.documentUrl
-              ? raw.documentUrl
-              : typeof (raw.document as Record<string, unknown>)?.url ===
-                  "string"
-                ? (raw.document as { url: string }).url
-                : null;
-          if (!docUrl) {
-            const phase = String(
-              raw.currentPhase ?? raw.current_phase ?? "",
-            ).toUpperCase();
-            const progress =
-              typeof raw.progressPercentage === "number"
-                ? raw.progressPercentage
-                : (raw.progress_percentage as number);
-            const mightHaveDoc =
-              phase.includes("5") ||
-              phase.includes("PHASE_5") ||
-              phase.includes("COMPLETE") ||
-              progress >= 100;
-            if (mightHaveDoc) {
-              sessionIdsToFetch.push({ sessionId, idx: sessionInfos.length });
-            }
-          }
-          sessionInfos.push({ lec, sessionId, finalDoc, docUrl });
-        }
-        const docUrls = await Promise.all(
-          sessionIdsToFetch.map(async ({ sessionId }) => {
-            try {
-              const docRes =
-                await materialGenerationApi.getDocument(sessionId);
-              const d = docRes as Record<string, unknown>;
-              return (
-                typeof d.documentUrl === "string"
-                  ? d.documentUrl
-                  : typeof d.url === "string"
-                    ? d.url
-                    : null
-              );
-            } catch {
-              return null;
-            }
-          }),
-        );
-        sessionIdsToFetch.forEach(({ idx }, j) => {
-          const url = docUrls[j];
-          if (url) sessionInfos[idx].docUrl = url;
-        });
-        for (const { lec, sessionId, finalDoc, docUrl } of sessionInfos) {
-          const hasDoc =
-            (typeof docUrl === "string" && docUrl.length > 0) || finalDoc;
-          if (!hasDoc) continue;
-          const existing = materialsByLecture[lec.lectureId] ?? [];
-          const documentApiUrl = `/api/materials/generation/${sessionId}/document`;
-          const alreadyHas = existing.some(
-            (m) =>
-              m.generationSessionId === sessionId ||
-              m.fileUrl === documentApiUrl,
-          );
-          if (!alreadyHas) {
-            materialsByLecture[lec.lectureId] = [
-              ...existing,
-              {
-                id: `material-session-${sessionId}`,
-                type: "material" as const,
-                title: "AI 생성 자료 (문서)",
-                meta: "자료",
-                createdAt: new Date().toISOString(),
-                fileUrl: documentApiUrl,
-                generationSessionId: sessionId,
-                finalDocument: finalDoc,
-              },
-            ];
-          }
-        }
-
         setLocalMaterials(materialsByLecture);
         setLocalExams(examsByLecture);
         setCourseContentsLoaded(true);
@@ -4635,7 +4950,7 @@ const MainContent: React.FC<MainContentProps> = ({
     };
   }, [courseDetail?.courseId]);
 
-  // 삭제 후 서버 목록과 동기화 (다시 불러오기). 생성 완료 자료는 contents에 없어도 latest-session으로 보완.
+  // 삭제 후 서버 목록과 동기화 (다시 불러오기). 자료 목록은 course contents 응답만 기준으로 렌더링한다.
   const refetchCourseContents = React.useCallback((courseId: number) => {
     courseContentsApi
       .getCourseContents(courseId)
@@ -4668,105 +4983,6 @@ const MainContent: React.FC<MainContentProps> = ({
           );
           if (mats.length > 0) materialsByLecture[lec.lectureId] = mats;
           if (exs.length > 0) examsByLecture[lec.lectureId] = exs;
-        }
-        const sessionResults = await Promise.allSettled(
-          lectures.map((lec) =>
-            materialGenerationApi.getLatestSessionForLecture(lec.lectureId),
-          ),
-        );
-        const sessionIdsToFetch: { sessionId: number; idx: number }[] = [];
-        const sessionInfos: Array<{
-          lec: (typeof lectures)[number];
-          sessionId: number;
-          finalDoc: string | undefined;
-          docUrl: string | null;
-        }> = [];
-        for (let i = 0; i < lectures.length; i++) {
-          const lec = lectures[i];
-          const settled = sessionResults[i];
-          if (settled?.status !== "fulfilled" || !settled.value) continue;
-          const raw = settled.value as Record<string, unknown>;
-          const sessionId =
-            typeof raw.sessionId === "number" ? raw.sessionId : null;
-          if (sessionId == null) continue;
-          const finalDoc =
-            typeof raw.finalDocument === "string" && raw.finalDocument
-              ? raw.finalDocument
-              : undefined;
-          let docUrl: string | null =
-            typeof raw.documentUrl === "string" && raw.documentUrl
-              ? raw.documentUrl
-              : typeof (raw.document as Record<string, unknown>)?.url ===
-                  "string"
-                ? (raw.document as { url: string }).url
-                : null;
-          if (!docUrl) {
-            const phase = String(
-              raw.currentPhase ?? raw.current_phase ?? "",
-            ).toUpperCase();
-            const progress =
-              typeof raw.progressPercentage === "number"
-                ? raw.progressPercentage
-                : (raw.progress_percentage as number);
-            const mightHaveDoc =
-              phase.includes("5") ||
-              phase.includes("PHASE_5") ||
-              phase.includes("COMPLETE") ||
-              progress >= 100;
-            if (mightHaveDoc) {
-              sessionIdsToFetch.push({ sessionId, idx: sessionInfos.length });
-            }
-          }
-          sessionInfos.push({ lec, sessionId, finalDoc, docUrl });
-        }
-        const docUrls = await Promise.all(
-          sessionIdsToFetch.map(async ({ sessionId }) => {
-            try {
-              const docRes =
-                await materialGenerationApi.getDocument(sessionId);
-              const d = docRes as Record<string, unknown>;
-              return (
-                typeof d.documentUrl === "string"
-                  ? d.documentUrl
-                  : typeof d.url === "string"
-                    ? d.url
-                    : null
-              );
-            } catch {
-              return null;
-            }
-          }),
-        );
-        sessionIdsToFetch.forEach(({ idx }, j) => {
-          const url = docUrls[j];
-          if (url) sessionInfos[idx].docUrl = url;
-        });
-        for (const { lec, sessionId, finalDoc, docUrl } of sessionInfos) {
-          const hasDoc =
-            (typeof docUrl === "string" && docUrl.length > 0) || finalDoc;
-          if (!hasDoc) continue;
-          const existing = materialsByLecture[lec.lectureId] ?? [];
-          const documentApiUrl = `/api/materials/generation/${sessionId}/document`;
-          const alreadyHas = existing.some(
-            (m) =>
-              m.generationSessionId === sessionId ||
-              m.fileUrl === documentApiUrl,
-          );
-          if (!alreadyHas) {
-            materialsByLecture[lec.lectureId] = [
-              ...existing,
-              {
-                id: `material-session-${sessionId}`,
-                type: "material" as const,
-                title: "AI 생성 자료 (문서)",
-                meta: "자료",
-                createdAt: new Date().toISOString(),
-                fileUrl: documentApiUrl,
-                generationSessionId: sessionId,
-                finalDocument: finalDoc,
-              },
-            ];
-          }
         }
         setLocalMaterials((prev) => ({ ...prev, ...materialsByLecture }));
         setLocalExams((prev) => ({ ...prev, ...examsByLecture }));
@@ -6837,6 +7053,54 @@ const MainContent: React.FC<MainContentProps> = ({
 
     const material = searchParams.get("material");
     const gen = searchParams.get("gen");
+    const resetExamDetailForUrlRestore = () => {
+      setExamDetailSessionId(null);
+      examDetailSessionIdRef.current = null;
+      setExamDetail(null);
+      setExamDetailError(null);
+      setExamDetailLoading(false);
+      setExamDetailFlipped({});
+      setFlashCardIndex(0);
+      setFiveChoiceUserAnswers({});
+      setFiveChoiceLog(null);
+      setOxUserAnswers({});
+      setOxGraded(false);
+      setOxExamViewMode("all");
+      setFiveChoiceExamViewMode("all");
+      setOxExamSingleIndex(0);
+      setFiveChoiceSingleIndex(0);
+      setShortAnswerUserAnswers({});
+      setShortAnswerLog(null);
+      setShortAnswerKeywordOpen({});
+      setShortAnswerGrading(false);
+      setShortAnswerGradeError(null);
+      setExamSubmissionLoading(false);
+      setExamSubmissionError(null);
+      setExamSubmissionResult(null);
+      setDebateStarted(false);
+      setDebateCompleted(false);
+      setDebateLoading(false);
+      setDebateError(null);
+      setDebateInput("");
+      setDebateMessages([]);
+    };
+    const clearPreviewForUrlRestore = () => {
+      previewBeforeExamRef.current = null;
+      setPreviewFileUrl(null);
+      setPreviewMaterialId(null);
+      setPreviewFileName(null);
+      setPreviewIsAiGenerationDoc(false);
+      setPreviewLinkedGenerationSessionId(null);
+      setPreviewMarkdownContent(null);
+      setPreviewBlobUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
+      setPreviewLoadError(false);
+      setPreviewErrorMessage(null);
+      setPreviewLoading(false);
+      setResourcePreviewViewerWidthPx(null);
+    };
 
     if (suppressResourcePreviewRestoreRef.current) {
       if (material || gen) {
@@ -6860,7 +7124,36 @@ const MainContent: React.FC<MainContentProps> = ({
       return;
     }
 
-    if (examDetailSessionId) return;
+    if (examDetailSessionId) {
+      const snap = previewBeforeExamRef.current;
+      resetExamDetailForUrlRestore();
+      previewBeforeExamRef.current = null;
+      if (
+        snap != null &&
+        (snap.previewMaterialId != null ||
+          snap.previewFileUrl != null ||
+          snap.previewLinkedGenerationSessionId != null)
+      ) {
+        setPreviewFileUrl(snap.previewFileUrl);
+        setPreviewMaterialId(snap.previewMaterialId);
+        setPreviewFileName(snap.previewFileName);
+        setPreviewIsAiGenerationDoc(snap.previewIsAiGenerationDoc);
+        setPreviewLinkedGenerationSessionId(snap.previewLinkedGenerationSessionId);
+      }
+      return;
+    }
+
+    if (
+      !material &&
+      !gen &&
+      (previewFileUrl != null ||
+        previewMaterialId != null ||
+        previewLinkedGenerationSessionId != null ||
+        previewMarkdownContent != null)
+    ) {
+      clearPreviewForUrlRestore();
+      return;
+    }
 
     const mats = localMaterials[selectedLectureId] ?? [];
 
@@ -6897,6 +7190,7 @@ const MainContent: React.FC<MainContentProps> = ({
     previewMaterialId,
     previewLinkedGenerationSessionId,
     previewFileUrl,
+    previewMarkdownContent,
     openExamSessionDetail,
     handleCardClick,
   ]);
@@ -7213,13 +7507,46 @@ const MainContent: React.FC<MainContentProps> = ({
     const displayName = user?.fullName?.trim() || "사용자";
     const roleLabel = isTeacher ? "선생님" : isStudent ? "학생" : "";
     const greetingName = `${displayName}${roleLabel ? ` ${roleLabel}` : ""}`;
-    const actionButtonBase =
-      "flex h-10 w-full items-center justify-start gap-2 rounded-lg px-3 text-xs font-semibold transition-all duration-200";
-    const courseListPrimaryPillCn = `${actionButtonBase} ${
-      isDarkMode
-        ? "bg-[#ffad9b] text-[#071829] hover:bg-[#ffd0c6]"
-        : "bg-[#003c33] text-white hover:bg-[#071829]"
-    }`;
+    const courseListActionButtonClass = (active = false, primary = false) =>
+      `flex h-9 w-full min-w-0 items-center gap-2 rounded-xl border px-3 text-left text-sm font-semibold transition-colors ${
+        primary || active
+          ? isDarkMode
+            ? "border-[#ff9b6a] bg-[#ff9b6a] text-[#181818] hover:bg-[#ffad9b]"
+            : "border-[#ff824d] bg-[#ff824d] text-white hover:bg-[#f26f37]"
+          : isDarkMode
+            ? "border-[#343434] bg-[#202020] text-gray-200 hover:bg-[#252525]"
+            : "border-[#dedbd5] bg-white text-[#212121] hover:bg-[#f7f5f1]"
+      }`;
+    const courseListActionIconClass = (active = false, primary = false) =>
+      `h-3.5 w-3.5 shrink-0 ${
+        active || primary
+          ? isDarkMode
+            ? "text-[#181818]"
+            : "text-white"
+          : isDarkMode
+            ? "text-[#ff824d]"
+            : "text-gray-600"
+      }`;
+    const renderCourseListActionIcon = (
+      path: string,
+      active = false,
+      primary = false,
+    ) => (
+      <svg
+        className={courseListActionIconClass(active, primary)}
+        fill="none"
+        stroke="currentColor"
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+      >
+        <path
+          d={path}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={2}
+        />
+      </svg>
+    );
 
     if (isCoursesLoading) {
       return (
@@ -7240,14 +7567,6 @@ const MainContent: React.FC<MainContentProps> = ({
 
     // 에러가 있어도 에러 메시지를 표시하지 않음 (빈 목록으로 처리)
 
-    const courseListEditToggleClasses = courseListEditMode
-      ? isDarkMode
-        ? "bg-[#ffad9b] text-[#071829] hover:bg-[#ffd0c6]"
-        : "bg-[#003c33] text-white hover:bg-[#071829]"
-      : isDarkMode
-        ? "bg-white/10 text-gray-200 hover:bg-white/15"
-        : "bg-[#eeece7] text-[#212121] hover:bg-[#e1ded6]";
-
     const renderCourseListEditToggleButton = () =>
       !isTeacher ? null : (
         <button
@@ -7264,18 +7583,17 @@ const MainContent: React.FC<MainContentProps> = ({
               : "카드에서 강의실을 수정하거나 삭제합니다"
           }
           onClick={() => setCourseListEditMode((v) => !v)}
-          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full cursor-pointer transition-colors ${courseListEditToggleClasses}`}
+          className={courseListActionButtonClass(courseListEditMode)}
         >
           <span className="sr-only">
             {courseListEditMode ? "편집 완료" : "강의실 편집"}
           </span>
           {courseListEditMode ? (
-            <CheckIcon className="h-5 w-5" />
+            <CheckIcon className={courseListActionIconClass(true)} />
           ) : (
-            <EditIcon
-              className={`h-5 w-5 ${isDarkMode ? "text-[#ff824d]" : ""}`}
-            />
+            <EditIcon className={courseListActionIconClass(false)} />
           )}
+          <span className="truncate">{courseListEditMode ? "편집 완료" : "편집"}</span>
         </button>
       );
 
@@ -7286,11 +7604,7 @@ const MainContent: React.FC<MainContentProps> = ({
           const next = courseListSortOrder === "recent" ? "name" : "recent";
           onCourseListSortOrderChange?.(next);
         }}
-        className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full transition-colors ${
-          isDarkMode
-            ? "bg-white/10 text-gray-200 hover:bg-white/15 hover:text-white"
-            : "bg-gray-100 text-gray-700 hover:bg-gray-200 hover:text-gray-900"
-        }`}
+        className={courseListActionButtonClass(false)}
         aria-label={
           courseListSortOrder === "recent" ? "이름순으로 정렬" : "최신순으로 정렬"
         }
@@ -7298,7 +7612,7 @@ const MainContent: React.FC<MainContentProps> = ({
           courseListSortOrder === "recent" ? "이름순으로 정렬" : "최신순으로 정렬"
         }
       >
-        {courseListSortOrder === "recent" ? (
+          {courseListSortOrder === "recent" ? (
           <svg
             viewBox="0 0 24 24"
             fill="none"
@@ -7306,7 +7620,7 @@ const MainContent: React.FC<MainContentProps> = ({
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className={`h-5 w-5 ${isDarkMode ? "text-[#ff824d]" : ""}`}
+            className={courseListActionIconClass(false)}
             aria-hidden="true"
           >
             <path d="M4 6h9" />
@@ -7323,13 +7637,14 @@ const MainContent: React.FC<MainContentProps> = ({
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
-            className={`h-5 w-5 ${isDarkMode ? "text-[#ff824d]" : ""}`}
+            className={courseListActionIconClass(false)}
             aria-hidden="true"
           >
             <circle cx="12" cy="12" r="9" />
             <path d="M12 7v5l3 2" />
           </svg>
         )}
+        <span className="truncate">정렬</span>
       </button>
     );
 
@@ -7349,84 +7664,44 @@ const MainContent: React.FC<MainContentProps> = ({
           </div>
           <div className="flex flex-1 min-h-0 overflow-hidden">
             <aside
-              className={`hidden w-[var(--app-course-list-sidebar-width)] shrink-0 border-r px-6 py-6 md:block ${
+              className={`hidden w-[var(--app-course-list-sidebar-width)] shrink-0 border-r px-3 pb-3 pt-5 md:block ${
               isDarkMode
-                  ? "border-[#1b3443] text-gray-200"
-                  : "border-[#d9d9dd] text-[#212121]"
+                  ? "border-[#2b2b2b] bg-[#181818] text-gray-200"
+                  : "border-[#dedbd5] bg-[#fbfaf7] text-[#212121]"
               }`}
             >
-              <div className="flex h-full flex-col gap-4">
-                <section className="flex flex-col gap-3">
+              <div className="flex h-full flex-col gap-2">
+                <section className="flex flex-col gap-1">
                   {isTeacher && (
                     <button
                       type="button"
                       onClick={() =>
                         window.dispatchEvent(new Event("open-course-modal"))
                       }
-                      className={courseListPrimaryPillCn}
+                      className={courseListActionButtonClass(false, true)}
                       aria-label="강의실 만들기"
                       title="강의실 만들기"
                     >
-                      <svg
-                        className="h-6 w-6 shrink-0"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M12 5v14M5 12h14"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                        />
-                      </svg>
-                      <span>강의실 만들기</span>
+                      {renderCourseListActionIcon("M12 5v14M5 12h14", false, true)}
+                      <span className="truncate">강의실 만들기</span>
                     </button>
                   )}
                   {!isTeacher && (
                     <button
                       type="button"
                       onClick={openStudentCourseJoinModal}
-                      className={courseListPrimaryPillCn}
+                      className={courseListActionButtonClass(false, true)}
                       aria-label="초대 코드로 강의실 참여"
                       title="초대 코드를 입력해 강의실에 참여 신청합니다"
                     >
-                      <UsersIcon className="h-6 w-6 shrink-0" />
-                      <span>강의실 참여</span>
+                      <UsersIcon className={courseListActionIconClass(false, true)} />
+                      <span className="truncate">강의실 참여</span>
                     </button>
                   )}
-                </section>
-
-                <div
-                  className={`h-px ${
-                    isDarkMode ? "bg-[#1b3443]" : "bg-[#d9d9dd]"
-                  }`}
-                />
-
-                <section className="grid grid-cols-2 gap-3">
                   {isTeacher && (
-                    <div className="flex flex-col items-center gap-2">
-                      {renderCourseListEditToggleButton()}
-                      <span
-                        className={`text-xs ${
-                          isDarkMode ? "text-gray-400" : "text-gray-500"
-                        }`}
-                      >
-                        편집
-                      </span>
-                    </div>
+                    renderCourseListEditToggleButton()
                   )}
-                  <div className="flex flex-col items-center gap-2">
-                    {renderCourseListSortButton()}
-                    <span
-                      className={`text-xs ${
-                        isDarkMode ? "text-gray-400" : "text-gray-500"
-                      }`}
-                    >
-                      정렬
-                    </span>
-                  </div>
+                  {renderCourseListSortButton()}
                 </section>
 
                 {coursesPage && coursesPage.totalPages > 1 && (
@@ -7476,7 +7751,7 @@ const MainContent: React.FC<MainContentProps> = ({
               }`}
             >
               {isTeacher ? (
-                <div className="mb-3 md:hidden flex items-center justify-end gap-2">
+                <div className="mb-3 grid grid-cols-2 gap-2 md:hidden">
                   {renderCourseListEditToggleButton()}
                   {renderCourseListSortButton()}
                 </div>
@@ -7485,10 +7760,11 @@ const MainContent: React.FC<MainContentProps> = ({
                   <button
                     type="button"
                     onClick={openStudentCourseJoinModal}
-                    className={courseListPrimaryPillCn}
+                    className={courseListActionButtonClass(false, true)}
                     aria-label="초대 코드로 강의실 참여"
                   >
-                    강의실 참여
+                    <UsersIcon className={courseListActionIconClass(false, true)} />
+                    <span className="truncate">강의실 참여</span>
                   </button>
                 </div>
               ) : null}
@@ -10542,7 +10818,7 @@ const MainContent: React.FC<MainContentProps> = ({
                             <span>생성: {classroomReport.generatedAt}</span>
                           ) : null}
                           {classroomReport.confidence ? (
-                            <span>신뢰도: {classroomReport.confidence}</span>
+                            <span>신뢰도: {formatConfidenceLabel(classroomReport.confidence)}</span>
                           ) : null}
                           {classroomReport.source ? (
                             <span>출처: {classroomReport.source}</span>
@@ -11019,7 +11295,7 @@ const MainContent: React.FC<MainContentProps> = ({
                                             <span className="shrink-0 text-xs opacity-70">
                                               {competency.scorePercent != null
                                                 ? `${competency.scorePercent}%`
-                                                : competency.level || "-"}
+                                                : formatCompetencyLevelLabel(competency.level)}
                                             </span>
                                           </div>
                                           {competency.feedback ? (
@@ -14841,7 +15117,7 @@ const MainContent: React.FC<MainContentProps> = ({
                         <span>생성: {classroomReport.generatedAt}</span>
                       ) : null}
                       {classroomReport.confidence ? (
-                        <span>신뢰도: {classroomReport.confidence}</span>
+                        <span>신뢰도: {formatConfidenceLabel(classroomReport.confidence)}</span>
                       ) : null}
                       {classroomReport.source ? <span>출처: {classroomReport.source}</span> : null}
                       {classroomReport.fallbackUsed ? <span>폴백 사용</span> : null}
@@ -15149,7 +15425,9 @@ const MainContent: React.FC<MainContentProps> = ({
                               <div className="flex items-center justify-between gap-3">
                                 <p className="text-sm font-medium">{competency.competencyName}</p>
                                 <span className="text-xs opacity-70">
-                                  {competency.scorePercent != null ? `${competency.scorePercent}%` : competency.level || "-"}
+                                  {competency.scorePercent != null
+                                    ? `${competency.scorePercent}%`
+                                    : formatCompetencyLevelLabel(competency.level)}
                                 </span>
                               </div>
                               {competency.feedback ? (

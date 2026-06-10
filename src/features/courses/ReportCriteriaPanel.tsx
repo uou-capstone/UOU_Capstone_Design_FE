@@ -6,6 +6,10 @@ import {
   type ReportCriterion,
   type ReportCriterionPayload,
 } from "@/services/api";
+import {
+  formatDataSourceHintLabel,
+  formatFallbackPolicyLabel,
+} from "@/utils/displayLabels";
 
 interface ReportCriteriaPanelProps {
   courseId: number;
@@ -26,6 +30,12 @@ type CriteriaChatMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
+};
+
+type AssistantCriterionDraft = {
+  label: string;
+  description?: string;
+  weight?: number;
 };
 
 function recordOf(value: unknown): Record<string, unknown> {
@@ -75,6 +85,85 @@ function criterionIdFromOperation(operation: AiAgentOperation): number | null {
   return id == null ? null : id;
 }
 
+function stripMarkdownPrefix(value: string): string {
+  return value
+    .replace(/^\s*[-*•]\s+/, "")
+    .replace(/^\s*\d+[.)]\s+/, "")
+    .replace(/^\s*#+\s+/, "")
+    .replace(/\*\*/g, "")
+    .trim();
+}
+
+function parseCriterionDraftsFromAssistantText(text: string): AssistantCriterionDraft[] {
+  const rows = text
+    .split(/\r?\n/)
+    .map(stripMarkdownPrefix)
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+  const drafts: AssistantCriterionDraft[] = [];
+
+  for (const row of rows) {
+    const lower = row.toLowerCase();
+    if (
+      lower.includes("추천") ||
+      lower.includes("예시") ||
+      lower.includes("아래") ||
+      lower.includes("평가 기준") ||
+      lower.includes("평가항목")
+    ) {
+      const directMatch = row.match(/(?:기준명|항목명|이름|label)\s*[:：]\s*(.+)$/i);
+      if (!directMatch) continue;
+    }
+
+    const weightMatch = row.match(/(?:가중치|weight)\s*[:：]?\s*(\d+(?:\.\d+)?)/i);
+    const weight = weightMatch ? Number(weightMatch[1]) : undefined;
+    const withoutWeight = row
+      .replace(/[\s,]*(?:가중치|weight)\s*[:：]?\s*\d+(?:\.\d+)?\s*(?:점|%)?/gi, "")
+      .trim();
+
+    const explicitLabel = withoutWeight.match(
+      /(?:기준명|항목명|이름|label)\s*[:：]\s*([^:：\-–—]+)(?:\s*[-–—:：]\s*(.+))?$/i,
+    );
+    if (explicitLabel) {
+      const label = explicitLabel[1]?.trim();
+      if (label) {
+        drafts.push({
+          label,
+          description: explicitLabel[2]?.trim() || undefined,
+          weight,
+        });
+      }
+      continue;
+    }
+
+    const colonIndex = withoutWeight.search(/[:：\-–—]/);
+    if (colonIndex <= 0) continue;
+    const label = withoutWeight.slice(0, colonIndex).trim();
+    const description = withoutWeight.slice(colonIndex + 1).trim();
+    if (
+      label.length < 2 ||
+      label.length > 36 ||
+      /^(설명|description|desc|가중치|weight)$/i.test(label)
+    ) {
+      continue;
+    }
+
+    drafts.push({
+      label,
+      description: description || undefined,
+      weight,
+    });
+  }
+
+  const deduped = new Map<string, AssistantCriterionDraft>();
+  drafts.forEach((draft) => {
+    const key = draft.label.trim().toLowerCase();
+    if (!key || deduped.has(key)) return;
+    deduped.set(key, draft);
+  });
+  return Array.from(deduped.values()).slice(0, 8);
+}
+
 export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
   courseId,
   isDarkMode,
@@ -86,6 +175,7 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
   const [saving, setSaving] = React.useState(false);
   const [assistantLoading, setAssistantLoading] = React.useState(false);
   const [assistantText, setAssistantText] = React.useState("");
+  const [assistantDrafts, setAssistantDrafts] = React.useState<AssistantCriterionDraft[]>([]);
   const [chatInput, setChatInput] = React.useState("");
   const [chatLoading, setChatLoading] = React.useState(false);
   const [chatMessages, setChatMessages] = React.useState<CriteriaChatMessage[]>([]);
@@ -168,21 +258,76 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
   const runAssistant = React.useCallback(async () => {
     setAssistantLoading(true);
     setAssistantText("");
+    setAssistantDrafts([]);
     setError(null);
     try {
-      await reportCriteriaApi.streamAssistant(
+      let streamedText = "";
+      const finalText = await reportCriteriaApi.streamAssistant(
         courseId,
         { desiredCount: 5, language: "ko" },
         {
-          onDelta: (chunk) => setAssistantText((prev) => `${prev}${chunk}`),
+          onDelta: (chunk) => {
+            streamedText += chunk;
+            setAssistantText(streamedText);
+          },
         },
       );
+      const text = streamedText || finalText;
+      setAssistantText(text);
+      setAssistantDrafts(parseCriterionDraftsFromAssistantText(text));
     } catch (err) {
       setError(err instanceof Error ? err.message : "AI 추천을 불러오지 못했습니다.");
     } finally {
       setAssistantLoading(false);
     }
   }, [courseId]);
+
+  const saveAssistantDraft = React.useCallback(
+    async (draft: AssistantCriterionDraft) => {
+      if (!draft.label.trim()) return;
+      setSaving(true);
+      setError(null);
+      try {
+        await reportCriteriaApi.createCriterion(courseId, {
+          label: draft.label.trim(),
+          description: draft.description?.trim() || undefined,
+          weight: draft.weight,
+        });
+        setAssistantDrafts((prev) =>
+          prev.filter((item) => item.label.trim() !== draft.label.trim()),
+        );
+        await load();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "AI 추천 항목 저장에 실패했습니다.");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [courseId, load],
+  );
+
+  const saveAllAssistantDrafts = React.useCallback(async () => {
+    if (assistantDrafts.length === 0) return;
+    const ok = window.confirm(`AI 추천 항목 ${assistantDrafts.length}개를 추가할까요?`);
+    if (!ok) return;
+    setSaving(true);
+    setError(null);
+    try {
+      for (const draft of assistantDrafts) {
+        await reportCriteriaApi.createCriterion(courseId, {
+          label: draft.label.trim(),
+          description: draft.description?.trim() || undefined,
+          weight: draft.weight,
+        });
+      }
+      setAssistantDrafts([]);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "AI 추천 항목 저장에 실패했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }, [assistantDrafts, courseId, load]);
 
   const runOperationAssistant = React.useCallback(async () => {
     const message = chatInput.trim();
@@ -405,7 +550,7 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
                               : "border-[#dedbd5] text-gray-700"
                           }`}
                         >
-                          데이터: {criterion.dataSourceHint}
+                          데이터: {formatDataSourceHintLabel(criterion.dataSourceHint)}
                         </span>
                       ) : null}
                       {criterion.fallbackPolicy ? (
@@ -416,7 +561,7 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
                               : "border-[#dedbd5] text-gray-700"
                           }`}
                         >
-                          부족 시: {criterion.fallbackPolicy}
+                          부족 시: {formatFallbackPolicyLabel(criterion.fallbackPolicy)}
                         </span>
                       ) : null}
                     </div>
@@ -428,7 +573,7 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
                       isDarkMode ? "bg-white/10 text-gray-100" : "bg-gray-100 text-gray-900"
                     }`}
                   >
-                    weight {criterion.weight ?? 0}
+                    가중치 {criterion.weight ?? 0}
                   </span>
                   <button
                     type="button"
@@ -552,10 +697,92 @@ export const ReportCriteriaPanel: React.FC<ReportCriteriaPanelProps> = ({
 
       {assistantText ? (
         <section className={`rounded-xl border px-4 py-4 ${surfaceClass}`}>
-          <h3 className="text-sm font-semibold">AI 추천 초안</h3>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h3 className="text-sm font-semibold">AI 추천 초안</h3>
+            {assistantDrafts.length ? (
+              <button
+                type="button"
+                onClick={() => void saveAllAssistantDrafts()}
+                disabled={saving}
+                className={`rounded-lg px-3 py-2 text-xs font-semibold disabled:opacity-50 ${
+                  isDarkMode ? "bg-white text-[#141414]" : "bg-[#141414] text-white"
+                }`}
+              >
+                추천 전체 추가
+              </button>
+            ) : null}
+          </div>
           <p className={`mt-3 whitespace-pre-wrap text-sm leading-7 ${mutedClass}`}>
             {assistantText}
           </p>
+          {assistantDrafts.length ? (
+            <div className="mt-4 space-y-2">
+              {assistantDrafts.map((draft) => (
+                <div
+                  key={draft.label}
+                  className={`rounded-lg border px-3 py-3 ${
+                    isDarkMode
+                      ? "border-[#343434] bg-[#181818]"
+                      : "border-[#dedbd5] bg-[#fbfaf7]"
+                  }`}
+                >
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold">{draft.label}</p>
+                        {draft.weight != null ? (
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              isDarkMode ? "bg-white/10 text-gray-200" : "bg-gray-100 text-gray-700"
+                            }`}
+                          >
+                            가중치 {draft.weight}
+                          </span>
+                        ) : null}
+                      </div>
+                      {draft.description ? (
+                        <p className={`mt-1 text-xs leading-5 ${mutedClass}`}>
+                          {draft.description}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex shrink-0 gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm({
+                            label: draft.label,
+                            description: draft.description ?? "",
+                            weight: String(draft.weight ?? 10),
+                          })
+                        }
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+                          isDarkMode ? "border-zinc-600" : "border-gray-300"
+                        }`}
+                      >
+                        입력폼에 넣기
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void saveAssistantDraft(draft)}
+                        disabled={saving}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50 ${
+                          isDarkMode ? "bg-white text-[#141414]" : "bg-[#141414] text-white"
+                        }`}
+                      >
+                        저장
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className={`mt-3 text-xs ${mutedClass}`}>
+              저장 가능한 항목을 자동으로 찾지 못했습니다. 필요한 기준명을 입력폼에 옮겨 저장하거나,
+              아래 도우미에게 “질문 구성력 기준을 추가해줘”처럼 요청해 주세요.
+            </p>
+          )}
         </section>
       ) : null}
 
