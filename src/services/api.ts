@@ -1883,17 +1883,45 @@ function normalizeStudentAttendanceSummary(
   };
 }
 
-function unwrapBoardRecord(raw: Record<string, unknown>): Record<string, unknown> {
+function asBoardRecord(raw: unknown): Record<string, unknown> {
+  return raw != null && typeof raw === "object" && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : {};
+}
+
+function unwrapBoardRecord(raw: unknown): Record<string, unknown> {
+  const source = asBoardRecord(raw);
   for (const key of ["data", "result", "payload"]) {
-    const value = raw[key];
+    const value = source[key];
     if (value != null && typeof value === "object" && !Array.isArray(value)) {
       return value as Record<string, unknown>;
     }
   }
-  return raw;
+  return source;
 }
 
-function normalizeNoticeListItem(raw: Record<string, unknown>): NoticeListItem {
+function unwrapBoardPage(raw: unknown): PageResponse<unknown> {
+  const source = unwrapBoardRecord(raw);
+  const contentValue = source.content ?? source.items ?? source.list;
+  const content = Array.isArray(contentValue)
+    ? contentValue
+    : Array.isArray(raw)
+      ? raw
+      : [];
+  return {
+    content,
+    page: Number(source.page ?? source.number ?? 0) || 0,
+    size: Number(source.size ?? content.length ?? 0) || 0,
+    totalElements:
+      Number(source.totalElements ?? source.total_elements ?? source.total ?? content.length) ||
+      content.length,
+    totalPages: Number(source.totalPages ?? source.total_pages ?? 1) || 1,
+    first: Boolean(source.first ?? true),
+    last: Boolean(source.last ?? true),
+  };
+}
+
+function normalizeNoticeListItem(raw: unknown): NoticeListItem {
   const value = unwrapBoardRecord(raw);
   return {
     noticeId: Number(value.noticeId ?? value.notice_id ?? value.id ?? 0),
@@ -1911,7 +1939,7 @@ function normalizeNoticeListItem(raw: Record<string, unknown>): NoticeListItem {
   };
 }
 
-function normalizeNoticeDetail(raw: Record<string, unknown>): NoticeDetail {
+function normalizeNoticeDetail(raw: unknown): NoticeDetail {
   const value = unwrapBoardRecord(raw);
   return {
     ...normalizeNoticeListItem(value),
@@ -1930,26 +1958,27 @@ function normalizeNoticeDetail(raw: Record<string, unknown>): NoticeDetail {
   };
 }
 
-function normalizeNoticeComment(raw: Record<string, unknown>): NoticeComment {
+function normalizeNoticeComment(raw: unknown): NoticeComment {
+  const value = unwrapBoardRecord(raw);
   return {
-    commentId: Number(raw.commentId ?? raw.comment_id ?? 0),
-    noticeId: Number(raw.noticeId ?? raw.notice_id ?? 0),
+    commentId: Number(value.commentId ?? value.comment_id ?? 0),
+    noticeId: Number(value.noticeId ?? value.notice_id ?? 0),
     authorUserId:
-      raw.authorUserId == null && raw.author_user_id == null
+      value.authorUserId == null && value.author_user_id == null
         ? undefined
-        : Number(raw.authorUserId ?? raw.author_user_id),
-    authorName: String(raw.authorName ?? raw.author_name ?? ""),
+        : Number(value.authorUserId ?? value.author_user_id),
+    authorName: String(value.authorName ?? value.author_name ?? ""),
     parentCommentId:
-      raw.parentCommentId == null && raw.parent_comment_id == null
+      value.parentCommentId == null && value.parent_comment_id == null
         ? null
-        : Number(raw.parentCommentId ?? raw.parent_comment_id),
-    contentMarkdown: String(raw.contentMarkdown ?? raw.content_markdown ?? ""),
-    createdAt: pickFirstNonEmptyString(raw, ["createdAt", "created_at"]) || undefined,
-    updatedAt: pickFirstNonEmptyString(raw, ["updatedAt", "updated_at"]) || undefined,
+        : Number(value.parentCommentId ?? value.parent_comment_id),
+    contentMarkdown: String(value.contentMarkdown ?? value.content_markdown ?? ""),
+    createdAt: pickFirstNonEmptyString(value, ["createdAt", "created_at"]) || undefined,
+    updatedAt: pickFirstNonEmptyString(value, ["updatedAt", "updated_at"]) || undefined,
   };
 }
 
-function normalizeDiscussionListItem(raw: Record<string, unknown>): DiscussionListItem {
+function normalizeDiscussionListItem(raw: unknown): DiscussionListItem {
   const value = unwrapBoardRecord(raw);
   return {
     discussionId: Number(value.discussionId ?? value.discussion_id ?? value.id ?? 0),
@@ -1971,7 +2000,7 @@ function normalizeDiscussionListItem(raw: Record<string, unknown>): DiscussionLi
   };
 }
 
-function normalizeDiscussionDetail(raw: Record<string, unknown>): DiscussionDetail {
+function normalizeDiscussionDetail(raw: unknown): DiscussionDetail {
   const value = unwrapBoardRecord(raw);
   return {
     ...normalizeDiscussionListItem(value),
@@ -1986,22 +2015,23 @@ function normalizeDiscussionDetail(raw: Record<string, unknown>): DiscussionDeta
   };
 }
 
-function normalizeDiscussionComment(raw: Record<string, unknown>): DiscussionComment {
+function normalizeDiscussionComment(raw: unknown): DiscussionComment {
+  const value = unwrapBoardRecord(raw);
   return {
-    commentId: Number(raw.commentId ?? raw.comment_id ?? 0),
-    discussionId: Number(raw.discussionId ?? raw.discussion_id ?? 0),
+    commentId: Number(value.commentId ?? value.comment_id ?? 0),
+    discussionId: Number(value.discussionId ?? value.discussion_id ?? 0),
     authorUserId:
-      raw.authorUserId == null && raw.author_user_id == null
+      value.authorUserId == null && value.author_user_id == null
         ? undefined
-        : Number(raw.authorUserId ?? raw.author_user_id),
-    authorName: String(raw.authorName ?? raw.author_name ?? ""),
+        : Number(value.authorUserId ?? value.author_user_id),
+    authorName: String(value.authorName ?? value.author_name ?? ""),
     parentCommentId:
-      raw.parentCommentId == null && raw.parent_comment_id == null
+      value.parentCommentId == null && value.parent_comment_id == null
         ? null
-        : Number(raw.parentCommentId ?? raw.parent_comment_id),
-    contentMarkdown: String(raw.contentMarkdown ?? raw.content_markdown ?? ""),
-    createdAt: pickFirstNonEmptyString(raw, ["createdAt", "created_at"]) || undefined,
-    updatedAt: pickFirstNonEmptyString(raw, ["updatedAt", "updated_at"]) || undefined,
+        : Number(value.parentCommentId ?? value.parent_comment_id),
+    contentMarkdown: String(value.contentMarkdown ?? value.content_markdown ?? ""),
+    createdAt: pickFirstNonEmptyString(value, ["createdAt", "created_at"]) || undefined,
+    updatedAt: pickFirstNonEmptyString(value, ["updatedAt", "updated_at"]) || undefined,
   };
 }
 
@@ -3666,13 +3696,14 @@ export const noticeApi = {
     params?: PageQueryParams,
   ): Promise<PageResponse<NoticeListItem>> => {
     const searchParams = buildPageSearchParams(params, "pinned,desc");
-    const res = await apiRequest<PageResponse<Record<string, unknown>>>(
+    const raw = await apiRequest<unknown>(
       `/api/courses/${encodeURIComponent(courseId)}/notices?${searchParams.toString()}`,
     );
-    const content = Array.isArray(res.content)
-      ? res.content.map((item) => normalizeNoticeListItem(item))
-      : [];
-    return { ...(res as unknown as PageResponse<NoticeListItem>), content };
+    const page = unwrapBoardPage(raw);
+    return {
+      ...page,
+      content: page.content.map((item) => normalizeNoticeListItem(item)),
+    };
   },
 
   createNotice: async (
@@ -3724,13 +3755,14 @@ export const noticeApi = {
     params?: PageQueryParams,
   ): Promise<PageResponse<NoticeComment>> => {
     const searchParams = buildPageSearchParams(params, "createdAt,asc");
-    const res = await apiRequest<PageResponse<Record<string, unknown>>>(
+    const raw = await apiRequest<unknown>(
       `/api/courses/${encodeURIComponent(courseId)}/notices/${encodeURIComponent(noticeId)}/comments?${searchParams.toString()}`,
     );
-    const content = Array.isArray(res.content)
-      ? res.content.map((item) => normalizeNoticeComment(item))
-      : [];
-    return { ...(res as unknown as PageResponse<NoticeComment>), content };
+    const page = unwrapBoardPage(raw);
+    return {
+      ...page,
+      content: page.content.map((item) => normalizeNoticeComment(item)),
+    };
   },
 
   createComment: async (
@@ -3799,13 +3831,14 @@ export const discussionApi = {
     params?: PageQueryParams,
   ): Promise<PageResponse<DiscussionListItem>> => {
     const searchParams = buildPageSearchParams(params, "pinned,desc");
-    const res = await apiRequest<PageResponse<Record<string, unknown>>>(
+    const raw = await apiRequest<unknown>(
       `/api/courses/${encodeURIComponent(courseId)}/discussions?${searchParams.toString()}`,
     );
-    const content = Array.isArray(res.content)
-      ? res.content.map((item) => normalizeDiscussionListItem(item))
-      : [];
-    return { ...(res as unknown as PageResponse<DiscussionListItem>), content };
+    const page = unwrapBoardPage(raw);
+    return {
+      ...page,
+      content: page.content.map((item) => normalizeDiscussionListItem(item)),
+    };
   },
 
   createDiscussion: async (
@@ -3863,13 +3896,14 @@ export const discussionApi = {
     params?: PageQueryParams,
   ): Promise<PageResponse<DiscussionComment>> => {
     const searchParams = buildPageSearchParams(params, "createdAt,asc");
-    const res = await apiRequest<PageResponse<Record<string, unknown>>>(
+    const raw = await apiRequest<unknown>(
       `/api/courses/${encodeURIComponent(courseId)}/discussions/${encodeURIComponent(discussionId)}/comments?${searchParams.toString()}`,
     );
-    const content = Array.isArray(res.content)
-      ? res.content.map((item) => normalizeDiscussionComment(item))
-      : [];
-    return { ...(res as unknown as PageResponse<DiscussionComment>), content };
+    const page = unwrapBoardPage(raw);
+    return {
+      ...page,
+      content: page.content.map((item) => normalizeDiscussionComment(item)),
+    };
   },
 
   createComment: async (

@@ -145,6 +145,57 @@ import {
 type ViewMode = "course-list" | "course-detail";
 // 메인 메뉴는 강의/설정/업데이트 사용
 type MenuItem = "lectures" | "settings" | "updates";
+type TeacherMainPanelKey =
+  | "materials"
+  | "examStudio"
+  | "studentManagement"
+  | "attendance"
+  | "notices"
+  | "discussions"
+  | "classroomReport";
+
+function normalizeCourseSectionParam(value: string | null): TeacherMainPanelKey | null {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) return null;
+  if (["material", "materials", "resource", "resources", "lecture", "lectures"].includes(normalized)) {
+    return "materials";
+  }
+  if (["notice", "notices", "announcement", "announcements"].includes(normalized)) {
+    return "notices";
+  }
+  if (["discussion", "discussions", "board", "boards"].includes(normalized)) {
+    return "discussions";
+  }
+  if (["exam", "exams", "assessment", "assessments", "examstudio", "exam-studio"].includes(normalized)) {
+    return "examStudio";
+  }
+  if (["student", "students", "student-management", "studentmanagement", "attendance"].includes(normalized)) {
+    return "studentManagement";
+  }
+  if (["report", "reports", "classroom-report", "classroomreport", "grade", "grades"].includes(normalized)) {
+    return "classroomReport";
+  }
+  return null;
+}
+
+function courseSectionParamForPanel(panel: TeacherMainPanelKey): string | null {
+  switch (panel) {
+    case "examStudio":
+      return "exam";
+    case "studentManagement":
+    case "attendance":
+      return "students";
+    case "notices":
+      return "notices";
+    case "discussions":
+      return "discussions";
+    case "classroomReport":
+      return "report";
+    case "materials":
+    default:
+      return null;
+  }
+}
 
 const courseCardIconPalette = [
   {
@@ -1574,6 +1625,10 @@ const MainContent: React.FC<MainContentProps> = ({
   const [localExams, setLocalExams] = React.useState<
     Record<number, CenterItem[]>
   >({});
+  const [resourceTitleEditTarget, setResourceTitleEditTarget] =
+    React.useState<CenterItem | null>(null);
+  const [resourceTitleEditValue, setResourceTitleEditValue] =
+    React.useState("");
   const [uploadModalOpen, setUploadModalOpen] = React.useState(false);
   const [materialGenModalOpen, setMaterialGenModalOpen] = React.useState(false);
   /** 오른쪽 패널 시험 만들기 모드 (강의 선택 후 PDF 미리보기 옆 채팅창에서 프로필 설정) */
@@ -2058,15 +2113,8 @@ const MainContent: React.FC<MainContentProps> = ({
   const bulkEditMode = lectureEditMode;
   const setBulkEditMode = setLectureEditMode;
   /** 교사 강의 상세: 메인 영역 = 자료 목록 | 학생 관리 */
-  const [teacherMainPanel, setTeacherMainPanel] = React.useState<
-    | "materials"
-    | "examStudio"
-    | "studentManagement"
-    | "attendance"
-    | "notices"
-    | "discussions"
-    | "classroomReport"
-  >("materials");
+  const [teacherMainPanel, setTeacherMainPanel] =
+    React.useState<TeacherMainPanelKey>("materials");
   const [weekBoardTab, setWeekBoardTab] = React.useState<
     "notices" | "discussions" | null
   >(null);
@@ -2087,6 +2135,21 @@ const MainContent: React.FC<MainContentProps> = ({
       setWeekBoardTab(null);
     }
   }, [teacherMainPanel]);
+  React.useEffect(() => {
+    if (viewMode !== "course-detail" || selectedMenu !== "lectures") return;
+    const panelFromUrl = normalizeCourseSectionParam(searchParams.get("section"));
+    if (!panelFromUrl) return;
+    const nextPanel =
+      panelFromUrl === "studentManagement" && !isTeacher
+        ? "attendance"
+        : panelFromUrl === "classroomReport" && !isTeacher
+          ? "materials"
+          : panelFromUrl;
+    setTeacherMainPanel((prev) => (prev === nextPanel ? prev : nextPanel));
+    if (nextPanel !== "materials") {
+      setWeekBoardTab(null);
+    }
+  }, [isTeacher, searchParams, selectedMenu, viewMode]);
   React.useEffect(() => {
     setWeekBoardTab(null);
   }, [selectedLectureId]);
@@ -3191,52 +3254,53 @@ const MainContent: React.FC<MainContentProps> = ({
     return (
       <div className="flex min-h-0 w-full flex-col gap-3 pb-4">
         <section
-          className={`${reportHeaderCardClass} relative overflow-visible px-5 py-6 lg:px-6`}
+          className={`${reportHeaderCardClass} flex shrink-0 flex-col px-5 py-5 lg:px-6`}
         >
-          <div className="flex flex-col gap-4">
-            <div className="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div className="min-w-0 flex-1">
-                <h2 className="break-keep text-2xl font-semibold leading-normal">
-                  {courseDetail?.title ?? "강의실"} 학생별 역량 리포트
-                </h2>
-              </div>
-              <div className="grid shrink-0 grid-cols-1 gap-2 sm:grid-cols-3 lg:max-w-[26rem]">
-                {[
-                  ["기본 항목", `${baseCriteriaCount}개`],
-                  ["추가 항목", `${additionalCriteriaCount}개`],
-                  ["분석 기준", criteriaStatusText],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className={`${softCardClass} min-w-[7rem] px-4 py-3`}
+          <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-2xl font-semibold leading-tight">
+                성적
+              </h2>
+            </div>
+          </div>
+        </section>
+
+        <section className={`${cardClass} px-4 py-3`}>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:max-w-[26rem]">
+              {[
+                ["기본 항목", `${baseCriteriaCount}개`],
+                ["추가 항목", `${additionalCriteriaCount}개`],
+                ["분석 기준", criteriaStatusText],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className={`${softCardClass} min-w-[7rem] px-4 py-3`}
+                >
+                  <p className={`text-xs font-semibold ${mutedText}`}>{label}</p>
+                  <p className="mt-1 text-xl font-semibold leading-tight">{value}</p>
+                </div>
+              ))}
+            </div>
+            <nav
+              className="flex shrink-0 flex-wrap items-center justify-start gap-1.5 lg:max-w-[30rem] lg:justify-end"
+              aria-label="강의실 리포트 하위 메뉴"
+            >
+              {reportTabs.map((tab) => {
+                const active = classroomReportTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setClassroomReportTab(tab.id)}
+                    className={reportTabButtonClass(active)}
+                    aria-current={active ? "page" : undefined}
                   >
-                    <p className={`text-xs font-semibold ${mutedText}`}>{label}</p>
-                    <p className="mt-1 text-xl font-semibold leading-tight">{value}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="flex min-w-0 justify-end">
-              <nav
-                className="flex shrink-0 flex-wrap items-center justify-start gap-1.5 lg:max-w-[30rem] lg:justify-end"
-                aria-label="강의실 리포트 하위 메뉴"
-              >
-                {reportTabs.map((tab) => {
-                  const active = classroomReportTab === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setClassroomReportTab(tab.id)}
-                      className={reportTabButtonClass(active)}
-                      aria-current={active ? "page" : undefined}
-                    >
-                      <span className="truncate">{tab.label}</span>
-                    </button>
-                  );
-                })}
-              </nav>
-            </div>
+                    <span className="truncate">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
           </div>
         </section>
 
@@ -5059,6 +5123,8 @@ const MainContent: React.FC<MainContentProps> = ({
     setSelectedCenterItemIds({});
     setActiveResourceActionItemId(null);
     setResourceEditMode(false);
+    setResourceTitleEditTarget(null);
+    setResourceTitleEditValue("");
   }, [selectedLectureId]);
 
   const handleDeleteSelectedCenterItems = React.useCallback(async () => {
@@ -7026,6 +7092,60 @@ const MainContent: React.FC<MainContentProps> = ({
     ],
   );
 
+  const openResourceTitleEditor = React.useCallback((item: CenterItem) => {
+    setResourceTitleEditTarget(item);
+    setResourceTitleEditValue(item.title ?? "");
+  }, []);
+
+  const handleResourceTitleEditSubmit = React.useCallback(
+    (event?: React.FormEvent<HTMLFormElement>) => {
+      event?.preventDefault();
+      if (!resourceTitleEditTarget || !selectedLectureId) return;
+      const nextTitle = resourceTitleEditValue.trim();
+      if (!nextTitle) {
+        window.alert("자료 제목을 입력해주세요.");
+        return;
+      }
+
+      setLocalMaterials((prev) => {
+        const list = prev[selectedLectureId] ?? [];
+        return {
+          ...prev,
+          [selectedLectureId]: list.map((item) =>
+            item.id === resourceTitleEditTarget.id
+              ? { ...item, title: nextTitle }
+              : item,
+          ),
+        };
+      });
+
+      if (
+        resourceTitleEditTarget.materialId != null &&
+        previewMaterialId === resourceTitleEditTarget.materialId
+      ) {
+        setPreviewFileName(nextTitle);
+      }
+      if (
+        resourceTitleEditTarget.generationSessionId != null &&
+        previewLinkedGenerationSessionId === resourceTitleEditTarget.generationSessionId
+      ) {
+        setPreviewFileName(nextTitle);
+      }
+
+      setResourceTitleEditTarget(null);
+      setResourceTitleEditValue("");
+      setActiveResourceActionItemId(null);
+      setResourceEditMode(false);
+    },
+    [
+      previewLinkedGenerationSessionId,
+      previewMaterialId,
+      resourceTitleEditTarget,
+      resourceTitleEditValue,
+      selectedLectureId,
+    ],
+  );
+
   React.useLayoutEffect(() => {
     if (viewMode !== "course-detail" || selectedLectureId == null) return;
     if (!courseContentsLoaded || lectureResourcesLoading) return;
@@ -8075,12 +8195,39 @@ const MainContent: React.FC<MainContentProps> = ({
               ? "border-[#343434] bg-[#202020] text-gray-100 hover:bg-[#252525]"
               : "border-[#dedbd5] bg-white text-[#212121] hover:bg-[#f7f5f1]"
       }`;
+    const syncCourseSectionInUrl = (
+      panel: TeacherMainPanelKey,
+      options?: { lectureId?: number | null },
+    ) => {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          const nextLectureId = options?.lectureId ?? selectedLectureId;
+          if (nextLectureId != null) {
+            next.set("lecture", String(nextLectureId));
+          }
+          const section = courseSectionParamForPanel(panel);
+          if (section) {
+            next.set("section", section);
+          } else {
+            next.delete("section");
+          }
+          next.delete("material");
+          next.delete("gen");
+          next.delete("exam");
+          return next;
+        },
+        { replace: false },
+      );
+    };
+
     const openWeekBoardPanel = (nextTab: "notices" | "discussions") => {
       if (!selectedLecture) {
         window.alert("강의(주차)를 먼저 선택해주세요.");
         return;
       }
       setTeacherMainPanel("materials");
+      syncCourseSectionInUrl("materials");
       setWeekBoardTab(nextTab);
     };
 
@@ -8106,14 +8253,16 @@ const MainContent: React.FC<MainContentProps> = ({
             : "text-gray-600"
       }`;
 
-    const openPanelFromPreview = (panel: typeof teacherMainPanel) => {
+    const openPanelFromPreview = (panel: TeacherMainPanelKey) => {
       setWeekBoardTab(null);
       setTeacherMainPanel(panel);
+      syncCourseSectionInUrl(panel);
       exitPreviewAndExamViewer();
     };
 
     const selectLectureFromPreview = (lectureId: number) => {
       setTeacherMainPanel("materials");
+      syncCourseSectionInUrl("materials", { lectureId });
       exitPreviewAndExamViewer();
       onSelectLecture?.(lectureId);
     };
@@ -8136,7 +8285,7 @@ const MainContent: React.FC<MainContentProps> = ({
     );
 
     const openSidebarPanel = (
-      panel: typeof teacherMainPanel,
+      panel: TeacherMainPanelKey,
       source: "detail" | "preview",
     ) => {
       if (panel === "examStudio") {
@@ -8150,6 +8299,7 @@ const MainContent: React.FC<MainContentProps> = ({
       }
       setWeekBoardTab(null);
       setTeacherMainPanel(panel);
+      syncCourseSectionInUrl(panel);
     };
 
     const selectSidebarLecture = (
@@ -10509,6 +10659,7 @@ const MainContent: React.FC<MainContentProps> = ({
 	                          type="button"
 	                          onClick={() => {
 	                            setWeekBoardTab(null);
+	                            syncCourseSectionInUrl("materials");
 	                            window.dispatchEvent(new Event("open-upload-modal"));
 	                          }}
 	                          className={weekResourceActionClass(false)}
@@ -10520,6 +10671,7 @@ const MainContent: React.FC<MainContentProps> = ({
 	                          type="button"
 	                          onClick={() => {
 	                            setWeekBoardTab(null);
+	                            syncCourseSectionInUrl("materials");
 	                            window.dispatchEvent(new Event("open-material-gen-modal"));
 	                          }}
 	                          className={weekResourceActionClass(false)}
@@ -11496,51 +11648,72 @@ const MainContent: React.FC<MainContentProps> = ({
 		                  isTeacher={isTeacher}
 		                />
 	              ) : isTeacher && teacherMainPanel === "examStudio" ? (
-	                <section
-	                  className={`flex min-h-0 flex-1 overflow-hidden rounded-2xl border ${
-	                    isDarkMode
-	                      ? "border-[#2b2b2b] bg-[#181818]"
-	                      : "border-[#dedbd5] bg-white"
-	                  }`}
-	                >
-	                  <RightSidebar
-	                    fillContainer
-	                    width={rightSidebarWidth}
-	                    lectureId={selectedLectureId ?? undefined}
-	                    courseId={courseDetail.courseId}
-	                    viewMode="course-detail"
-	                    courseDetail={courseDetail}
-	                    examStudioPage
-	                    previewCurrentPdfPage={previewCurrentPdfPage}
-	                    assistantMaterialId={examStudioAssistantMaterialId}
-	                    assistantPdfActive={false}
-	                    goToPdfPage={(page) => pdfViewerRef.current?.goToPage(page)}
-	                    userPdfNav={userPdfNav}
-	                    onLectureDataChange={(_, fileUrl, fileName, materialIdOpt) => {
-	                      if (!fileUrl) return;
-	                      setPreviewFileUrl(fileUrl);
-	                      setPreviewFileName(fileName);
-	                      const resolvedMid = resolveMaterialIdFromSidebarSync(
-	                        selectedLectureId,
-	                        fileUrl,
-	                        fileName ?? "",
-	                        localMaterials,
-	                        materialIdOpt,
-	                      );
-	                      setPreviewMaterialId(resolvedMid);
-	                    }}
-	                    examProps={{
-	                      ...courseExamSidebarProps,
-	                      examMode: true,
-	                      onExamModeChange: (value) => {
-	                        setRightSidebarExamMode(value);
-	                        if (!value) {
-	                          setTeacherMainPanel("materials");
-	                        }
-	                      },
-	                    }}
-	                  />
-	                </section>
+	                <div className="flex min-h-0 flex-1 flex-col">
+	                  <section
+	                    className={`mb-3 flex shrink-0 flex-col rounded-2xl border px-5 py-5 lg:px-6 ${
+	                      isDarkMode
+	                        ? "border-[#2b2b2b] bg-[#202020]"
+	                        : "border-[#dedbd5] bg-white"
+	                    }`}
+	                  >
+	                    <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+	                      <div className="min-w-0 flex-1">
+	                        <h2
+	                          className={`text-2xl font-semibold leading-tight ${
+	                            isDarkMode ? "text-gray-50" : "text-gray-950"
+	                          }`}
+	                        >
+	                          과제/시험
+	                        </h2>
+	                      </div>
+	                    </div>
+	                  </section>
+	                  <div
+	                    className={`flex min-h-0 flex-1 overflow-hidden rounded-2xl border ${
+	                      isDarkMode
+	                        ? "border-[#2b2b2b] bg-[#181818]"
+	                        : "border-[#dedbd5] bg-white"
+	                    }`}
+	                  >
+	                    <RightSidebar
+	                      fillContainer
+	                      width={rightSidebarWidth}
+	                      lectureId={selectedLectureId ?? undefined}
+	                      courseId={courseDetail.courseId}
+	                      viewMode="course-detail"
+	                      courseDetail={courseDetail}
+	                      examStudioPage
+	                      previewCurrentPdfPage={previewCurrentPdfPage}
+	                      assistantMaterialId={examStudioAssistantMaterialId}
+	                      assistantPdfActive={false}
+	                      goToPdfPage={(page) => pdfViewerRef.current?.goToPage(page)}
+	                      userPdfNav={userPdfNav}
+	                      onLectureDataChange={(_, fileUrl, fileName, materialIdOpt) => {
+	                        if (!fileUrl) return;
+	                        setPreviewFileUrl(fileUrl);
+	                        setPreviewFileName(fileName);
+	                        const resolvedMid = resolveMaterialIdFromSidebarSync(
+	                          selectedLectureId,
+	                          fileUrl,
+	                          fileName ?? "",
+	                          localMaterials,
+	                          materialIdOpt,
+	                        );
+	                        setPreviewMaterialId(resolvedMid);
+	                      }}
+	                      examProps={{
+	                        ...courseExamSidebarProps,
+	                        examMode: true,
+	                        onExamModeChange: (value) => {
+	                          setRightSidebarExamMode(value);
+	                          if (!value) {
+	                            setTeacherMainPanel("materials");
+	                          }
+	                        },
+	                      }}
+	                    />
+	                  </div>
+	                </div>
 	              ) : teacherMainPanel === "materials" && weekBoardTab && selectedLecture ? (
 	                <CourseBoardsPanel
 	                  key={`week-boards-${courseDetail.courseId}-${selectedLecture.lectureId}-${weekBoardTab}`}
@@ -11870,6 +12043,10 @@ const MainContent: React.FC<MainContentProps> = ({
                                       onClick={(e) => {
                                         e.preventDefault();
                                         e.stopPropagation();
+                                        if (item.type === "material") {
+                                          openResourceTitleEditor(item);
+                                          return;
+                                        }
                                         handleCardClick(item);
                                       }}
                                       className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-lg px-2 text-xs font-semibold transition-colors ${
@@ -12046,6 +12223,108 @@ const MainContent: React.FC<MainContentProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 강의자료 제목 수정 모달 */}
+      {resourceTitleEditTarget && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => {
+            setResourceTitleEditTarget(null);
+            setResourceTitleEditValue("");
+          }}
+        >
+          <form
+            className={`w-full max-w-md rounded-lg border shadow-lg ${
+              isDarkMode
+                ? "border-zinc-700 bg-zinc-900 text-gray-100"
+                : "border-gray-200 bg-white text-gray-900"
+            }`}
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={handleResourceTitleEditSubmit}
+          >
+            <div
+              className={`flex items-center justify-between border-b px-5 py-4 ${
+                isDarkMode ? "border-zinc-700/50" : "border-gray-200"
+              }`}
+            >
+              <h2 className="text-base font-semibold">강의자료 수정</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setResourceTitleEditTarget(null);
+                  setResourceTitleEditValue("");
+                }}
+                className={`rounded p-1.5 transition-colors ${
+                  isDarkMode
+                    ? "text-gray-300 hover:bg-zinc-800"
+                    : "text-gray-500 hover:bg-gray-100"
+                }`}
+                aria-label="닫기"
+                title="닫기"
+              >
+                <CloseIcon className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-2 px-5 py-4">
+              <label
+                htmlFor="resource-title-edit-input"
+                className={`block text-sm font-semibold ${
+                  isDarkMode ? "text-gray-100" : "text-gray-900"
+                }`}
+              >
+                자료 제목
+              </label>
+              <input
+                id="resource-title-edit-input"
+                type="text"
+                value={resourceTitleEditValue}
+                onChange={(e) => setResourceTitleEditValue(e.target.value)}
+                className={`w-full rounded-lg border px-3 py-2 text-sm outline-none transition-colors focus:border-[#ff824d] focus:ring-2 focus:ring-[#ff824d]/35 ${
+                  isDarkMode
+                    ? "border-zinc-700 bg-zinc-800 text-white placeholder:text-gray-500"
+                    : "border-gray-300 bg-white text-gray-900 placeholder:text-gray-400"
+                }`}
+                autoFocus
+              />
+            </div>
+            <div
+              className={`flex justify-end gap-2 border-t px-5 py-4 ${
+                isDarkMode ? "border-zinc-700/50" : "border-gray-200"
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setResourceTitleEditTarget(null);
+                  setResourceTitleEditValue("");
+                }}
+                className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+                  isDarkMode
+                    ? "bg-zinc-800 text-gray-200 hover:bg-zinc-700"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                취소
+              </button>
+              <button
+                type="submit"
+                disabled={!resourceTitleEditValue.trim()}
+                className={`rounded-lg px-4 py-2 text-sm font-semibold transition-colors ${
+                  resourceTitleEditValue.trim()
+                    ? "bg-[#ff824d] text-white hover:bg-[#ff6b33]"
+                    : isDarkMode
+                      ? "cursor-not-allowed bg-zinc-800 text-gray-500"
+                      : "cursor-not-allowed bg-gray-200 text-gray-500"
+                }`}
+              >
+                저장
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* 강의실 생성 모달 */}
       {isCourseModalOpen && (

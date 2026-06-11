@@ -1541,7 +1541,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   return (
     <>
       <aside
-      className={`h-full flex flex-col border-l transition-colors relative ${
+      className={`h-full flex flex-col transition-colors relative ${
+        examStudioPageMode ? "" : "border-l"
+      } ${
         fillContainer ? "w-full min-w-0" : "flex-shrink-0"
       }`}
       style={{
@@ -1671,9 +1673,42 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               >
                 <div className="flex min-w-0 flex-col gap-4">
                   <section className={`rounded-lg border p-4 ${examPageSurfaceClass}`}>
-                    <h3 className={`mb-4 text-base font-bold ${isDarkMode ? "text-white" : "text-gray-950"}`}>
-                      기본 정보
-                    </h3>
+                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <h3 className={`text-base font-bold ${isDarkMode ? "text-white" : "text-gray-950"}`}>
+                        기본 정보
+                      </h3>
+                      {examStudioPageMode ? (
+                        <div className="flex flex-wrap items-center justify-start gap-2 sm:justify-end">
+                          <button
+                            type="button"
+                            onClick={() => examProps.onExamModeChange(false)}
+                            className={`${examSecondaryButtonClass} px-3 py-2 text-xs`}
+                          >
+                            취소
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleSaveExamDraft}
+                            className={`${examSecondaryButtonClass} px-3 py-2 text-xs`}
+                          >
+                            임시 저장
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              examProps.onCreateExam(
+                                resolvedExamCreateTopic,
+                                localExamDisplayName.trim(),
+                              )
+                            }
+                            disabled={examProps.submitting || !resolvedExamCreateTopic}
+                            className={`${examPrimaryButtonClass} px-3 py-2 text-xs`}
+                          >
+                            {examProps.submitting ? "게시 중..." : "게시"}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
                     <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
                       <div className={examFieldShellClass}>
                         <label className={examLabelClass}>시험 제목</label>
@@ -2164,46 +2199,44 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               </div>
             </div>
           </div>
-          <div
-            className={`shrink-0 border-t px-4 py-3 ${
-              isDarkMode ? "border-[#2b2b2b]" : "border-[#dedbd5]"
-            }`}
-            style={{ backgroundColor: panelSurface }}
-          >
+          {!examStudioPageMode ? (
             <div
-              className={`flex w-full items-center justify-end gap-2 ${
-                examStudioPageMode ? "" : "mx-auto max-w-[96rem]"
+              className={`shrink-0 border-t px-4 py-3 ${
+                isDarkMode ? "border-[#2b2b2b]" : "border-[#dedbd5]"
               }`}
+              style={{ backgroundColor: panelSurface }}
             >
-              <button
-                type="button"
-                onClick={() => examProps.onExamModeChange(false)}
-                className={`${examSecondaryButtonClass} px-4 py-2.5 text-sm`}
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveExamDraft}
-                className={`${examSecondaryButtonClass} px-4 py-2.5 text-sm`}
-              >
-                임시 저장
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  examProps.onCreateExam(
-                    resolvedExamCreateTopic,
-                    localExamDisplayName.trim(),
-                  )
-                }
-                disabled={examProps.submitting || !resolvedExamCreateTopic}
-                className={`${examPrimaryButtonClass} px-4 py-2.5 text-sm`}
-              >
-                {examProps.submitting ? "게시 중..." : "게시"}
-              </button>
+              <div className="mx-auto flex w-full max-w-[96rem] items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => examProps.onExamModeChange(false)}
+                  className={`${examSecondaryButtonClass} px-4 py-2.5 text-sm`}
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveExamDraft}
+                  className={`${examSecondaryButtonClass} px-4 py-2.5 text-sm`}
+                >
+                  임시 저장
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    examProps.onCreateExam(
+                      resolvedExamCreateTopic,
+                      localExamDisplayName.trim(),
+                    )
+                  }
+                  disabled={examProps.submitting || !resolvedExamCreateTopic}
+                  className={`${examPrimaryButtonClass} px-4 py-2.5 text-sm`}
+                >
+                  {examProps.submitting ? "게시 중..." : "게시"}
+                </button>
+              </div>
             </div>
-          </div>
+          ) : null}
         </div>
       ) : (
       <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">

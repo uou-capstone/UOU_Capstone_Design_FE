@@ -29,6 +29,75 @@ interface CourseBoardsPanelProps {
   onClose?: () => void;
 }
 
+type CourseBoardsPanelErrorBoundaryProps = {
+  isDarkMode: boolean;
+  resetKey: string;
+  children: React.ReactNode;
+};
+
+type CourseBoardsPanelErrorBoundaryState = {
+  error: Error | null;
+};
+
+class CourseBoardsPanelErrorBoundary extends React.Component<
+  CourseBoardsPanelErrorBoundaryProps,
+  CourseBoardsPanelErrorBoundaryState
+> {
+  state: CourseBoardsPanelErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): CourseBoardsPanelErrorBoundaryState {
+    return { error };
+  }
+
+  override componentDidUpdate(prevProps: CourseBoardsPanelErrorBoundaryProps) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({ error: null });
+    }
+  }
+
+  override componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[CourseBoardsPanel] render failed", error, info.componentStack);
+  }
+
+  override render() {
+    if (!this.state.error) return this.props.children;
+    const errorMessage = this.state.error.message?.trim();
+
+    return (
+      <div
+        className={`rounded-2xl border px-5 py-6 text-sm ${
+          this.props.isDarkMode
+            ? "border-red-900/60 bg-red-950/25 text-red-100"
+            : "border-red-200 bg-red-50 text-red-700"
+        }`}
+      >
+        <p className="font-semibold">게시판 화면을 불러오지 못했습니다.</p>
+        <p className="mt-2">
+          일시적인 렌더링 오류가 발생했습니다. 새로고침 후 다시 시도해 주세요.
+        </p>
+        {errorMessage ? (
+          <p className="mt-2 rounded-lg bg-red-500/10 px-3 py-2 text-xs">
+            오류: {errorMessage}
+          </p>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => {
+            this.setState({ error: null });
+          }}
+          className={`mt-4 rounded-lg border px-3 py-2 text-xs font-semibold ${
+            this.props.isDarkMode
+              ? "border-red-800 text-red-100 hover:bg-red-900/40"
+              : "border-red-200 text-red-700 hover:bg-red-100"
+          }`}
+        >
+          다시 표시
+        </button>
+      </div>
+    );
+  }
+}
+
 type BoardForm = {
   title: string;
   contentMarkdown: string;
@@ -211,6 +280,11 @@ function formatInstant(value: string | undefined): string {
   return formatKoreanDateTime(value);
 }
 
+function safeBoardText(value: unknown, fallback = ""): string {
+  const text = toBoardString(value).trim();
+  return text || fallback;
+}
+
 function escapeHtml(value: unknown): string {
   return toBoardString(value)
     .replace(/&/g, "&amp;")
@@ -251,7 +325,7 @@ function isRichContentEmpty(value: unknown): boolean {
   return text.length === 0;
 }
 
-export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
+const CourseBoardsPanelContent: React.FC<CourseBoardsPanelProps> = ({
   courseId,
   isTeacher,
   isDarkMode,
@@ -1009,7 +1083,7 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                             isDarkMode ? "bg-[#202020]" : "bg-white"
                           }`}
                         >
-                          {job.title} · {formatInstant(job.scheduledAt)}
+                          {safeBoardText(job.title, "제목 없음")} · {formatInstant(job.scheduledAt)}
                           <button
                             type="button"
                             onClick={() => cancelScheduledJob(job.id)}
@@ -1275,10 +1349,12 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                               고정
                             </span>
                           ) : null}
-                          <h4 className="truncate text-sm font-semibold">{item.title}</h4>
+                          <h4 className="truncate text-sm font-semibold">
+                            {safeBoardText(item.title, "제목 없음")}
+                          </h4>
                         </div>
                         <p className={`mt-2 text-xs ${mutedClass}`}>
-                          {item.authorName || "작성자"} · {formatInstant(item.createdAt)} · 조회 {item.viewCount}
+                          {safeBoardText(item.authorName, "작성자")} · {formatInstant(item.createdAt)} · 조회 {Number(item.viewCount) || 0}
                         </p>
                       </button>
                     </li>
@@ -1298,9 +1374,11 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                 <div className="border-b border-inherit px-5 py-5">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
-                      <h3 className="text-lg font-semibold">{selectedDiscussion.title}</h3>
+                      <h3 className="text-lg font-semibold">
+                        {safeBoardText(selectedDiscussion.title, "제목 없음")}
+                      </h3>
                       <p className={`mt-2 text-xs ${mutedClass}`}>
-                        {selectedDiscussion.authorName || "작성자"} · {formatInstant(selectedDiscussion.createdAt)}
+                        {safeBoardText(selectedDiscussion.authorName, "작성자")} · {formatInstant(selectedDiscussion.createdAt)}
                       </p>
                     </div>
                     {canEditSelected ? (
@@ -1333,7 +1411,7 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                     />
                   ) : (
                     <div className="whitespace-pre-wrap text-sm leading-7">
-                      {selectedDiscussion.contentMarkdown}
+                      {safeBoardText(selectedDiscussion.contentMarkdown)}
                     </div>
                   )}
                 </div>
@@ -1353,7 +1431,9 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                           >
                             <div className="flex items-start justify-between gap-3">
                               <div>
-                                <p className="text-xs font-semibold">{comment.authorName}</p>
+                                <p className="text-xs font-semibold">
+                                  {safeBoardText(comment.authorName, "작성자")}
+                                </p>
                                 <p className={`mt-1 text-[11px] ${mutedClass}`}>
                                   {formatInstant(comment.createdAt)}
                                 </p>
@@ -1364,7 +1444,7 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                                     type="button"
                                     onClick={() => {
                                       setEditingCommentId(comment.commentId);
-                                      setCommentText(comment.contentMarkdown);
+                                      setCommentText(safeBoardText(comment.contentMarkdown));
                                     }}
                                     className="text-xs font-semibold text-[#ff824d]"
                                   >
@@ -1381,7 +1461,7 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                               ) : null}
                             </div>
                             <p className="mt-3 whitespace-pre-wrap text-sm leading-6">
-                              {comment.contentMarkdown}
+                              {safeBoardText(comment.contentMarkdown)}
                             </p>
                           </div>
                         );
@@ -1658,7 +1738,7 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                         isDarkMode ? "bg-white/[0.06]" : "bg-white"
                       }`}
                     >
-                      {job.tab === "notices" ? "공지" : "토론"} · {job.title} ·{" "}
+                      {job.tab === "notices" ? "공지" : "토론"} · {safeBoardText(job.title, "제목 없음")} ·{" "}
                       {formatInstant(job.scheduledAt)}
                       <button
                         type="button"
@@ -1837,12 +1917,14 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                             고정
                           </span>
                         ) : null}
-                        <h4 className="truncate text-sm font-semibold">{item.title}</h4>
+                        <h4 className="truncate text-sm font-semibold">
+                          {safeBoardText(item.title, "제목 없음")}
+                        </h4>
                       </div>
                       <p className={`mt-2 text-xs ${mutedClass}`}>
-                        {item.authorName || "작성자"} · {formatInstant(item.createdAt)}
+                        {safeBoardText(item.authorName, "작성자")} · {formatInstant(item.createdAt)}
                         {tab === "discussions"
-                          ? ` · 조회 ${(item as DiscussionListItem).viewCount}`
+                          ? ` · 조회 ${Number((item as DiscussionListItem).viewCount) || 0}`
                           : ""}
                       </p>
                     </button>
@@ -1886,9 +1968,11 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
               <div className="border-b border-inherit px-5 py-5">
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div>
-                    <h3 className="text-lg font-semibold">{activeDetail.title}</h3>
+                    <h3 className="text-lg font-semibold">
+                      {safeBoardText(activeDetail.title, "제목 없음")}
+                    </h3>
                     <p className={`mt-2 text-xs ${mutedClass}`}>
-                      {activeDetail.authorName || "작성자"} ·{" "}
+                      {safeBoardText(activeDetail.authorName, "작성자")} ·{" "}
                       {formatInstant(activeDetail.createdAt)}
                     </p>
                   </div>
@@ -1956,7 +2040,9 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div>
-                              <p className="text-xs font-semibold">{comment.authorName}</p>
+                              <p className="text-xs font-semibold">
+                                {safeBoardText(comment.authorName, "작성자")}
+                              </p>
                               <p className={`mt-1 text-[11px] ${mutedClass}`}>
                                 {formatInstant(comment.createdAt)}
                               </p>
@@ -1967,7 +2053,7 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                                   type="button"
                                   onClick={() => {
                                     setEditingCommentId(commentId);
-                                    setCommentText(comment.contentMarkdown);
+                                    setCommentText(safeBoardText(comment.contentMarkdown));
                                   }}
                                   className="text-xs font-semibold text-[#ff824d]"
                                 >
@@ -1984,7 +2070,7 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
                             ) : null}
                           </div>
                           <p className="mt-3 whitespace-pre-wrap text-sm leading-6">
-                            {comment.contentMarkdown}
+                            {safeBoardText(comment.contentMarkdown)}
                           </p>
                         </div>
                       );
@@ -2021,3 +2107,18 @@ export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = ({
     </div>
   );
 };
+
+export const CourseBoardsPanel: React.FC<CourseBoardsPanelProps> = (props) => (
+  <CourseBoardsPanelErrorBoundary
+    isDarkMode={props.isDarkMode}
+    resetKey={[
+      props.courseId,
+      props.initialTab ?? "notices",
+      props.selectedLectureId ?? "all",
+      props.selectedWeekNumber ?? "none",
+      props.scopedToLecture ? "scoped" : "global",
+    ].join(":")}
+  >
+    <CourseBoardsPanelContent {...props} />
+  </CourseBoardsPanelErrorBoundary>
+);
