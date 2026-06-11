@@ -2097,6 +2097,11 @@ const MainContent: React.FC<MainContentProps> = ({
   const [oxExamSingleIndex, setOxExamSingleIndex] = React.useState(0);
   const [fiveChoiceSingleIndex, setFiveChoiceSingleIndex] =
     React.useState(0);
+  const examDetailScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const examDetailScrollSnapshotRef = React.useRef<{
+    top: number;
+    left: number;
+  } | null>(null);
   const [examProfile, setExamProfile] = React.useState<ExamUserProfile | null>(
     null,
   );
@@ -6469,23 +6474,69 @@ const MainContent: React.FC<MainContentProps> = ({
       .trim();
   }, []);
 
+  const captureExamDetailScroll = React.useCallback(() => {
+    const scrollContainer = examDetailScrollRef.current;
+    if (!scrollContainer) return;
+    examDetailScrollSnapshotRef.current = {
+      top: scrollContainer.scrollTop,
+      left: scrollContainer.scrollLeft,
+    };
+  }, []);
+
+  const restoreExamDetailScroll = React.useCallback(() => {
+    const snapshot = examDetailScrollSnapshotRef.current;
+    if (!snapshot) return;
+
+    const apply = () => {
+      const scrollContainer = examDetailScrollRef.current;
+      if (!scrollContainer) return;
+      scrollContainer.scrollTop = snapshot.top;
+      scrollContainer.scrollLeft = snapshot.left;
+    };
+
+    requestAnimationFrame(() => {
+      apply();
+      window.setTimeout(() => {
+        apply();
+        if (examDetailScrollSnapshotRef.current === snapshot) {
+          examDetailScrollSnapshotRef.current = null;
+        }
+      }, 0);
+    });
+  }, []);
+
+  const preserveExamDetailScrollForSelection = React.useCallback(
+    (update: () => void) => {
+      if (!examDetailScrollSnapshotRef.current) {
+        captureExamDetailScroll();
+      }
+      update();
+      restoreExamDetailScroll();
+    },
+    [captureExamDetailScroll, restoreExamDetailScroll],
+  );
+
   const handleFiveChoiceAnswerChange = (
     problemIndex: number,
     optionId: string,
   ) => {
     if (examSubmissionResult != null) return;
-    setFiveChoiceUserAnswers((prev) => ({
-      ...prev,
-      [String(problemIndex)]: optionId,
-    }));
+    preserveExamDetailScrollForSelection(() => {
+      setFiveChoiceUserAnswers((prev) => ({
+        ...prev,
+        [String(problemIndex)]: optionId,
+      }));
+    });
   };
 
   const handleOxAnswerChange = (problemIndex: number, choice: OxUserChoice) => {
     if (oxGraded || examSubmissionResult != null) return;
-    setOxUserAnswers((prev) => ({
-      ...prev,
-      [String(problemIndex)]: choice,
-    }));
+    preserveExamDetailScrollForSelection(() => {
+      setOxUserAnswers((prev) => ({
+        ...prev,
+        [String(problemIndex)]: choice,
+      }));
+    });
   };
 
   const handleOxGrade = () => {
@@ -8830,7 +8881,16 @@ const MainContent: React.FC<MainContentProps> = ({
                       </button>
                     </div>
                   </div>
-                  <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4">
+                  <div
+                    ref={examDetailScrollRef}
+                    onPointerDownCapture={captureExamDetailScroll}
+                    onKeyDownCapture={(event) => {
+                      if (event.key === " " || event.key === "Enter") {
+                        captureExamDetailScroll();
+                      }
+                    }}
+                    className="flex-1 min-h-0 overflow-y-auto px-5 py-4 space-y-4"
+                  >
                     {examDetailLoading && (
                       <p className={`text-sm ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}>
                         시험 세션 정보를 불러오는 중입니다...

@@ -247,6 +247,9 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
   const dragCounterRef = useRef<number>(0);
   const previewObjectUrlRef = useRef<string | null>(null);
   const shouldPinIntegratedUserMessageTopRef = useRef<boolean>(false);
+  const integratedPinAfterUserMessageIdRef = useRef<number | null>(null);
+  const integratedManualScrollOverrideRef = useRef(false);
+  const integratedProgrammaticScrollRef = useRef(false);
   /** 시험 문항 수: 키보드 입력 중에는 초안만 두고 blur/Enter에서 확정 */
   const examCountFieldFocusedRef = useRef(false);
   const [examCountFieldFocused, setExamCountFieldFocused] = useState(false);
@@ -786,6 +789,33 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     []
   );
 
+  const resolveIntegratedTurnScroll = useCallback(
+    (chatContainer: HTMLElement, latestUserMessageId: number) => {
+      const userTarget = chatContainer.querySelector<HTMLElement>(
+        `[data-message-id="${latestUserMessageId}"]`,
+      );
+      if (!userTarget) return null;
+
+      const messageNodes = Array.from(
+        chatContainer.querySelectorAll<HTMLElement>("[data-message-id]"),
+      );
+      const userNodeIndex = messageNodes.findIndex(
+        (node) => node.dataset.messageId === String(latestUserMessageId),
+      );
+      const turnNodes =
+        userNodeIndex >= 0 ? messageNodes.slice(userNodeIndex) : [userTarget];
+      const latestTurnNode = turnNodes[turnNodes.length - 1] ?? userTarget;
+      const turnBottom = latestTurnNode.offsetTop + latestTurnNode.offsetHeight;
+      const followStreamingTop = turnBottom - chatContainer.clientHeight + 16;
+      const desiredTop = Math.max(userTarget.offsetTop, followStreamingTop);
+
+      return {
+        desiredTop: Math.max(0, desiredTop),
+      };
+    },
+    [],
+  );
+
   /** 강의 에이전트 스트리밍·사고 요약 중에도 말풍선 끝이 보이도록 (문서 7.2 자동 스크롤) */
   useLayoutEffect(() => {
     const chatContainer = document.getElementById("chat-messages");
@@ -795,33 +825,68 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         const latestUserMessage = [...displayMessages]
           .reverse()
           .find((m) => m.isUser);
+        const waitingForNewUserMessage =
+          shouldPinIntegratedUserMessageTopRef.current &&
+          integratedPinAfterUserMessageIdRef.current != null &&
+          latestUserMessage?.id === integratedPinAfterUserMessageIdRef.current;
+        if (waitingForNewUserMessage) {
+          return;
+        }
+        if (
+          shouldPinIntegratedUserMessageTopRef.current &&
+          latestUserMessage &&
+          latestUserMessage.id !== integratedPinAfterUserMessageIdRef.current
+        ) {
+          integratedPinAfterUserMessageIdRef.current = null;
+        }
         const shouldKeepUserPinned =
-          shouldPinIntegratedUserMessageTopRef.current ||
-          integratedLearning.busy ||
-          integratedTopPinBottomPad > 0;
+          !integratedManualScrollOverrideRef.current &&
+          (shouldPinIntegratedUserMessageTopRef.current ||
+            integratedLearning.busy ||
+            integratedTopPinBottomPad > 0);
         if (latestUserMessage && shouldKeepUserPinned) {
-          const target = chatContainer.querySelector<HTMLElement>(
-            `[data-message-id="${latestUserMessage.id}"]`,
+          const turnScroll = resolveIntegratedTurnScroll(
+            chatContainer,
+            latestUserMessage.id,
           );
-          if (target) {
+          if (turnScroll) {
+            const maxScrollTop = Math.max(
+              0,
+              chatContainer.scrollHeight - chatContainer.clientHeight,
+            );
             const requiredPad = Math.max(
               0,
-              target.offsetTop - (chatContainer.scrollHeight - chatContainer.clientHeight),
+              turnScroll.desiredTop - maxScrollTop,
             );
             if (requiredPad > integratedTopPinBottomPad) {
               setIntegratedTopPinBottomPad(requiredPad + 8);
               return;
             }
-            chatContainer.scrollTop = target.offsetTop;
+            integratedProgrammaticScrollRef.current = true;
+            chatContainer.scrollTop = Math.min(
+              turnScroll.desiredTop,
+              Math.max(0, chatContainer.scrollHeight - chatContainer.clientHeight),
+            );
+            window.setTimeout(() => {
+              integratedProgrammaticScrollRef.current = false;
+            }, 80);
             if (!integratedLearning.busy) {
               shouldPinIntegratedUserMessageTopRef.current = false;
+              integratedManualScrollOverrideRef.current = false;
+              integratedPinAfterUserMessageIdRef.current = null;
             }
             return;
           }
         }
         if (!integratedLearning.busy) {
           shouldPinIntegratedUserMessageTopRef.current = false;
+          integratedManualScrollOverrideRef.current = false;
+          integratedPinAfterUserMessageIdRef.current = null;
+          if (integratedTopPinBottomPad !== 0) {
+            setIntegratedTopPinBottomPad(0);
+          }
         }
+        return;
       }
       if (!integratedLearning.busy && integratedTopPinBottomPad !== 0) {
         setIntegratedTopPinBottomPad(0);
@@ -836,6 +901,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
     lectureAssistant.busy,
     integratedLearning.busy,
     integratedTopPinBottomPad,
+    resolveIntegratedTurnScroll,
   ]);
 
   // 스트리밍 취소 함수
@@ -1310,7 +1376,12 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         return;
       }
       if (trimmed) {
+        const latestUserMessageId =
+          [...displayMessages].reverse().find((message) => message.isUser)?.id ??
+          null;
         shouldPinIntegratedUserMessageTopRef.current = true;
+        integratedPinAfterUserMessageIdRef.current = latestUserMessageId;
+        integratedManualScrollOverrideRef.current = false;
         void integratedLearning.sendUserText(trimmed);
       } else {
         void integratedLearning.startOrContinue();
@@ -2246,6 +2317,34 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
         className={`relative flex-1 min-w-0 w-full overflow-y-auto overflow-x-hidden py-4 ${
           borderlessLearningChat ? "space-y-5 px-4" : "space-y-2 px-3"
         }`}
+        onScroll={(event) => {
+          if (
+            !integratedModeActive ||
+            !integratedLearning.busy ||
+            integratedProgrammaticScrollRef.current
+          ) {
+            return;
+          }
+          const latestUserMessage = [...displayMessages]
+            .reverse()
+            .find((message) => message.isUser);
+          if (!latestUserMessage) return;
+          const turnScroll = resolveIntegratedTurnScroll(
+            event.currentTarget,
+            latestUserMessage.id,
+          );
+          if (!turnScroll) return;
+          const maxScrollTop = Math.max(
+            0,
+            event.currentTarget.scrollHeight - event.currentTarget.clientHeight,
+          );
+          const expectedScrollTop = Math.min(turnScroll.desiredTop, maxScrollTop);
+          const distanceFromPinnedTurn = Math.abs(
+            event.currentTarget.scrollTop - expectedScrollTop,
+          );
+          integratedManualScrollOverrideRef.current =
+            distanceFromPinnedTurn > 32;
+        }}
         style={{
           backgroundColor: sidebarBackground,
           paddingBottom: integratedTopPinBottomPad
