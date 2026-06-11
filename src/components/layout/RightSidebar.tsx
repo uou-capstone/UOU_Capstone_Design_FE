@@ -1620,7 +1620,7 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
       style={{
         width: fillContainer ? "100%" : `${width}px`,
         minWidth: fillContainer ? 0 : undefined,
-        backgroundColor: sidebarBackground,
+        backgroundColor: examStudioPageMode ? "transparent" : sidebarBackground,
         color: sidebarTextColor,
         borderColor: sidebarBorderColor,
       }}
@@ -1705,7 +1705,11 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
 
       {/* 시험 설계 모드 */}
       {examProps?.examMode ? (
-        <div className="flex-1 flex flex-col min-h-0 overflow-hidden exam-select-arrow-left">
+        <div
+          className={`flex-1 flex flex-col min-h-0 exam-select-arrow-left ${
+            examStudioPageMode ? "overflow-visible" : "overflow-hidden"
+          }`}
+        >
           {examProps.recoverOpen && (
             <div className={`shrink-0 flex items-center gap-2 px-4 py-3 border-b ${isDarkMode ? "border-[#2b2b2b]" : "border-[#dedbd5]"}`}
             style={{ backgroundColor: panelSurface }}
@@ -1727,11 +1731,17 @@ const RightSidebar: React.FC<RightSidebarProps> = ({
               <button type="button" onClick={() => examProps.setRecoverOpen(false)} className={examSecondaryButtonClass}>취소</button>
             </div>
           )}
-          <div className="flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable]">
+          <div
+            className={
+              examStudioPageMode
+                ? "min-h-0 overflow-visible"
+                : "flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable]"
+            }
+          >
             <div
               className={`flex w-full flex-col gap-4 ${
                 examStudioPageMode
-                  ? "px-4 py-4 md:px-6 md:py-5"
+                  ? "py-0"
                   : "mx-auto max-w-[96rem] px-3 py-3"
               }`}
             >

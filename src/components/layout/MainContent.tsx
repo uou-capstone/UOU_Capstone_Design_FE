@@ -10817,10 +10817,10 @@ const MainContent: React.FC<MainContentProps> = ({
 	                />
 	              ) : null}
 	              <div
-                  className={`scrollbar-hide flex min-h-0 flex-1 flex-col ${
+                  className={`flex min-h-0 flex-1 flex-col ${
                     isTeacher && teacherMainPanel === "examStudio"
-                      ? "overflow-hidden pb-0"
-                      : "overflow-y-auto pb-4"
+                      ? "overflow-y-auto pb-4"
+                      : "scrollbar-hide overflow-y-auto pb-4"
                   }`}
                 >
               {isTeacher && teacherMainPanel === "classroomReport" ? (
@@ -11708,7 +11708,7 @@ const MainContent: React.FC<MainContentProps> = ({
 		                  isTeacher={isTeacher}
 		                />
 	              ) : isTeacher && teacherMainPanel === "examStudio" ? (
-	                <div className="flex min-h-0 flex-1 flex-col">
+	                <div className="flex min-h-full flex-col">
 	                  <section
 	                    className={`mb-3 flex shrink-0 flex-col rounded-2xl border px-5 py-5 lg:px-6 ${
 	                      isDarkMode
@@ -11728,13 +11728,7 @@ const MainContent: React.FC<MainContentProps> = ({
 	                      </div>
 	                    </div>
 	                  </section>
-	                  <div
-	                    className={`flex min-h-0 flex-1 overflow-hidden rounded-2xl border ${
-	                      isDarkMode
-	                        ? "border-[#2b2b2b] bg-[#181818]"
-	                        : "border-[#dedbd5] bg-white"
-	                    }`}
-	                  >
+	                  <div className="flex min-h-0 flex-1 overflow-visible">
 	                    <RightSidebar
 	                      fillContainer
 	                      width={rightSidebarWidth}
